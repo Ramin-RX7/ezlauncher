@@ -2,6 +2,17 @@
 
 The project is built in small scopes, one after another. Each scope is self-contained: build only what the current scope describes.
 
+## Scope 00: Project setup (done)
+
+The base every later scope builds on. No Minecraft logic.
+
+- **Tooling**: Electron 44, electron-vite 5 (Vite 7), TypeScript 6 strict, ESLint (type-aware, with rules that enforce the process boundaries), Prettier, Vitest (a Node project and a jsdom project), electron-builder (Windows NSIS, Linux AppImage, macOS dmg).
+- **Main process** (`src/main/`): single-instance lock (a second start focuses the running window), a secure `BrowserWindow` (sandbox, context isolation, no Node in the page, navigation and new windows blocked, external links opened in the system browser), a logger with rotating files in the OS logs folder, and logging of uncaught errors.
+- **Core helpers** (`src/main/core/`): `writeFileAtomic` / `writeJsonAtomic`, `readJson(path, zodSchema)`, `AppError`.
+- **IPC**: one typed contract in `src/shared/ipc.ts`; `handle()` in main returns `{ ok, value }` or `{ ok: false, error }`; the preload forwards only the contract's channels; the renderer's `invoke()` throws `IpcCallError`. Example channel: `app:getInfo`.
+- **Renderer**: React 19 with hash routing, an app shell (sidebar with Home and Settings), an error boundary, TanStack Query, Tailwind 4 theme tokens with light/dark/system switching, i18next (English, `dir`/`lang` kept in sync for right-to-left later), and Radix-based `Button`, `Dialog`, `Tooltip`.
+- **Packaging**: `build/icon.png` is a placeholder; no code signing yet.
+
 ## Scope 01: Core launcher (list, install, launch, switch versions)
 
 ### Goal

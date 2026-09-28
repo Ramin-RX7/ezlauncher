@@ -1,0 +1,37 @@
+{
+  "app": {
+    "name": "ezlauncher"
+  },
+  "nav": {
+    "home": "Home",
+    "settings": "Settings"
+  },
+  "home": {
+    "title": "Welcome",
+    "subtitle": "Offline Minecraft launcher",
+    "about": "About",
+    "loading": "Loading…",
+    "error": "Could not load app info."
+  },
+  "about": {
+    "title": "About ezlauncher",
+    "version": "Version",
+    "platform": "Platform",
+    "electron": "Electron",
+    "node": "Node.js",
+    "close": "Close"
+  },
+  "settings": {
+    "title": "Settings",
+    "theme": {
+      "label": "Theme",
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    }
+  },
+  "error": {
+    "title": "Something went wrong",
+    "reload": "Reload"
+  }
+}

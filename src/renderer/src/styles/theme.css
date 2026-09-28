@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+/*
+ * Theme tokens. Components use only these (via the Tailwind names below), never raw colours,
+ * so a theme is just a different set of values for these variables.
+ */
+:root {
+  --ezl-bg: #f4f5f7;
+  --ezl-surface: #ffffff;
+  --ezl-surface-2: #eceef1;
+  --ezl-border: #d9dde2;
+  --ezl-text: #16191d;
+  --ezl-muted: #5f6873;
+  --ezl-accent: #2f8f3a;
+  --ezl-accent-hover: #267a30;
+  --ezl-accent-contrast: #ffffff;
+  --ezl-danger: #c93636;
+  --ezl-warning: #b7791f;
+  --ezl-success: #2f8f3a;
+  --ezl-overlay: rgb(0 0 0 / 0.4);
+  --ezl-radius: 0.5rem;
+  --ezl-font-sans:
+    "Inter", "Segoe UI", system-ui, -apple-system, "Noto Sans",
+    "Helvetica Neue", Arial, sans-serif;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ezl-bg: #111315;
+    --ezl-surface: #1a1d20;
+    --ezl-surface-2: #23272b;
+    --ezl-border: #30363c;
+    --ezl-text: #e7e9eb;
+    --ezl-muted: #9aa3ab;
+    --ezl-accent: #45b24f;
+    --ezl-accent-hover: #55c25f;
+    --ezl-accent-contrast: #0b0d0e;
+    --ezl-danger: #f06262;
+    --ezl-warning: #e0a33a;
+    --ezl-success: #45b24f;
+    --ezl-overlay: rgb(0 0 0 / 0.6);
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ezl-bg: #111315;
+  --ezl-surface: #1a1d20;
+  --ezl-surface-2: #23272b;
+  --ezl-border: #30363c;
+  --ezl-text: #e7e9eb;
+  --ezl-muted: #9aa3ab;
+  --ezl-accent: #45b24f;
+  --ezl-accent-hover: #55c25f;
+  --ezl-accent-contrast: #0b0d0e;
+  --ezl-danger: #f06262;
+  --ezl-warning: #e0a33a;
+  --ezl-success: #45b24f;
+  --ezl-overlay: rgb(0 0 0 / 0.6);
+
+  color-scheme: dark;
+}
+
+/* Tailwind names for the tokens: bg-surface, text-muted, border-border, rounded-ezl, … */
+@theme inline {
+  --color-bg: var(--ezl-bg);
+  --color-surface: var(--ezl-surface);
+  --color-surface-2: var(--ezl-surface-2);
+  --color-border: var(--ezl-border);
+  --color-text: var(--ezl-text);
+  --color-muted: var(--ezl-muted);
+  --color-accent: var(--ezl-accent);
+  --color-accent-hover: var(--ezl-accent-hover);
+  --color-accent-contrast: var(--ezl-accent-contrast);
+  --color-danger: var(--ezl-danger);
+  --color-warning: var(--ezl-warning);
+  --color-success: var(--ezl-success);
+  --color-overlay: var(--ezl-overlay);
+  --radius-ezl: var(--ezl-radius);
+  --font-sans: var(--ezl-font-sans);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-bg font-sans text-text antialiased;
+    margin: 0;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ezl-accent);
+    outline-offset: 2px;
+  }
+}
