@@ -63,6 +63,7 @@ export function createPaths(dataDir: string) {
   const profiles = join(dataDir, "profiles");
   const worlds = join(dataDir, "worlds");
   const modsStore = join(dataDir, "mods-store");
+  const backups = join(dataDir, "backups");
 
   return {
     dataDir,
@@ -89,6 +90,7 @@ export function createPaths(dataDir: string) {
       join(assets, "virtual", safeId(indexId)),
     logConfig: (fileId: string) => join(assets, "log_configs", safeId(fileId)),
 
+    runtimesDir: runtimes,
     runtimeDir: (component: string) => join(runtimes, safeId(component)),
     runtimeManifest: (component: string) =>
       join(runtimes, safeId(component), "manifest.json"),
@@ -106,6 +108,13 @@ export function createPaths(dataDir: string) {
 
     /** Every world, whichever profile owns it. */
     worldsDir: worlds,
+    /** World backups: `backups/<key>/<id>.zip` plus the folder's `index.json`. */
+    backupsDir: backups,
+    backupDir: (key: string) => join(backups, safeFolderName(key)),
+    backupFile: (key: string, id: string) =>
+      join(backups, safeFolderName(key), `${safeId(id)}.zip`),
+    backupIndex: (key: string) =>
+      join(backups, safeFolderName(key), "index.json"),
     worldDir: (worldId: string) => join(worlds, safeFolderName(worldId)),
 
     modsStoreDir: modsStore,
@@ -120,6 +129,9 @@ export function createPaths(dataDir: string) {
       join(dataDir, "dev-games", safeId(versionId)),
 
     launcherFile: (name: string) => join(launcher, name),
+    /** A cached patch-notes entry (by its id in Mojang's feed). */
+    patchNotesEntry: (entryId: string) =>
+      join(launcher, "patch-notes", `${safeId(entryId)}.json`),
     /** Cached list of the Minecraft versions a mod loader supports. */
     loaderCache: (loaderId: string) =>
       join(launcher, "loaders", `${safeId(loaderId)}.json`),

@@ -67,6 +67,44 @@ describe("mod library", () => {
     ]);
   });
 
+  it("records dependencies, and a mod the user adds stays theirs", async () => {
+    const lib = createModLibrary({ paths });
+    const api = fabricMod("fabric-api", "0.90.0");
+    const sodium = fabricJar({
+      schemaVersion: 1,
+      id: "sodium",
+      version: "0.5.0",
+      depends: { "fabric-api": "*" },
+    });
+    await mkdir(paths.modsStoreDir, { recursive: true });
+    for (const jar of [api, sodium])
+      await writeFile(paths.modStoreFile(sha1(jar)), jar);
+    const source = {
+      sourceId: "fake",
+      projectId: "p",
+      versionId: "v",
+      pageUrl: "https://fake",
+    };
+    await lib.addStored([
+      { sha1: sha1(sodium), fileName: "sodium.jar", source, addedAs: "user" },
+      { sha1: sha1(api), fileName: "api.jar", source, addedAs: "dependency" },
+    ]);
+    const byName = async (id: string) =>
+      (await lib.list()).find((m) => m.modId === id);
+    expect(await byName("fabric-api")).toMatchObject({
+      dependency: true,
+      neededBy: [sha1(sodium)],
+    });
+    expect((await byName("sodium"))?.dependency).toBe(false);
+
+    // Adding it yourself promotes it; a later download never demotes it.
+    await lib.add([await download("api.jar", api)]);
+    await lib.addStored([
+      { sha1: sha1(api), fileName: "api.jar", source, addedAs: "dependency" },
+    ]);
+    expect((await byName("fabric-api"))?.dependency).toBe(false);
+  });
+
   it("shares one stored file between two profiles (hard links)", async () => {
     const lib = createModLibrary({ paths });
     const [mod] = await lib.add([

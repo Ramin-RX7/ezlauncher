@@ -12,6 +12,8 @@ export interface DialogProps {
   closeLabel: string;
   children?: ReactNode;
   footer?: ReactNode;
+  /** A wider dialog, for reading (e.g. a changelog). */
+  wide?: boolean;
 }
 
 export function Dialog({
@@ -23,6 +25,7 @@ export function Dialog({
   closeLabel,
   children,
   footer,
+  wide = false,
 }: DialogProps) {
   const rootProps = {
     ...(open !== undefined && { open }),
@@ -33,7 +36,9 @@ export function Dialog({
       {trigger && <RadixDialog.Trigger asChild>{trigger}</RadixDialog.Trigger>}
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 bg-overlay" />
-        <RadixDialog.Content className="fixed inset-0 m-auto h-fit w-[min(90vw,28rem)] rounded-ezl border border-border bg-surface p-6 shadow-xl">
+        <RadixDialog.Content
+          className={`fixed inset-0 m-auto h-fit rounded-ezl border border-border bg-surface p-6 shadow-xl ${wide ? "w-[min(92vw,48rem)]" : "w-[min(90vw,28rem)]"}`}
+        >
           <div className="flex items-start justify-between gap-4">
             <RadixDialog.Title className="text-lg font-semibold">
               {title}

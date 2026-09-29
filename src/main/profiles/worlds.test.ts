@@ -14,6 +14,7 @@ import { createPaths, type Paths } from "../minecraft/paths";
 import { isLink, removeTree } from "./links";
 import { makeLevelDat } from "./testing/levelDat";
 import {
+  copyProfileWorlds,
   deleteWorld,
   listOrphans,
   listWorlds,
@@ -205,5 +206,32 @@ describe("deleting", () => {
     await deleteWorld(paths, "Bye");
     await expect(stat(paths.worldDir("Bye"))).rejects.toThrow();
     expect(await savesOf(A)).toEqual([]);
+  });
+
+  it("copies a profile's worlds for a duplicate; the copies belong to it", async () => {
+    await gameWorld(A, "Survival");
+    await sync();
+    // Minecraft's lock file isn't copied.
+    await writeFile(join(paths.worldDir("Survival"), "session.lock"), "x");
+
+    expect(await copyProfileWorlds(paths, A, B)).toBe(1);
+    await sync([B]);
+
+    const copies = await listWorlds(paths, B);
+    expect(copies).toHaveLength(1);
+    const copy = copies[0]!;
+    expect(copy.id).not.toBe("Survival"); // its own folder in worlds/
+    expect(await readWorldOwner(paths, copy.id)).toBe(B);
+    expect(await readWorldOwner(paths, "Survival")).toBe(A); // original untouched
+    expect(
+      await readFile(
+        join(paths.worldDir(copy.id), "region", "r.0.0.mca"),
+        "utf8",
+      ),
+    ).toBe("chunks");
+    await expect(
+      stat(join(paths.worldDir(copy.id), "session.lock")),
+    ).rejects.toThrow();
+    expect((await listWorlds(paths, A)).map((w) => w.id)).toEqual(["Survival"]);
   });
 });

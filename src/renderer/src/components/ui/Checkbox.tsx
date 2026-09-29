@@ -6,15 +6,20 @@ export function Checkbox({
   checked,
   onChange,
   children,
+  disabled = false,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   children: ReactNode;
+  disabled?: boolean;
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 text-sm">
+    <label
+      className={`flex items-center gap-2 text-sm ${disabled ? "cursor-default opacity-60" : "cursor-pointer"}`}
+    >
       <RadixCheckbox.Root
         checked={checked}
+        disabled={disabled}
         onCheckedChange={(c) => {
           onChange(c === true);
         }}

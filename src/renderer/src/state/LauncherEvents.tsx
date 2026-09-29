@@ -26,6 +26,14 @@ export function LauncherEvents() {
   useIpcEvent("install:progress", (p) => {
     launcherStore.installProgress(p);
   });
+  useIpcEvent("backup:state", (e) => {
+    launcherStore.backupState(e);
+    if (e.status !== "running")
+      void queryClient.invalidateQueries({ queryKey: ["backups"] });
+  });
+  useIpcEvent("backup:progress", (p) => {
+    launcherStore.backupProgress(p);
+  });
   useIpcEvent("game:started", (g) => {
     launcherStore.gameStarted(g);
   });
@@ -38,6 +46,7 @@ export function LauncherEvents() {
   useIpcEvent("profiles:changed", () => {
     void queryClient.invalidateQueries({ queryKey: ["profiles"] });
     void queryClient.invalidateQueries({ queryKey: ["worlds"] });
+    void queryClient.invalidateQueries({ queryKey: ["backups"] });
     void queryClient.invalidateQueries({ queryKey: ["versions"] });
     void queryClient.invalidateQueries({ queryKey: ["mods"] });
   });

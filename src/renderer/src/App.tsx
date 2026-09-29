@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { HashRouter, Route, Routes } from "react-router";
 import {
   QueryClientProvider,
@@ -22,6 +24,10 @@ import { ThemeProvider } from "./theme/ThemeProvider";
 /** Shows the first-run setup until a data folder is chosen, then the launcher. */
 function Root() {
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  useEffect(() => {
+    document.title = t("app.name");
+  }, [t]);
   const setup = useQuery({
     queryKey: ["setup"],
     queryFn: () => invoke("setup:getState"),

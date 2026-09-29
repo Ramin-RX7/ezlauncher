@@ -52,7 +52,7 @@ export function pickJavaPlatform(
   );
 }
 
-async function loadJavaAll(
+export async function loadJavaAll(
   paths: Paths,
   downloader: Downloader,
   signal?: AbortSignal,

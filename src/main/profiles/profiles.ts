@@ -16,12 +16,14 @@ const idString = z.string().refine((s) => {
 
 const memorySchema = z.number().int().min(512).max(65536);
 const argsSchema = z.array(z.string().max(4096)).max(200);
+const iconSchema = z.string().max(64);
 
 const profileSchema = z.object({
   id: idString,
   name: z.string().min(1).max(PROFILE_NAME_MAX),
   gameVersion: idString,
   loader: z.object({ id: idString }).nullable(),
+  iconId: iconSchema.optional(),
   installedVersionId: idString.optional(),
   memoryMaxMb: memorySchema.optional(),
   extraJvmArgs: argsSchema.optional(),
@@ -41,6 +43,7 @@ const inputSchema = z
     name: z.string().trim().min(1).max(PROFILE_NAME_MAX),
     gameVersion: idString,
     loader: z.object({ id: idString }).strict().nullable(),
+    iconId: iconSchema.nullable().optional(),
     memoryMaxMb: memorySchema.nullable().optional(),
     extraJvmArgs: argsSchema.nullable().optional(),
     extraGameArgs: argsSchema.nullable().optional(),
@@ -62,6 +65,8 @@ type Input = z.infer<typeof inputSchema>;
 
 function applyOptional(profile: Profile, input: Partial<Input>): Profile {
   const next = { ...profile };
+  if (input.iconId === null) delete next.iconId;
+  else if (input.iconId !== undefined) next.iconId = input.iconId;
   if (input.memoryMaxMb === null) delete next.memoryMaxMb;
   else if (input.memoryMaxMb !== undefined)
     next.memoryMaxMb = input.memoryMaxMb;

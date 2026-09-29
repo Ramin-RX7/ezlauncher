@@ -21,6 +21,7 @@ import type { Logger } from "../core/logger";
 import type { Paths } from "../minecraft/paths";
 import { sha1File } from "../minecraft/verify";
 import { checkCompat, rangeText } from "./compat";
+import { isDependencyOnly, libraryNeededBy } from "./libraryDeps";
 import { createHardLink, sameFile } from "./links";
 import { readModInfo } from "./modInfo";
 
@@ -84,6 +85,11 @@ const metaSchema = z.object({
     .optional(),
   /** When the mod sources were last asked about this file. */
   sourceCheckedAt: z.string().optional(),
+  /**
+   * How it entered the library: added by the user, or pulled in as another mod's
+   * dependency. Missing (older entries) = inferred from the other mods' metadata.
+   */
+  addedAs: z.enum(["user", "dependency"]).optional(),
 });
 export type ModMeta = z.infer<typeof metaSchema>;
 export type ModSourceRef = NonNullable<ModMeta["source"]>;
@@ -236,6 +242,12 @@ export function createModLibrary({
     data.mods[sha1] ??= await describe(sha1, fileName);
   }
 
+  /** The user added this mod themselves: it's never shown as only a dependency. */
+  function markUser(data: ModsFile, sha1: string) {
+    const meta = data.mods[sha1];
+    if (meta) meta.addedAs = "user";
+  }
+
   /** A free file name in a profile's mods folder for this mod. */
   async function freeName(profileId: string, meta: ModMeta, sha1: string) {
     const dir = paths.modsDir(profileId);
@@ -325,6 +337,7 @@ export function createModLibrary({
       copied = mode === "copied";
     }
     await ensureMeta(data, sha1, fileName);
+    markUser(data, sha1);
     (data.links[profileId] ??= {})[fileName] = {
       sha1,
       ...(copied && { copied: true }),
@@ -395,6 +408,7 @@ export function createModLibrary({
           addedAt: old.addedAt,
           ...(old.source && { source: old.source }),
           ...(old.sourceCheckedAt && { sourceCheckedAt: old.sourceCheckedAt }),
+          ...(old.addedAs && { addedAs: old.addedAs }),
         };
       } catch (err) {
         logger?.warn(`reading ${old.fileName} again failed`, err);
@@ -465,10 +479,12 @@ export function createModLibrary({
       return serial(async () => {
         const data = await load();
         const users = usage(data);
+        const needed = libraryNeededBy(data.mods);
         const links = profile ? (data.links[profile.id] ?? {}) : {};
         return Object.entries(data.mods)
           .map(([sha1, meta]): LibraryMod => {
             const entry = Object.values(links).find((e) => e.sha1 === sha1);
+            const neededBy = needed.get(sha1) ?? [];
             return {
               sha1,
               fileName: meta.fileName,
@@ -491,6 +507,8 @@ export function createModLibrary({
               }),
               checked:
                 meta.source !== undefined || meta.sourceCheckedAt !== undefined,
+              dependency: isDependencyOnly(meta, neededBy),
+              neededBy,
               ...(profile && {
                 enabled: entry !== undefined,
                 ...(entry?.copied && { copied: true }),
@@ -512,6 +530,7 @@ export function createModLibrary({
         for (const path of files) {
           const { sha1, added } = await storeCopy(path);
           await ensureMeta(data, sha1, basename(path));
+          markUser(data, sha1);
           results.push({ sha1, added, fileName: basename(path) });
         }
         await save(data);
@@ -532,6 +551,8 @@ export function createModLibrary({
         sha1: string;
         fileName: string;
         source: ModSourceRef;
+        /** Only ever promotes: a mod the user added stays theirs. */
+        addedAs?: "user" | "dependency";
       }[],
     ): Promise<void> {
       return serial(async () => {
@@ -547,6 +568,8 @@ export function createModLibrary({
           if (meta) {
             meta.source = f.source;
             meta.sourceCheckedAt = now().toISOString();
+            if (f.addedAs === "user") meta.addedAs = "user";
+            else if (f.addedAs && !meta.addedAs) meta.addedAs = f.addedAs;
           }
         }
         await save(data);

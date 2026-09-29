@@ -25,7 +25,9 @@ export function SetupPage({
     <main className="flex h-full items-center justify-center p-8">
       <div className="flex w-full max-w-lg flex-col gap-6 rounded-ezl border border-border bg-surface p-8">
         <div>
-          <h1 className="text-2xl font-semibold">{t("setup.title")}</h1>
+          <h1 className="text-2xl font-semibold">
+            {t("setup.title", { name: t("app.name") })}
+          </h1>
           <p className="mt-2 text-sm text-muted">{t("setup.subtitle")}</p>
         </div>
         <div className="flex flex-col gap-2">

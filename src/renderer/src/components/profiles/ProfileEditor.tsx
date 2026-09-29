@@ -1,9 +1,10 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { joinArgs, splitArgs } from "@shared/args";
 import {
   PROFILE_NAME_MAX,
+  type ApplyModsResult,
   type Profile,
   type ProfileInput,
 } from "@shared/launcher";
@@ -24,6 +25,7 @@ import { Select } from "../ui/Select";
 import { VersionList } from "../versions/VersionList";
 import { VersionRefresh } from "../versions/VersionRefresh";
 import { visibleTypes } from "../versions/versionTypes";
+import { IconPicker } from "./IconPicker";
 
 const VANILLA = "vanilla";
 const MEMORY_MIN = 512;
@@ -52,6 +54,7 @@ export function ProfileEditor({
   const settings = useSettings();
 
   const [name, setName] = useState(profile?.name ?? "");
+  const [iconId, setIconId] = useState<string | undefined>(profile?.iconId);
   const [gameVersion, setGameVersion] = useState<string | undefined>(
     profile?.gameVersion,
   );
@@ -76,6 +79,8 @@ export function ProfileEditor({
     joinArgs(profile?.extraGameArgs ?? []),
   );
   const [confirming, setConfirming] = useState(false);
+  // Changing an existing profile's version or loader is rare: it starts folded away.
+  const [versionOpen, setVersionOpen] = useState(profile === undefined);
   const [saved, setSaved] = useState(false);
 
   const list = useMemo(() => versions.data?.versions ?? [], [versions.data]);
@@ -125,10 +130,16 @@ export function ProfileEditor({
     name: trimmedName,
     gameVersion: gameVersion ?? "",
     loader: loaderId ? { id: loaderId } : null,
+    iconId: iconId ?? null,
     memoryMaxMb: globalMemory ? null : memoryNumber,
     extraJvmArgs: globalJvm || "error" in jvmSplit ? null : jvmSplit.args,
     extraGameArgs: globalGame || "error" in gameSplit ? null : gameSplit.args,
   });
+
+  // After a version/loader change, offer to re-fetch the profile's mods.
+  const offerApply = useRef(false);
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [applyResult, setApplyResult] = useState<ApplyModsResult | null>(null);
 
   const save = useMutation({
     mutationFn: (data: ProfileInput) =>
@@ -139,6 +150,19 @@ export function ProfileEditor({
       void queryClient.invalidateQueries({ queryKey: keys.profiles });
       setSaved(true);
       onSaved(result);
+      if (offerApply.current) {
+        setApplyResult(null);
+        setApplyOpen(true);
+      }
+    },
+  });
+
+  const applyMods = useMutation({
+    mutationFn: (id: string) => invoke("mods:applyForProfile", id),
+    onSuccess: (result) => {
+      setApplyResult(result);
+      void queryClient.invalidateQueries({ queryKey: ["mods"] });
+      void queryClient.invalidateQueries({ queryKey: keys.profiles });
     },
   });
 
@@ -147,15 +171,20 @@ export function ProfileEditor({
     (gameVersion !== profile.gameVersion ||
       loaderId !== (profile.loader?.id ?? null));
 
+  const doSave = (data: ProfileInput) => {
+    offerApply.current = changesInstall && data.loader !== null;
+    save.mutate(data);
+  };
+
   const submit = () => {
     if (!valid) return;
     if (changesInstall) setConfirming(true);
-    else save.mutate(input());
+    else doSave(input());
   };
 
   return (
     <form
-      className="flex min-h-0 flex-1 flex-col gap-4"
+      className="flex shrink-0 flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault();
         submit();
@@ -171,9 +200,19 @@ export function ProfileEditor({
       )}
       <fieldset
         disabled={running}
-        className="flex min-h-0 flex-1 flex-col gap-4 disabled:opacity-60"
+        className="flex flex-col gap-4 disabled:opacity-60"
       >
-        <div className="flex flex-wrap items-end gap-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-muted">{t("profiles.editor.icon")}</span>
+            <IconPicker
+              value={iconId}
+              onChange={(id) => {
+                setIconId(id);
+                setSaved(false);
+              }}
+            />
+          </div>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-muted">{t("profiles.editor.name")}</span>
             <Input
@@ -187,51 +226,95 @@ export function ProfileEditor({
               className="w-64"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted">{t("profiles.editor.loader")}</span>
-            <Select
-              aria-label={t("profiles.editor.loader")}
-              value={loaderId ?? VANILLA}
-              className="w-56"
-              onChange={(v) => {
-                setLoaderId(v === VANILLA ? null : v);
-                setSaved(false);
-              }}
-              options={[
-                { value: VANILLA, label: t("loaders.vanilla") },
-                ...(loaders.data ?? []).map((l) => {
-                  const ok = supports(l.id);
-                  return {
-                    value: l.id,
-                    label: ok
-                      ? l.displayName
-                      : t("loaders.unsupported", { name: l.displayName }),
-                    disabled: !ok,
-                  };
-                }),
-              ]}
-            />
-          </label>
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-muted">{t("profiles.editor.version")}</span>
-            <span className="h-9 content-center font-medium">
-              {gameVersion ?? t("profiles.editor.pickVersion")}
-            </span>
-          </div>
         </div>
 
-        <VersionRefresh />
-        <div className="flex h-80 min-h-0 flex-col">
-          <VersionList
-            versions={list}
-            types={visibleTypes(settings.data)}
-            selectedId={gameVersion}
-            onSelect={(id) => {
-              setGameVersion(id);
-              setSaved(false);
-            }}
-          />
-        </div>
+        {versionOpen ? (
+          // Version, then loader: the loaders offered depend on the version.
+          <div className="flex w-full max-w-4xl flex-col gap-4">
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-muted">{t("profiles.editor.version")}</span>
+              <div className="flex h-9 items-center gap-3">
+                <span className="font-medium">
+                  {gameVersion ?? t("profiles.editor.pickVersion")}
+                </span>
+                {profile && (
+                  <Button
+                    onClick={() => {
+                      // Keep the profile as it is.
+                      setGameVersion(profile.gameVersion);
+                      setLoaderId(profile.loader?.id ?? null);
+                      setVersionOpen(false);
+                    }}
+                  >
+                    {t("profiles.editor.keepVersion")}
+                  </Button>
+                )}
+              </div>
+            </div>
+            {/* Enough rows to pick from, whatever the window size (the page scrolls). */}
+            <div className="flex h-[min(32rem,60vh)] min-h-80 shrink-0 flex-col">
+              <VersionList
+                toolbar={<VersionRefresh />}
+                versions={list}
+                types={visibleTypes(settings.data)}
+                selectedId={gameVersion}
+                onSelect={(id) => {
+                  setGameVersion(id);
+                  setSaved(false);
+                }}
+              />
+            </div>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-muted">{t("profiles.editor.loader")}</span>
+              <Select
+                aria-label={t("profiles.editor.loader")}
+                value={loaderId ?? VANILLA}
+                className="w-56"
+                onChange={(v) => {
+                  setLoaderId(v === VANILLA ? null : v);
+                  setSaved(false);
+                }}
+                options={[
+                  { value: VANILLA, label: t("loaders.vanilla") },
+                  ...(loaders.data ?? []).map((l) => {
+                    const ok = supports(l.id);
+                    return {
+                      value: l.id,
+                      label: ok
+                        ? l.displayName
+                        : t("loaders.unsupported", { name: l.displayName }),
+                      disabled: !ok,
+                    };
+                  }),
+                ]}
+              />
+            </label>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-muted">
+              {t("profiles.editor.versionAndLoader")}
+            </span>
+            <div className="flex h-9 items-center gap-3">
+              <span className="font-medium">
+                {[
+                  gameVersion,
+                  loaderId
+                    ? (loaders.data?.find((l) => l.id === loaderId)
+                        ?.displayName ?? loaderId)
+                    : t("loaders.vanilla"),
+                ].join(" · ")}
+              </span>
+              <Button
+                onClick={() => {
+                  setVersionOpen(true);
+                }}
+              >
+                {t("profiles.editor.changeVersion")}
+              </Button>
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1 text-sm">
@@ -370,7 +453,7 @@ export function ProfileEditor({
               variant="danger"
               onClick={() => {
                 setConfirming(false);
-                save.mutate(input());
+                doSave(input());
               }}
             >
               {t("profiles.changeWarning.confirm")}
@@ -378,6 +461,83 @@ export function ProfileEditor({
           </>
         }
       />
+
+      <Dialog
+        open={applyOpen}
+        onOpenChange={(o) => {
+          if (!applyMods.isPending) setApplyOpen(o);
+        }}
+        title={t("profiles.applyMods.title")}
+        closeLabel={t("profiles.applyMods.close")}
+        footer={
+          applyResult ? (
+            <Button
+              variant="primary"
+              onClick={() => {
+                setApplyOpen(false);
+              }}
+            >
+              {t("profiles.applyMods.close")}
+            </Button>
+          ) : (
+            <>
+              <Button
+                disabled={applyMods.isPending}
+                onClick={() => {
+                  setApplyOpen(false);
+                }}
+              >
+                {t("profiles.applyMods.skip")}
+              </Button>
+              <Button
+                variant="primary"
+                disabled={applyMods.isPending}
+                onClick={() => {
+                  if (profile) applyMods.mutate(profile.id);
+                }}
+              >
+                {t("profiles.applyMods.update")}
+              </Button>
+            </>
+          )
+        }
+      >
+        {applyResult ? (
+          <div className="flex flex-col gap-2 text-sm">
+            <p>
+              {t("profiles.applyMods.downloaded", {
+                count: applyResult.downloaded,
+              })}
+            </p>
+            {applyResult.disabled.length > 0 && (
+              <p className="text-warning">
+                {t("profiles.applyMods.disabled", {
+                  count: applyResult.disabled.length,
+                  names: applyResult.disabled.map((d) => d.name).join(", "),
+                })}
+              </p>
+            )}
+            {applyResult.unresolved.length > 0 && (
+              <p className="text-muted">
+                {t("profiles.applyMods.unresolved", {
+                  count: applyResult.unresolved.length,
+                  names: applyResult.unresolved.map((d) => d.name).join(", "),
+                })}
+              </p>
+            )}
+          </div>
+        ) : applyMods.isError ? (
+          <p className="text-sm text-danger">
+            {errorMessage(t, applyMods.error)}
+          </p>
+        ) : (
+          <p className="text-sm text-muted">
+            {applyMods.isPending
+              ? t("profiles.applyMods.working")
+              : t("profiles.applyMods.body")}
+          </p>
+        )}
+      </Dialog>
     </form>
   );
 }

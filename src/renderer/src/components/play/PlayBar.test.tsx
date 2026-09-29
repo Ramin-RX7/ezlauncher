@@ -22,11 +22,14 @@ import {
   steve,
 } from "../../test/fixtures";
 import { mockApi } from "../../test/mockApi";
+import { AccountPicker } from "../accounts/AccountPicker";
 import { PlayBar } from "./PlayBar";
 
+/** The Play bar, with the top bar's account picker next to it. */
 function renderBar(p: ProfileInfo | undefined, profiles: ProfileInfo[] = []) {
   render(
     <QueryClientProvider client={createQueryClient()}>
+      <AccountPicker />
       <PlayBar profile={p} profiles={profiles} />
     </QueryClientProvider>,
   );
@@ -84,7 +87,9 @@ describe("PlayBar", () => {
     });
     renderBar(undefined);
     expect(
-      await screen.findByText("Pick a profile and an account to play."),
+      await screen.findByText(
+        "Pick a profile, and an account in the top bar, to play.",
+      ),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Install & Play/ }),
@@ -99,7 +104,9 @@ describe("PlayBar", () => {
     });
     renderBar(profile());
     expect(
-      await screen.findByText("Create or pick an account to play."),
+      await screen.findByText(
+        "Create or pick an account in the top bar to play.",
+      ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Play" })).toBeDisabled();
     // The account has to be chosen explicitly.
@@ -304,7 +311,7 @@ describe("PlayBar", () => {
     renderBar(profile({ running: 1 }));
     expect(
       await screen.findByText(
-        "Steve is already playing this profile. Pick another account to play it again.",
+        "Steve is already playing this profile. Pick another account in the top bar to play it again.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Play another" })).toBeDisabled();
@@ -339,11 +346,14 @@ describe("PlayBar", () => {
       "settings:update": (patch) => settings(patch as object),
     });
     renderBar(profile());
-    const input = await screen.findByLabelText("Create account");
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create account" }),
+    );
+    const input = await screen.findByLabelText("New account's name");
     fireEvent.change(input, { target: { value: "no spaces!" } });
     expect(input).toHaveAttribute("aria-invalid", "true");
     fireEvent.change(input, { target: { value: "Alex" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add account" }));
     await waitFor(() => {
       expect(api.invoke).toHaveBeenCalledWith("account:add", "Alex");
     });

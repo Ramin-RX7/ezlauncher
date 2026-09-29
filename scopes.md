@@ -602,6 +602,42 @@ Saved in `launcher/settings.json` (atomic write). Sections:
 
 ---
 
+## Scope 07: Backups, library tools and UI polish (done)
+
+### Goal
+
+Protect worlds with backups, make the mod library and profiles easier to manage, show what each version changed, manage Java, and polish the UI.
+
+### Items
+
+- **World backups**:
+  - **Storage**: one `.zip` per backup in `backups/<key>/`, with an `index.json` per world.
+  - **By hand**: from a profile's Worlds tab (one world or all); refused while the profile's game runs.
+  - **Automatic**: on every launch, or every N days. It runs before the game starts or after it closes, as the user chooses (Play waits for a before-start backup, and Skip still starts the game).
+  - **Unchanged worlds**: a world that hasn't changed since its newest backup (same file names, sizes and modified times) isn't backed up again.
+  - **Retention**: at most N backups per world, and none older than D days. Either limit can be off. The newest backup of each world is never deleted automatically.
+  - **Restore**: always as a new world in the profile; the current world is never overwritten.
+  - **Progress**: a bar in the top bar, with Cancel. Settings shows total size and the backups of deleted worlds.
+- **Downloading mods for specific Minecraft versions**:
+  - **For a version**: in the Mod library, pick a version and a loader, and the matching version of every library mod from a mod site is downloaded.
+  - **After a version change**: when a profile's version or loader changes, the user is offered to switch its mods to matching versions. Mods with none are disabled but kept in the library.
+  - **Library view**: mods that are only there as another mod's dependency are shown under that mod, not as rows of their own.
+- **Changelog of Minecraft versions**: Mojang's patch notes for each version, on the Versions tab and wherever a version is picked. The HTML is rebuilt from safe elements only and never injected. Versions before 1.13 get a Minecraft Wiki link instead.
+- **Profile duplication**: settings, icon and enabled mods are copied. Worlds are copied only when the user ticks it (off by default), and the copies belong to the new profile.
+- **Profile icons**: built-in pixel-art icons, picked from a dropdown, shown in the profile list, the profile page and the Play bar.
+- **Java version management** (Settings → Java): the Mojang Java runtimes for this computer can be installed, checked and removed. Java already installed on the computer is shown too.
+- **UI/UX improvements**:
+  - the app is named **EZLauncher**, from one source;
+  - a top tab navbar with the account picker;
+  - a Play button on every profile row;
+  - right-click menus on profile and version rows;
+  - search on Home and on the Versions tab;
+  - a tidier profile form: the version picker is folded away when editing, and the loader sits under the version list;
+  - only the page scrolls, never the whole window.
+  - much more minor items for better UI/UX
+
+---
+
 ## Parked decisions (do NOT implement yet)
 
 Decisions already made for future scopes. Only build them when the matching scope is written above.

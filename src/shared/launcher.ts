@@ -48,7 +48,13 @@ export interface LaunchRequest {
 }
 
 export type LaunchResult =
-  | { status: "started"; game: RunningGame; warnings: number }
+  | {
+      status: "started";
+      game: RunningGame;
+      warnings: number;
+      /** Worlds whose backup before the start failed (the game started anyway). */
+      backupFailed?: string[];
+    }
   /** Mod errors were found; nothing was started. */
   | { status: "blocked"; report: ValidationReport };
 
@@ -62,6 +68,8 @@ export interface Profile {
   gameVersion: string;
   /** null = Vanilla. The loader build is the latest one at install time. */
   loader: { id: string } | null;
+  /** A built-in profile icon id (renderer asset). Missing = the default icon. */
+  iconId?: string;
   /** The version actually installed for this profile, e.g. `fabric-loader-0.19.5-1.18.2`. */
   installedVersionId?: string;
   /** Missing = use the global setting. */
@@ -79,6 +87,8 @@ export interface ProfileInput {
   name: string;
   gameVersion: string;
   loader: { id: string } | null;
+  /** A built-in icon id, or `null` to clear it. */
+  iconId?: string | null;
   memoryMaxMb?: number | null;
   extraJvmArgs?: string[] | null;
   extraGameArgs?: string[] | null;
@@ -98,6 +108,10 @@ export interface WorldInfo {
   lastPlayed?: string;
   /** false = a real folder in the profile's `saves/` because a link couldn't be made; it can't be moved. */
   linked: boolean;
+  /** When its newest backup was made (ISO date). */
+  lastBackupAt?: string;
+  /** How many backups it has. */
+  backupCount?: number;
 }
 
 /** A world whose owner profile no longer exists. */
@@ -147,6 +161,10 @@ export interface LibraryMod {
   source?: { sourceId: string; projectId: string; pageUrl: string };
   /** false = the mod sources haven't been asked about it yet (e.g. offline). */
   checked: boolean;
+  /** Only in the library as another mod's dependency (not added by the user). */
+  dependency?: boolean;
+  /** Library mods (sha1s) that depend on this one. */
+  neededBy?: string[];
 }
 
 /** One exact match from a mod source, as a confirm card. */
@@ -186,6 +204,32 @@ export interface ModDownloadProgress {
   totalFiles: number;
   bytes: number;
   totalBytes: number;
+}
+
+/** Progress of a bulk download (library-wide, or re-applying a profile's mods). */
+export interface ModBulkProgress {
+  files: number;
+  totalFiles: number;
+  bytes: number;
+  totalBytes: number;
+}
+
+/** Result of "download all library mods for a version". */
+export interface BulkDownloadResult {
+  /** Mods whose compatible version was downloaded (or already present). */
+  downloaded: number;
+  /** Mods with no version for the target. */
+  skipped: { name: string }[];
+}
+
+/** Result of re-applying a profile's mods after a version change. */
+export interface ApplyModsResult {
+  /** Mods switched to the version that fits the new target. */
+  downloaded: number;
+  /** Enabled sourced mods with no compatible version: disabled, kept in the library. */
+  disabled: { name: string }[];
+  /** Enabled mods with no known source: left as they are (can't be re-fetched). */
+  unresolved: { name: string }[];
 }
 
 /** What's wrong with an enabled mod (Scope 05). Turned into text by the renderer. */
@@ -303,6 +347,11 @@ export interface InstallStateEvent {
 
 export type OnGameStart = "keep" | "minimize" | "close";
 
+/** Automatic world backups: never, on every launch, or every N days. */
+export type BackupAuto = "off" | "launch" | "interval";
+/** When an automatic backup is made: before the game starts, or after it closes. */
+export type BackupWhen = "beforeStart" | "afterExit";
+
 export interface LauncherSettings {
   /** Default `-Xmx` in MB; a profile can replace it. */
   memoryMaxMb: number;
@@ -315,6 +364,14 @@ export interface LauncherSettings {
   showSnapshots: boolean;
   showOldBeta: boolean;
   showOldAlpha: boolean;
+  backupAuto: BackupAuto;
+  backupWhen: BackupWhen;
+  /** For `backupAuto: "interval"`: back up when the last backup is this many days old. */
+  backupIntervalDays: number;
+  /** Keep at most this many backups per world; null = no limit. */
+  backupKeepCount: number | null;
+  /** Delete backups older than this many days; null = no limit. A world's newest is always kept. */
+  backupKeepDays: number | null;
   /** Last selected profile and account on the home screen. */
   selectedProfileId: string | null;
   selectedAccountId: string | null;
@@ -363,3 +420,102 @@ export interface RunningGame {
 }
 
 export const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,16}$/;
+
+/** A Java runtime the launcher downloads from Mojang (Settings → Java). */
+export interface JavaRuntimeInfo {
+  /** Mojang's component name, e.g. `java-runtime-delta`. */
+  component: string;
+  /** Full version, e.g. `21.0.7`, when known. */
+  versionName?: string;
+  /** Major version, e.g. 21. */
+  major?: number;
+  installed: boolean;
+  /** Mojang offers it for this computer (false offline, or no longer listed). */
+  available: boolean;
+  /** Bytes on disk when installed, or to download otherwise (when known). */
+  sizeBytes?: number;
+  /** Installed Minecraft versions that run on it. */
+  usedBy: string[];
+}
+
+/** Java found on the computer outside the launcher (shown, not managed). */
+export interface SystemJavaInfo {
+  /** The Java home folder. */
+  home: string;
+  executable: string;
+  version?: string;
+  major?: number;
+  vendor?: string;
+}
+
+export interface JavaListResult {
+  runtimes: JavaRuntimeInfo[];
+  system: SystemJavaInfo[];
+  /** Mojang's runtime list couldn't be fetched and there is no saved copy. */
+  offline: boolean;
+}
+
+export interface JavaInstallProgress {
+  component: string;
+  files: number;
+  totalFiles: number;
+  bytes: number;
+  totalBytes: number;
+}
+
+/** Mojang's patch notes for one version (its changelog). */
+export interface PatchNotes {
+  title: string;
+  version: string;
+  type: string;
+  /** ISO date. */
+  date: string;
+  /** HTML from Mojang; the renderer rebuilds only safe elements, never injects it. */
+  body: string;
+}
+
+/** One backup of a world (a zip in `backups/`). */
+export interface WorldBackup {
+  id: string;
+  /** ISO date. */
+  createdAt: string;
+  /** Size of the zip. */
+  sizeBytes: number;
+  /** Size of the world when it was backed up. */
+  worldBytes: number;
+  reason: "manual" | "auto";
+}
+
+export interface BackupProgress {
+  profileId: string;
+  worldId: string;
+  worldName: string;
+  /** Which world of the job (1-based) and how many there are. */
+  index: number;
+  total: number;
+  bytes: number;
+  totalBytes: number;
+  /** Runs before the game starts: cancelling skips it and the game still starts. */
+  beforeStart: boolean;
+}
+
+export interface BackupStateEvent {
+  status: "running" | "done" | "failed" | "cancelled";
+  profileId: string;
+  beforeStart: boolean;
+}
+
+/** What a backup job did, by world name. */
+export interface BackupResult {
+  created: string[];
+  /** Not changed since their last backup. */
+  unchanged: string[];
+  failed: { name: string; code: string }[];
+}
+
+export interface BackupSummary {
+  count: number;
+  totalBytes: number;
+  /** Backups of worlds that no longer exist. */
+  orphans: { worlds: number; count: number; totalBytes: number };
+}

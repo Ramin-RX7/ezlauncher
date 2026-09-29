@@ -47,6 +47,7 @@ describe("ProfileEditor", () => {
         gameVersion: "1.18.2",
         loader: { id: "quilt" },
         // Everything else uses the global settings.
+        iconId: null,
         memoryMaxMb: null,
         extraJvmArgs: null,
         extraGameArgs: null,
@@ -139,6 +140,9 @@ describe("ProfileEditor", () => {
       }),
     });
     renderEditor({ profile: profile() });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change version or loader" }),
+    );
     fireEvent.click(await screen.findByText("26.3"));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(
@@ -183,5 +187,66 @@ describe("ProfileEditor", () => {
     expect(
       screen.queryByText(/can break this profile/),
     ).not.toBeInTheDocument();
+  });
+
+  it("saves the chosen icon", async () => {
+    const api = setup({
+      "profiles:create": (input) => ({ ...profile(), ...(input as object) }),
+    });
+    renderEditor();
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Creepy" },
+    });
+    fireEvent.click(await screen.findByText("1.18.2"));
+    fireEvent.click(screen.getByRole("button", { name: "Icon" }));
+    fireEvent.click(await screen.findByRole("button", { name: "creeper" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create profile" }));
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith(
+        "profiles:create",
+        expect.objectContaining({ iconId: "creeper" }),
+      );
+    });
+  });
+
+  it("offers to update mods after a version change", async () => {
+    const api = setup({
+      "profiles:update": (_id, patch) => ({
+        ...profile(),
+        ...(patch as object),
+      }),
+      "mods:applyForProfile": () => ({
+        downloaded: 2,
+        disabled: [],
+        unresolved: [],
+      }),
+    });
+    renderEditor({ profile: profile() });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change version or loader" }),
+    );
+    fireEvent.click(await screen.findByText("26.3"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Change it" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Update mods" }));
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("mods:applyForProfile", "p1");
+    });
+    expect(await screen.findByText(/Updated 2 mod/)).toBeInTheDocument();
+  });
+
+  it("folds the version picker away when editing, and can keep the current one", async () => {
+    setup();
+    renderEditor({ profile: profile() });
+    expect(await screen.findByText("1.18.2 · Fabric")).toBeInTheDocument();
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change version or loader" }),
+    );
+    fireEvent.click(await screen.findByText("26.3"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Keep current version" }),
+    );
+    expect(screen.getByText("1.18.2 · Fabric")).toBeInTheDocument();
   });
 });

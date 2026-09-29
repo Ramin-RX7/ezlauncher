@@ -7,6 +7,9 @@ export function registerLauncherIpc(): void {
   handle("versions:install", (_e, id) => getService().installVersion(id));
   handle("versions:cancel", (_e, id) => getService().cancelInstall(id));
   handle("versions:repair", (_e, id) => getService().repairVersion(id));
+  handle("versions:patchNotes", (_e, versionId) =>
+    getService().versionPatchNotes(versionId),
+  );
   handle("versions:delete", (_e, { versionId, force }) =>
     getService().deleteVersion(versionId, force),
   );

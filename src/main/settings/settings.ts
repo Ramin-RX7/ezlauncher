@@ -11,6 +11,12 @@ export const DEFAULT_SETTINGS: LauncherSettings = {
   showSnapshots: false,
   showOldBeta: false,
   showOldAlpha: false,
+  // Off by default: backups take disk space, so the user turns them on.
+  backupAuto: "off",
+  backupWhen: "afterExit",
+  backupIntervalDays: 7,
+  backupKeepCount: 10,
+  backupKeepDays: 30,
   selectedProfileId: null,
   selectedAccountId: null,
 };
@@ -19,6 +25,11 @@ const memorySchema = z.number().int().min(512).max(65536);
 const onGameStartSchema = z.enum(["keep", "minimize", "close"]);
 const selectionSchema = z.string().max(64).nullable();
 export const argsSchema = z.array(z.string().max(4096)).max(200);
+const backupAutoSchema = z.enum(["off", "launch", "interval"]);
+const backupWhenSchema = z.enum(["beforeStart", "afterExit"]);
+const intervalSchema = z.number().int().min(1).max(365);
+const keepCountSchema = z.number().int().min(1).max(100).nullable();
+const keepDaysSchema = z.number().int().min(1).max(3650).nullable();
 
 const fileSchema = z.object({
   schema: z.literal(1),
@@ -29,6 +40,17 @@ const fileSchema = z.object({
   showSnapshots: z.boolean().optional().catch(false),
   showOldBeta: z.boolean().optional().catch(false),
   showOldAlpha: z.boolean().optional().catch(false),
+  backupAuto: backupAutoSchema.optional().catch(DEFAULT_SETTINGS.backupAuto),
+  backupWhen: backupWhenSchema.optional().catch(DEFAULT_SETTINGS.backupWhen),
+  backupIntervalDays: intervalSchema
+    .optional()
+    .catch(DEFAULT_SETTINGS.backupIntervalDays),
+  backupKeepCount: keepCountSchema
+    .optional()
+    .catch(DEFAULT_SETTINGS.backupKeepCount),
+  backupKeepDays: keepDaysSchema
+    .optional()
+    .catch(DEFAULT_SETTINGS.backupKeepDays),
   selectedProfileId: selectionSchema.optional().catch(null),
   selectedAccountId: selectionSchema.optional().catch(null),
 });
@@ -42,6 +64,11 @@ const patchSchema = z
     showSnapshots: z.boolean(),
     showOldBeta: z.boolean(),
     showOldAlpha: z.boolean(),
+    backupAuto: backupAutoSchema,
+    backupWhen: backupWhenSchema,
+    backupIntervalDays: intervalSchema,
+    backupKeepCount: keepCountSchema,
+    backupKeepDays: keepDaysSchema,
     selectedProfileId: selectionSchema,
     selectedAccountId: selectionSchema,
   })
@@ -62,6 +89,19 @@ export function createSettingsStore(file: string) {
         showSnapshots: data.showSnapshots ?? false,
         showOldBeta: data.showOldBeta ?? false,
         showOldAlpha: data.showOldAlpha ?? false,
+        backupAuto: data.backupAuto ?? DEFAULT_SETTINGS.backupAuto,
+        backupWhen: data.backupWhen ?? DEFAULT_SETTINGS.backupWhen,
+        backupIntervalDays:
+          data.backupIntervalDays ?? DEFAULT_SETTINGS.backupIntervalDays,
+        // null is a real value here ("no limit"): only a missing one takes the default.
+        backupKeepCount:
+          data.backupKeepCount === undefined
+            ? DEFAULT_SETTINGS.backupKeepCount
+            : data.backupKeepCount,
+        backupKeepDays:
+          data.backupKeepDays === undefined
+            ? DEFAULT_SETTINGS.backupKeepDays
+            : data.backupKeepDays,
         selectedProfileId: data.selectedProfileId ?? null,
         selectedAccountId: data.selectedAccountId ?? null,
       };

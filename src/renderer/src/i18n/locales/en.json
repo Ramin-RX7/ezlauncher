@@ -1,15 +1,16 @@
 {
   "app": {
-    "name": "ezlauncher"
+    "name": "EZLauncher"
   },
   "nav": {
+    "label": "Main",
     "home": "Home",
     "versions": "Versions",
     "settings": "Settings",
     "mods": "Mod library"
   },
   "setup": {
-    "title": "Welcome to ezlauncher",
+    "title": "Welcome to {{name}}",
     "subtitle": "Choose where the launcher keeps game files, versions and worlds.",
     "folderLabel": "Data folder",
     "choose": "Choose folder…",
@@ -28,6 +29,15 @@
     "empty": "No versions match.",
     "listFrom": "Version list from {{date}}",
     "check": "Check for new versions",
+    "changelog": {
+      "open": "Changelog of {{id}}",
+      "menu": "Changelog",
+      "title": "Changelog of {{id}}",
+      "loading": "Loading the patch notes…",
+      "none": "Mojang has no patch notes for this version in the launcher (they start at 1.13).",
+      "wiki": "Open on the Minecraft Wiki",
+      "close": "Close"
+    },
     "checking": "Checking…",
     "newFound_one": "{{count}} new version found.",
     "newFound_other": "{{count}} new versions found.",
@@ -70,11 +80,13 @@
     "progress": "{{files}} / {{totalFiles}} files · {{mb}} / {{totalMb}} MB",
     "crashed": "{{name}} crashed (exit code {{code}}). Check the game log.",
     "needProfile": "Pick a profile to play.",
-    "needAccount": "Create or pick an account to play.",
-    "needBoth": "Pick a profile and an account to play.",
+    "needAccount": "Create or pick an account in the top bar to play.",
+    "needBoth": "Pick a profile, and an account in the top bar, to play.",
     "playAnother": "Play another",
     "runningHint": "Already running. Another game of this profile needs a different account, and uses the same profile folder: open a different world in each.",
-    "accountPlaying": "{{name}} is already playing this profile. Pick another account to play it again."
+    "accountPlaying": "{{name}} is already playing this profile. Pick another account in the top bar to play it again.",
+    "backingUp": "Backing up worlds…",
+    "backupFailed": "Couldn't back up {{names}} before the start; the game started anyway."
   },
   "log": {
     "title": "Game log",
@@ -141,12 +153,59 @@
       "unclosedQuote": "A quote isn't closed.",
       "memoryFlags": "-Xmx and -Xms are set by Memory; leave them out here."
     },
+    "java": {
+      "title": "Java",
+      "managed": "Downloaded by the launcher",
+      "managedHint": "Mojang's Java builds. Each Minecraft version downloads the one it needs when you play; you can also install them here.",
+      "refresh": "Refresh",
+      "offline": "Mojang's Java list couldn't be loaded (no internet?). Only installed runtimes are shown.",
+      "name": "Java {{major}}",
+      "unknownVersion": "Java (unknown version)",
+      "installed": "Installed",
+      "usedBy": "Used by {{versions}}",
+      "unused": "No installed version uses it",
+      "install": "Install",
+      "installing": "Installing Java…",
+      "repair": "Check files",
+      "remove": "Remove…",
+      "cancel": "Cancel",
+      "none": "No Java runtimes to show.",
+      "system": "On this computer",
+      "systemHint": "Java installed outside the launcher (JAVA_HOME, PATH and the usual install folders). Shown for information; the launcher uses its own runtimes.",
+      "noSystem": "No other Java found.",
+      "removeTitle": "Remove {{name}}?",
+      "removeBody": "Its files are deleted. It's downloaded again if a version needs it.",
+      "removeUsed": "Used by {{versions}}. Its files are deleted and downloaded again the next time one of them is played."
+    },
     "versionList": {
       "title": "Version list",
       "hint": "Releases are always shown. A profile on a hidden type keeps working.",
       "snapshots": "Show snapshots",
       "oldBeta": "Show old beta",
       "oldAlpha": "Show old alpha"
+    },
+    "backups": {
+      "title": "Backups",
+      "auto": "Automatic backups",
+      "off": "Off",
+      "launch": "On every launch",
+      "interval": "Every few days",
+      "intervalDays": "Back up every",
+      "days": "days",
+      "when": "When",
+      "beforeStart": "Before the game starts (Play waits for it)",
+      "afterExit": "After the game closes (in the background)",
+      "keepCount": "Keep at most",
+      "perWorld": "backups per world",
+      "keepDays": "Delete backups older than",
+      "newestKept": "The newest backup of each world is always kept.",
+      "unchangedHint": "A world that hasn't changed since its last backup isn't backed up again.",
+      "total_one": "{{count}} backup, {{size}}",
+      "total_other": "{{count}} backups, {{size}}",
+      "open": "Open backups folder",
+      "orphans": "Backups of {{worlds}} deleted worlds: {{count}} ({{size}})",
+      "deleteOrphans": "Delete them",
+      "orphansDeleted": "Deleted {{count}} backups."
     }
   },
   "errors": {
@@ -187,7 +246,12 @@
     "RENAME_UNSUPPORTED": "This account can't be renamed.",
     "DATA_DIR_NOT_EMPTY": "Choose an empty folder to move your data into.",
     "INVALID_PATH": "Choose another folder.",
-    "CANCELLED": "Cancelled."
+    "CANCELLED": "Cancelled.",
+    "MOD_BULK_BUSY": "A mod download is already running. Wait for it to finish.",
+    "INVALID_TARGET": "Choose a version and a loader.",
+    "BACKUP_NOT_FOUND": "This backup no longer exists.",
+    "BACKUP_DAMAGED": "This backup is damaged and can't be restored.",
+    "BACKUP_FAILED": "The backup failed."
   },
   "error": {
     "title": "Something went wrong",
@@ -203,6 +267,19 @@
     "running_other": "{{count}} running",
     "menu": "More actions for {{name}}",
     "edit": "Edit",
+    "duplicate": "Duplicate…",
+    "duplicateDialog": {
+      "title": "Duplicate {{name}}?",
+      "body": "The copy gets the same version, loader, settings, icon and enabled mods (mods are shared, not downloaded again).",
+      "copyWorlds_one": "Also copy its world",
+      "copyWorlds_other": "Also copy its {{count}} worlds",
+      "noWorlds": "It has no worlds to copy.",
+      "copyHint": "Each world is copied: the copy plays its own, and the original's worlds stay as they are. Large worlds take a while and use disk space.",
+      "running": "Close the game first to copy its worlds.",
+      "confirm": "Duplicate",
+      "working": "Duplicating…",
+      "cancel": "Cancel"
+    },
     "openFolder": "Open game folder",
     "delete": "Delete…",
     "back": "Back to profiles",
@@ -218,6 +295,11 @@
       "namePlaceholder": "My survival world",
       "version": "Minecraft version",
       "loader": "Mod loader",
+      "icon": "Icon",
+      "versionAndLoader": "Minecraft version and loader",
+      "changeVersion": "Change version or loader",
+      "keepVersion": "Keep current version",
+      "noIcon": "No icon",
       "memory": "Maximum memory (MB)",
       "memoryHint": "The profile's own value replaces the global one.",
       "jvmArgs": "Extra JVM arguments",
@@ -242,6 +324,17 @@
       "confirm": "Change it",
       "cancel": "Cancel"
     },
+    "applyMods": {
+      "title": "Update mods for the new version?",
+      "body": "Download each mod's version that fits the new Minecraft version and loader. Mods with no matching version are turned off but kept in the library.",
+      "working": "Updating mods…",
+      "update": "Update mods",
+      "skip": "Not now",
+      "close": "Done",
+      "downloaded": "Updated {{count}} mod(s).",
+      "disabled": "Turned off {{count}} mod(s) with no version for this release: {{names}}.",
+      "unresolved": "{{count}} mod(s) aren't from a known site and were left as they are: {{names}}."
+    },
     "deleteDialog": {
       "title": "Delete {{name}}?",
       "body": "The profile's mods, settings and other files are deleted. Choose what happens to its worlds:",
@@ -253,7 +346,10 @@
       "confirm": "Delete profile",
       "cancel": "Cancel"
     },
-    "choose": "Pick a profile"
+    "choose": "Pick a profile",
+    "playProfile": "Play {{name}}",
+    "search": "Search profiles",
+    "noMatch": "No profiles match."
   },
   "worlds": {
     "empty": "No worlds yet. Worlds you create in game appear here.",
@@ -314,7 +410,9 @@
     "inUse": "Close the game first.",
     "dependents": "These installs are built on it and will be deleted too: {{ids}}",
     "deleteConfirm": "Delete",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "search": "Search versions",
+    "noMatch": "No installed versions match."
   },
   "mods": {
     "title": "Mod library",
@@ -329,6 +427,8 @@
     "unknownVersion": "Unknown version",
     "usedBy": "Used by {{names}}",
     "unused": "Unused",
+    "dependencyOf": "Dependency of {{name}}",
+    "dependencyBadge": "Dependency",
     "remove": "Remove…",
     "removeTitle": "Remove {{name}}?",
     "removeBody": "The mod is deleted from the library.",
@@ -374,7 +474,18 @@
     "versionOptionEnabled": "{{version}} (enabled)",
     "versionOptionIncompatible": "{{version}} (doesn't fit)",
     "alsoDisabled": "Also disabled, as nothing else needs them: {{names}}",
-    "openFolder": "Open mods folder"
+    "openFolder": "Open mods folder",
+    "bulk": {
+      "open": "Download mods for a version",
+      "title": "Download mods for a version",
+      "body": "Pick a Minecraft version and loader. For every mod in your library that came from a mod site, the version that fits is downloaded.",
+      "download": "Download",
+      "cancel": "Cancel",
+      "close": "Done",
+      "working": "Downloading mods…",
+      "done": "Downloaded {{count}} mod(s).",
+      "skipped": "{{count}} mod(s) have no version for this release: {{names}}."
+    }
   },
   "remote": {
     "title": "Add a mod to {{profile}}",
@@ -461,5 +572,45 @@
     "warnings_other": "Started with {{count}} mod warnings. See the Mods tab.",
     "fixed": "No errors left.",
     "play": "Play"
+  },
+  "units": {
+    "sizeKb": "{{size}} KB",
+    "sizeMb": "{{size}} MB",
+    "sizeGb": "{{size}} GB"
+  },
+  "backups": {
+    "indicator": "Backing up {{name}} ({{index}}/{{total}})",
+    "indicatorStarting": "Backing up worlds…",
+    "progressLabel": "Backup progress",
+    "cancel": "Cancel",
+    "skip": "Skip",
+    "backUp": "Back up",
+    "backUpAll": "Back up all worlds",
+    "list_one": "{{count}} backup",
+    "list_other": "{{count}} backups",
+    "none": "No backups",
+    "last": "Last backup {{date}}",
+    "runningBlocked": "Close the game first to back up its worlds.",
+    "created_one": "Backed up {{count}} world.",
+    "created_other": "Backed up {{count}} worlds.",
+    "unchanged": "No changes since the last backup: {{names}}.",
+    "failed": "Couldn't back up: {{names}}.",
+    "folder": "Folder: {{id}}",
+    "dialog": {
+      "title": "Backups of {{name}}",
+      "empty": "No backups yet.",
+      "manual": "By hand",
+      "auto": "Automatic",
+      "restore": "Restore as a new world",
+      "restoreHint": "Restoring unpacks the backup as a separate world in this profile; the current world isn't touched.",
+      "restored": "Restored as “{{id}}”.",
+      "reveal": "Show in folder",
+      "delete": "Delete…",
+      "deleteTitle": "Delete this backup?",
+      "deleteBody": "The backup from {{date}} is deleted for good.",
+      "deleteConfirm": "Delete",
+      "cancel": "Cancel",
+      "close": "Close"
+    }
   }
 }

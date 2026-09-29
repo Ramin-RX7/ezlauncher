@@ -5,15 +5,26 @@
 
 import type {
   AccountInfo,
+  ApplyModsResult,
+  BackupProgress,
+  BackupResult,
+  BackupStateEvent,
+  BackupSummary,
+  WorldBackup,
+  BulkDownloadResult,
   GameExitEvent,
   GameLogEvent,
   InstallProgress,
+  JavaInstallProgress,
+  JavaListResult,
+  PatchNotes,
   AddModsResult,
   DeleteWorldsChoice,
   DisablePlan,
   LaunchResult,
   LibraryMod,
   MoveProgress,
+  ModBulkProgress,
   ModDownloadProgress,
   RemoteMatchCard,
   InstallStateEvent,
@@ -33,6 +44,8 @@ import type {
 } from "./launcher";
 
 export interface AppInfo {
+  /** The user-facing application name, from `APP_DISPLAY_NAME`. */
+  appName: string;
   version: string;
   /** `process.platform` of the main process, e.g. `win32`, `linux`, `darwin`. */
   platform: string;
@@ -74,6 +87,11 @@ export interface IpcInvokeContract {
    * Deletes the version (and the installs built on it). Fails with `VERSION_IN_USE`
    * when profiles use it or others build on it, unless `force`.
    */
+  /** Mojang's patch notes (changelog) for a Minecraft version; null when it has none. */
+  "versions:patchNotes": {
+    args: [versionId: string];
+    result: PatchNotes | null;
+  };
   "versions:delete": {
     args: [options: { versionId: string; force: boolean }];
     result: void;
@@ -81,6 +99,11 @@ export interface IpcInvokeContract {
 
   "profiles:list": { args: []; result: ProfileInfo[] };
   "profiles:create": { args: [input: ProfileInput]; result: Profile };
+  /** Copies settings and enabled mods; `copyWorlds` also copies its worlds (the copies belong to the new profile). */
+  "profiles:duplicate": {
+    args: [id: string, options?: { copyWorlds?: boolean }];
+    result: Profile;
+  };
   "profiles:update": {
     args: [id: string, patch: Partial<ProfileInput>];
     result: Profile;
@@ -166,6 +189,57 @@ export interface IpcInvokeContract {
   "mods:disablePlan": { args: [profileId: string]; result: DisablePlan };
   /** Downloads a damaged mod again from its site. Fails with `MOD_NO_SOURCE` without one. */
   "mods:redownload": { args: [sha1: string]; result: void };
+  /** Downloads the compatible version of every sourced library mod for a target. */
+  "mods:downloadForVersion": {
+    args: [options: { gameVersion: string; loaderId: string }];
+    result: BulkDownloadResult;
+  };
+  /** Re-fetches a profile's sourced mods for its current version; disables the rest. */
+  "mods:applyForProfile": {
+    args: [profileId: string];
+    result: ApplyModsResult;
+  };
+  /** Cancels an in-flight bulk download. */
+  "mods:cancelBulk": { args: []; result: void };
+
+  /** Mojang Java runtimes (installed and offered) and Java found on the computer. */
+  "java:list": { args: []; result: JavaListResult };
+  /** Downloads a Mojang Java runtime; progress on `java:progress`. */
+  "java:install": { args: [component: string]; result: void };
+  "java:cancel": { args: []; result: void };
+  /** Deletes a Mojang Java runtime; versions using it download it again when played. */
+  "java:remove": { args: [component: string]; result: void };
+
+  /** Backs up some (default: all) of a profile's worlds; unchanged ones are skipped. Refused while it plays. */
+  "backups:create": {
+    args: [options: { profileId: string; worldIds?: string[] }];
+    result: BackupResult;
+  };
+  /** Stops the running backup job (before the start: the game still starts). */
+  "backups:cancel": { args: []; result: void };
+  /** A world's backups, newest first. */
+  "backups:list": {
+    args: [options: { profileId: string; worldId: string }];
+    result: WorldBackup[];
+  };
+  /** Unpacks a backup as a new world of the profile; resolves to the new world's id. */
+  "backups:restore": {
+    args: [options: { profileId: string; worldId: string; backupId: string }];
+    result: string;
+  };
+  "backups:delete": {
+    args: [options: { profileId: string; worldId: string; backupId: string }];
+    result: void;
+  };
+  /** Shows the backup's zip in the file manager. */
+  "backups:reveal": {
+    args: [options: { profileId: string; worldId: string; backupId: string }];
+    result: void;
+  };
+  "backups:summary": { args: []; result: BackupSummary };
+  /** Deletes the backups of worlds that no longer exist; resolves to how many. */
+  "backups:deleteOrphans": { args: []; result: number };
+  "backups:openFolder": { args: []; result: void };
 
   "account:list": { args: []; result: AccountInfo[] };
   /** Fails with `ACCOUNT_NAME_TAKEN` when another account has the name (ignoring case). */
@@ -204,6 +278,10 @@ export interface IpcEventContract {
   /** Profiles, their worlds or running counts changed; refetch. */
   "profiles:changed": Record<string, never>;
   "mods:download": ModDownloadProgress;
+  "mods:bulkProgress": ModBulkProgress;
+  "java:progress": JavaInstallProgress;
+  "backup:progress": BackupProgress;
+  "backup:state": BackupStateEvent;
   "setup:moveProgress": MoveProgress;
 }
 
@@ -229,9 +307,11 @@ export const INVOKE_CHANNELS = [
   "versions:repair",
   "versions:installed",
   "versions:delete",
+  "versions:patchNotes",
   "loaders:list",
   "profiles:list",
   "profiles:create",
+  "profiles:duplicate",
   "profiles:update",
   "profiles:delete",
   "profiles:openFolder",
@@ -252,6 +332,22 @@ export const INVOKE_CHANNELS = [
   "mods:validate",
   "mods:disablePlan",
   "mods:redownload",
+  "mods:downloadForVersion",
+  "mods:applyForProfile",
+  "mods:cancelBulk",
+  "java:list",
+  "backups:create",
+  "backups:cancel",
+  "backups:list",
+  "backups:restore",
+  "backups:delete",
+  "backups:reveal",
+  "backups:summary",
+  "backups:deleteOrphans",
+  "backups:openFolder",
+  "java:install",
+  "java:cancel",
+  "java:remove",
   "account:list",
   "account:add",
   "account:rename",
@@ -269,6 +365,10 @@ export const EVENT_CHANNELS = [
   "game:exit",
   "profiles:changed",
   "mods:download",
+  "mods:bulkProgress",
+  "java:progress",
+  "backup:progress",
+  "backup:state",
   "setup:moveProgress",
 ] as const satisfies readonly EventChannel[];
 

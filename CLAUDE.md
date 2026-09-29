@@ -6,7 +6,7 @@ A desktop Minecraft: Java Edition launcher. **Offline mode only**: no Microsoft/
 
 ## Scopes
 
-All scopes are defined in [scopes.md](scopes.md), the single source of truth for what each scope required. **All six scopes (00–06) are implemented.** Read a scope before changing its area. New scopes are added to that file, not as separate documents.
+All scopes are defined in [scopes.md](scopes.md), the single source of truth for what each scope required. **All eight scopes (00–07) are implemented.** Read a scope before changing its area. New scopes are added to that file, not as separate documents.
 
 - Scope 00, Project setup: tooling, secure Electron window, typed IPC bridge, theming, i18n, packaging (done).
 - Scope 01, Core launcher: version list, multi-version install, offline launch, abstract auth (done).
@@ -15,6 +15,7 @@ All scopes are defined in [scopes.md](scopes.md), the single source of truth for
 - Scope 04, Mod manager: exact-name Modrinth download with dependencies, identify hand-added jars by hash; all behind a `ModSource` adapter (done).
 - Scope 05, Mod validation: pre-launch checks of loader, Minecraft/loader/Java versions, dependencies, conflicts and damaged files; jar metadata first (done).
 - Scope 06, Accounts and settings: multiple offline accounts with fixed UUIDs (rename-safe); settings page with per-profile memory and argument overrides (done).
+- Scope 07, Backups, library tools and UI polish: world backups (manual/automatic, retention, restore as a new world), mods for a chosen version, version changelogs, profile duplication and icons, Java management, UI/UX improvements (done).
 
 Out of scope until a scope covers it: Microsoft login, Forge/NeoForge, CurseForge, mod updates, modpacks, skins, multiplayer server lists.
 
@@ -38,7 +39,7 @@ Version pins: electron-vite 5 needs **Vite ≤ 7** (so `@vitejs/plugin-react` 5.
   - `src/main/minecraft/`: core launcher logic (version list, installing, launching). Plain TypeScript with **no Electron imports**, so it can be tested on its own.
   - `src/main/core/`: helpers every scope uses: `fsAtomic.ts` (`writeJsonAtomic`, `readJson` with a zod schema), `logger.ts`, `errors.ts` (`AppError` with a `code`). No Electron imports.
   - `src/main/auth/`: login providers behind `AuthProvider` (`providers/offline.ts`), `accountStore.ts`, and `accounts.ts` (add / rename / remove; names unique ignoring case; renaming keeps the UUID). No Electron imports.
-  - `src/main/profiles/`: profiles (`launcher/profiles.json`), world sync (worlds live in `worlds/`, linked into `profiles/<id>/saves/`, owner flag in each world), and migration of old `games/<versionId>/` folders. `links.ts` is the only place that knows link types; delete folders with its `removeTree`, which never follows links. `mods.ts` is the shared mod library (`mods-store/<sha1>.jar`, hard-linked into profiles, `launcher/mods.json`). No Electron imports.
+  - `src/main/profiles/`: profiles (`launcher/profiles.json`), world sync (worlds live in `worlds/`, linked into `profiles/<id>/saves/`, owner flag in each world), and migration of old `games/<versionId>/` folders. `links.ts` is the only place that knows link types; delete folders with its `removeTree`, which never follows links. `mods.ts` is the shared mod library (`mods-store/<sha1>.jar`, hard-linked into profiles, `launcher/mods.json`). `backups.ts` makes and restores world backups (`backups/<key>/<id>.zip`; unchanged worlds are skipped; a restore is always a new world). No Electron imports.
   - `src/main/modsources/`: mod websites behind `ModSource` (`modrinth.ts` is the only adapter; nothing else knows Modrinth URLs or JSON). `resolveDependencies.ts` and `downloadMods.ts` use the interface only; tests use `testing/fakeModSource.ts`. No Electron imports.
   - `src/main/validation/`: mod checks before launch and on the Mods tab. `validate.ts` is a pure function (profile + enabled mods → issues, and which mod needs which); `collect.ts` gathers its input, `integrity.ts` checks files for damage, `versions/` parses Fabric/Maven ranges and Minecraft ids. Issues carry a `code` + params; the renderer words them. No Electron imports.
   - `src/main/settings/`: `bootstrap.json` (where the data folder is, in Electron's userData) and `launcher/settings.json`. `launchSettings.ts` (`resolveLaunchSettings`: a profile's memory/arguments replace the global ones) and `moveData.ts` (move the data folder: rename on one drive, copy keeping hard links on another, re-point world links).
@@ -78,6 +79,7 @@ Security: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`. T
 - Version list: `https://piston-meta.mojang.com/mc/game/version_manifest_v2.json`
 - Java runtimes: `https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json`
 - Assets: `https://resources.download.minecraft.net/<first 2 hash chars>/<hash>`
+- Patch notes (changelogs): `https://launchercontent.mojang.com/v2/javaPatchNotes.json`, each entry at `https://launchercontent.mojang.com/v2/<contentPath>`. The body is HTML: the renderer rebuilds only safe elements (`patchNotesHtml.tsx`) and never injects it.
 
 ## Development environment
 

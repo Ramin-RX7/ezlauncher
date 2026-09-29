@@ -1,9 +1,11 @@
 import { totalmem } from "node:os";
 import { app } from "electron";
+import { APP_DISPLAY_NAME } from "@shared/app";
 import { handle } from "./register";
 
 export function registerAppIpc(): void {
   handle("app:getInfo", () => ({
+    appName: APP_DISPLAY_NAME,
     version: app.getVersion(),
     platform: process.platform,
     arch: process.arch,

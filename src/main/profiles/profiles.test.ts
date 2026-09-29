@@ -88,6 +88,16 @@ describe("profile store", () => {
     expect(cleared.extraGameArgs).toBeUndefined();
   });
 
+  it("stores and clears the icon", async () => {
+    const s = store();
+    const p = await s.create({ ...base, iconId: "creeper" });
+    expect(p.iconId).toBe("creeper");
+    expect((await s.update(p.id, { iconId: "diamond_block" })).iconId).toBe(
+      "diamond_block",
+    );
+    expect((await s.update(p.id, { iconId: null })).iconId).toBeUndefined();
+  });
+
   it("keeps every change when many happen at once", async () => {
     const s = store();
     await Promise.all(

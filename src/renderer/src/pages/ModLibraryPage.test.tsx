@@ -3,7 +3,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import type { LibraryMod } from "@shared/launcher";
 import { createQueryClient } from "../lib/queryClient";
-import { profile } from "../test/fixtures";
+import { loaders, profile, settings, versionList } from "../test/fixtures";
 import { mockApi } from "../test/mockApi";
 import { ModLibraryPage } from "./ModLibraryPage";
 
@@ -70,5 +70,53 @@ describe("ModLibraryPage", () => {
         "It is removed from these profiles too: Survival",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("nests dependency-only mods under the mods that need them", async () => {
+    mockApi({
+      "mods:library": () => [
+        {
+          ...base,
+          sha1: "3".repeat(40),
+          name: "Fabric API",
+          usedBy: ["p1"],
+          dependency: true,
+          neededBy: ["1".repeat(40)],
+        },
+        ...library,
+      ],
+      "profiles:list": () => [profile()],
+    });
+    renderPage();
+    expect(await screen.findByText("Dependency of Sodium")).toBeInTheDocument();
+    const rows = screen.getAllByRole("listitem").map((li) => li.textContent);
+    const sodium = rows.findIndex((r) => r.startsWith("Sodium"));
+    expect(rows[sodium + 1]).toContain("Fabric API");
+  });
+
+  it("downloads library mods for a chosen version", async () => {
+    const api = mockApi({
+      "mods:library": () => library,
+      "profiles:list": () => [profile()],
+      "versions:list": () => versionList,
+      "loaders:list": () => loaders,
+      "settings:get": () => settings(),
+      "mods:downloadForVersion": () => ({ downloaded: 3, skipped: [] }),
+    });
+    renderPage();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Download mods for a version",
+      }),
+    );
+    fireEvent.click(await screen.findByText("1.18.2"));
+    fireEvent.click(screen.getByRole("button", { name: "Download" }));
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("mods:downloadForVersion", {
+        gameVersion: "1.18.2",
+        loaderId: "fabric",
+      });
+    });
+    expect(await screen.findByText("Downloaded 3 mod(s).")).toBeInTheDocument();
   });
 });

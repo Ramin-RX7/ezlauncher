@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Search } from "lucide-react";
+import { ScrollText, Search } from "lucide-react";
 import type { VersionSummary } from "@shared/launcher";
 import { Input } from "../ui/Input";
 import { TabBar } from "../ui/Tabs";
+import { ChangelogDialog } from "./ChangelogDialog";
 
 export type VersionTab = "release" | "snapshot" | "old_beta" | "old_alpha";
 const TABS: readonly VersionTab[] = [
@@ -25,6 +26,8 @@ export interface VersionListProps {
    * shown, so a profile on a hidden type still shows its version.
    */
   types?: readonly VersionTab[];
+  /** Shown in the same row as the tabs and the search (e.g. the list's refresh). */
+  toolbar?: ReactNode;
 }
 
 function tabOf(type: string): VersionTab {
@@ -75,6 +78,7 @@ export function VersionList({
   selectedId,
   onSelect,
   types = TABS,
+  toolbar,
 }: VersionListProps) {
   const { t, i18n } = useTranslation();
   const selectedTab = tabOf(
@@ -86,6 +90,7 @@ export function VersionList({
   const [picked, setTab] = useState<VersionTab>(selectedTab);
   const tab = tabs.includes(picked) ? picked : "release";
   const [query, setQuery] = useState("");
+  const [notesFor, setNotesFor] = useState<string>();
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -129,6 +134,9 @@ export function VersionList({
         ) : (
           <span />
         )}
+        {toolbar && (
+          <div className="flex min-w-0 flex-1 justify-end">{toolbar}</div>
+        )}
         <div className="relative">
           <Search
             size={16}
@@ -143,7 +151,7 @@ export function VersionList({
               setQuery(e.target.value);
               reset();
             }}
-            className="w-56 ps-8"
+            className="w-52 ps-8"
           />
         </div>
       </div>
@@ -195,12 +203,31 @@ export function VersionList({
                       </span>
                     )}
                   </button>
+                  <button
+                    type="button"
+                    aria-label={t("versions.changelog.open", { id: v.id })}
+                    title={t("versions.changelog.open", { id: v.id })}
+                    onClick={() => {
+                      setNotesFor(v.id);
+                    }}
+                    className="rounded-ezl p-1.5 text-muted hover:bg-bg hover:text-text"
+                  >
+                    <ScrollText size={16} aria-hidden />
+                  </button>
                 </li>
               );
             })}
           </ul>
         )}
       </div>
+      {notesFor && (
+        <ChangelogDialog
+          versionId={notesFor}
+          onClose={() => {
+            setNotesFor(undefined);
+          }}
+        />
+      )}
     </div>
   );
 }

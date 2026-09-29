@@ -51,4 +51,14 @@ export function registerModsIpc(): void {
     getService().disablePlan(profileId),
   );
   handle("mods:redownload", (_e, sha1) => getService().redownloadMod(sha1));
+
+  handle("mods:downloadForVersion", (_e, target) =>
+    getService().downloadLibraryMods(target),
+  );
+  handle("mods:applyForProfile", (_e, profileId) =>
+    getService().applyProfileMods(profileId),
+  );
+  handle("mods:cancelBulk", () => {
+    getService().cancelBulkDownload();
+  });
 }

@@ -5,11 +5,18 @@ import { app, BrowserWindow, net, shell } from "electron";
 import type {
   AccountInfo,
   AddModsResult,
+  BackupResult,
+  BackupSummary,
+  WorldBackup,
+  ApplyModsResult,
+  BulkDownloadResult,
   DeleteWorldsChoice,
   DisablePlan,
   InstalledVersionInfo,
   InstallProgress,
+  JavaListResult,
   LaunchRequest,
+  PatchNotes,
   LaunchResult,
   LibraryMod,
   LoaderInfo,
@@ -22,6 +29,7 @@ import type {
   VersionListResult,
   WorldInfo,
 } from "@shared/launcher";
+import { PROFILE_NAME_MAX } from "@shared/launcher";
 import { createAccountStore } from "../auth/accountStore";
 import { createAccounts } from "../auth/accounts";
 import { OFFLINE_PROVIDER_ID } from "../auth/providers/offline";
@@ -60,7 +68,29 @@ import {
 } from "../minecraft/manifest";
 import { createPaths } from "../minecraft/paths";
 import { detectPlatform } from "../minecraft/platform";
-import { downloadPlan } from "../modsources/downloadMods";
+import { ensureJava } from "../minecraft/java";
+import {
+  isJavaComponent,
+  javaUsage,
+  listJavaRuntimes,
+  removeJavaRuntime,
+} from "../minecraft/javaRuntimes";
+import { detectSystemJava } from "../minecraft/systemJava";
+import { createPatchNotes } from "../minecraft/patchNotes";
+import {
+  backupDue,
+  backupKey,
+  createBackup,
+  deleteBackup,
+  deleteBackupFolder,
+  listBackupFolders,
+  listBackups,
+  pruneBackups,
+  restoreBackup,
+  type BackupMoment,
+} from "../profiles/backups";
+import { downloadPlan, storeVersions } from "../modsources/downloadMods";
+import { resolveBulk } from "../modsources/bulkFetch";
 import { createModSourceRegistry } from "../modsources/registry";
 import {
   resolveInstall,
@@ -72,6 +102,7 @@ import { createModLibrary, type ModSourceRef } from "../profiles/mods";
 import { migrateLegacyGames } from "../profiles/migrate";
 import { createProfileStore } from "../profiles/profiles";
 import {
+  copyProfileWorlds,
   deleteWorld,
   listOrphans,
   listWorlds,
@@ -121,6 +152,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
   let moving = false;
   const profiles = createProfileStore(paths.launcherFile("profiles.json"));
   const mods = createModLibrary({ paths, logger: log });
+  const patchNotes = createPatchNotes({ paths, downloader });
   const sources = createModSourceRegistry({
     fetch: (url, init) => net.fetch(url, init),
     // Modrinth asks every app to say who it is.
@@ -138,6 +170,8 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     }
   >();
   const PLAN_TTL_MS = 15 * 60 * 1000;
+  /** The bulk download in progress (library-wide or per-profile re-apply). */
+  let bulk: AbortController | undefined;
   const EMPTY_INPUT: ValidationInput = {
     gameVersion: "",
     loader: null,
@@ -201,6 +235,26 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     identifyTimer.unref();
   }
 
+  /**
+   * How a new version of a sourced mod enters the library: as a dependency when every
+   * library copy of that project is only a dependency, otherwise as the user's own.
+   */
+  async function addedAsByProject(): Promise<
+    (v: { sourceId: string; projectId: string }) => "user" | "dependency"
+  > {
+    const user = new Set<string>();
+    const dep = new Set<string>();
+    for (const m of await mods.list()) {
+      if (!m.source) continue;
+      const key = `${m.source.sourceId}:${m.source.projectId}`;
+      (m.dependency ? dep : user).add(key);
+    }
+    return (v) => {
+      const key = `${v.sourceId}:${v.projectId}`;
+      return dep.has(key) && !user.has(key) ? "dependency" : "user";
+    };
+  }
+
   async function identifyPending(): Promise<void> {
     const pending = await mods.pendingIdentification();
     if (pending.length === 0) return;
@@ -262,6 +316,188 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     return { input: checked, report };
   }
 
+  // ---- World backups: one job at a time, progress on `backup:progress`. ----
+
+  let backupQueue: Promise<unknown> = Promise.resolve();
+  let backupJob: { controller: AbortController } | undefined;
+  let backupsWaiting = 0;
+
+  async function pathExists(path: string): Promise<boolean> {
+    try {
+      await stat(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** A profile's worlds, with when each was last backed up. */
+  async function worldsWithBackups(profileId: string): Promise<WorldInfo[]> {
+    const worlds = await listWorlds(paths, profileId);
+    return Promise.all(
+      worlds.map(async (w) => {
+        const backups = await listBackups(paths, backupKey(w, profileId));
+        return {
+          ...w,
+          backupCount: backups.length,
+          ...(backups[0] && { lastBackupAt: backups[0].createdAt }),
+        };
+      }),
+    );
+  }
+
+  async function findWorld(profileId: string, worldId: string) {
+    const world = (await listWorlds(paths, profileId)).find(
+      (w) => w.id === worldId,
+    );
+    if (!world) throw new AppError("WORLD_NOT_FOUND", "World not found.");
+    return { world, key: backupKey(world, profileId) };
+  }
+
+  async function doBackups(
+    profileId: string,
+    worldIds: readonly string[] | undefined,
+    reason: WorldBackup["reason"],
+    beforeStart: boolean,
+  ): Promise<BackupResult> {
+    const worlds = (await listWorlds(paths, profileId)).filter(
+      (w) => !worldIds || worldIds.includes(w.id),
+    );
+    const result: BackupResult = { created: [], unchanged: [], failed: [] };
+    if (worlds.length === 0) return result;
+    const retention = await settings.load();
+    const controller = new AbortController();
+    backupJob = { controller };
+    broadcast("backup:state", { status: "running", profileId, beforeStart });
+    try {
+      for (const [i, w] of worlds.entries()) {
+        if (controller.signal.aborted) break;
+        const key = backupKey(w, profileId);
+        let sent = 0;
+        const report = (bytes: number, totalBytes: number) => {
+          broadcast("backup:progress", {
+            profileId,
+            worldId: w.id,
+            worldName: w.name,
+            index: i + 1,
+            total: worlds.length,
+            bytes,
+            totalBytes,
+            beforeStart,
+          });
+        };
+        report(0, 0);
+        try {
+          const made = await createBackup({
+            paths,
+            key,
+            sourceDir: w.linked
+              ? paths.worldDir(w.id)
+              : paths.saveLink(profileId, w.id),
+            worldName: w.name,
+            reason,
+            signal: controller.signal,
+            onProgress: ({ bytes, totalBytes }) => {
+              // At most ~10 updates a second.
+              if (Date.now() - sent < 100 && bytes < totalBytes) return;
+              sent = Date.now();
+              report(bytes, totalBytes);
+            },
+          });
+          if ("backup" in made) result.created.push(w.name);
+          else result.unchanged.push(w.name);
+          await pruneBackups(paths, key, {
+            keepCount: retention.backupKeepCount,
+            keepDays: retention.backupKeepDays,
+          });
+        } catch (err) {
+          if (err instanceof AppError && err.code === "CANCELLED") break;
+          log.warn(`backing up world ${w.id} of ${profileId} failed`, err);
+          result.failed.push({
+            name: w.name,
+            code: err instanceof AppError ? err.code : "BACKUP_FAILED",
+          });
+        }
+      }
+      broadcast("backup:state", {
+        status: controller.signal.aborted
+          ? "cancelled"
+          : result.failed.length > 0
+            ? "failed"
+            : "done",
+        profileId,
+        beforeStart,
+      });
+      return result;
+    } finally {
+      backupJob = undefined;
+      changed();
+    }
+  }
+
+  /** Queue a backup job; jobs run one after another. */
+  function runBackups(
+    profileId: string,
+    worldIds: readonly string[] | undefined,
+    reason: WorldBackup["reason"],
+    beforeStart = false,
+  ): Promise<BackupResult> {
+    backupsWaiting++;
+    const run = backupQueue.then(() =>
+      doBackups(profileId, worldIds, reason, beforeStart),
+    );
+    backupQueue = run.catch(() => undefined);
+    return run.finally(() => {
+      backupsWaiting--;
+    });
+  }
+
+  /** The automatic backup for this moment, if the settings ask for one (changed worlds only). */
+  async function autoBackup(
+    profileId: string,
+    moment: BackupMoment,
+  ): Promise<BackupResult | undefined> {
+    const current = await settings.load();
+    if (current.backupAuto === "off" || current.backupWhen !== moment)
+      return undefined;
+    const due = (await worldsWithBackups(profileId)).filter((w) =>
+      backupDue(current, w.lastBackupAt, moment),
+    );
+    if (due.length === 0) return undefined;
+    return runBackups(
+      profileId,
+      due.map((w) => w.id),
+      "auto",
+      moment === "beforeStart",
+    );
+  }
+
+  /** Apply the retention settings to every world's backups (the days limit moves with time). */
+  async function pruneAllBackups(): Promise<void> {
+    const current = await settings.load();
+    for (const folder of await listBackupFolders(paths)) {
+      await pruneBackups(paths, folder.key, {
+        keepCount: current.backupKeepCount,
+        keepDays: current.backupKeepDays,
+      }).catch((err: unknown) => {
+        log.warn(`pruning backups of ${folder.key} failed`, err);
+      });
+    }
+  }
+
+  /** Backups of worlds that no longer exist (deleted in game, or with their profile). */
+  async function isOrphanBackup(key: string): Promise<boolean> {
+    const at = key.indexOf("~");
+    if (at < 0) return !(await pathExists(paths.worldDir(key)));
+    try {
+      return !(await pathExists(
+        paths.saveLink(key.slice(0, at), key.slice(at + 1)),
+      ));
+    } catch {
+      return true;
+    }
+  }
+
   // Old per-version game folders become profiles, then every profile's worlds are synced.
   const ready: Promise<void> = (async () => {
     try {
@@ -274,6 +510,9 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     } catch (err) {
       log.error("startup profile/world sync failed", err);
     }
+    await pruneAllBackups().catch((err: unknown) => {
+      log.warn("pruning backups failed", err);
+    });
     changed();
     scheduleIdentify(0); // mods added while offline
   })();
@@ -292,13 +531,21 @@ export function createLauncherService(dataDir: string, logger: Logger) {
 
   // ---- Installs ----
 
+  /** A Java runtime install from Settings; version installs wait for it (same files). */
+  let javaInstall:
+    | { component: string; controller: AbortController; done: Promise<void> }
+    | undefined;
+  const afterJava = (): Promise<void> =>
+    javaInstall ? javaInstall.done.catch(() => undefined) : Promise.resolve();
+
   function queueLoaderInstall(
     request: LoaderInstallRequest,
     mode: InstallMode,
   ): Promise<InstalledVersion> {
-    return queue.enqueue(request.versionId, (signal) =>
-      installLoader(loaderDeps, request, { mode, signal, onProgress }),
-    );
+    return queue.enqueue(request.versionId, async (signal) => {
+      await afterJava();
+      return installLoader(loaderDeps, request, { mode, signal, onProgress });
+    });
   }
 
   /** Install, check or repair an installed version; loader installs go through their loader. */
@@ -318,9 +565,10 @@ export function createLauncherService(dataDir: string, logger: Logger) {
         mode,
       );
     }
-    return queue.enqueue(versionId, (signal) =>
-      installVersion(deps, versionId, { mode, signal, onProgress }),
-    );
+    return queue.enqueue(versionId, async (signal) => {
+      await afterJava();
+      return installVersion(deps, versionId, { mode, signal, onProgress });
+    });
   }
 
   /**
@@ -505,6 +753,13 @@ export function createLauncherService(dataDir: string, logger: Logger) {
      * Delete a version and the installs built on it. Profiles that use them keep
      * working: they reinstall on their next Play.
      */
+    /** A version's changelog from Mojang's patch notes (saved after the first look). */
+    async versionPatchNotes(versionId: string): Promise<PatchNotes | null> {
+      if (typeof versionId !== "string" || versionId.length > 128)
+        throw new AppError("VERSION_UNKNOWN", "Unknown version.");
+      return patchNotes.get(versionId);
+    },
+
     async deleteVersion(versionId: string, force: boolean): Promise<void> {
       await ready;
       const dependents = await listDependents(paths, versionId);
@@ -538,6 +793,61 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       validateLoader((input as { loader?: unknown } | null)?.loader);
       const profile = await profiles.create(input);
       await mkdir(paths.gameDir(profile.id), { recursive: true });
+      changed();
+      return profile;
+    },
+
+    /**
+     * Copy a profile's settings and enabled mods into a new one (new id). Worlds are
+     * owned by id, so the copy starts with none unless `copyWorlds`: then each world
+     * is copied and the copies belong to the new profile (the originals are untouched).
+     * The install is not copied: the next Play verifies it (version files are shared).
+     */
+    async duplicateProfile(
+      id: string,
+      options: { copyWorlds?: boolean } = {},
+    ): Promise<Profile> {
+      const src = await requireProfile(id);
+      const copyWorlds = options.copyWorlds === true;
+      // A running game keeps writing its worlds: copying now would catch them half-saved.
+      if (copyWorlds) assertNotRunning(id);
+      const suffix = " (copy)";
+      const name = `${src.name.slice(0, PROFILE_NAME_MAX - suffix.length)}${suffix}`;
+      const profile = await profiles.create({
+        name,
+        gameVersion: src.gameVersion,
+        loader: src.loader,
+        ...(src.iconId !== undefined && { iconId: src.iconId }),
+        ...(src.memoryMaxMb !== undefined && { memoryMaxMb: src.memoryMaxMb }),
+        ...(src.extraJvmArgs !== undefined && {
+          extraJvmArgs: src.extraJvmArgs,
+        }),
+        ...(src.extraGameArgs !== undefined && {
+          extraGameArgs: src.extraGameArgs,
+        }),
+      });
+      await mkdir(paths.gameDir(profile.id), { recursive: true });
+      const sha1s = (await mods.enabledMods(id)).map((m) => m.sha1);
+      if (sha1s.length > 0)
+        await serialFs(() => mods.enableAll(profile.id, sha1s));
+      if (copyWorlds) {
+        try {
+          const count = await serialFs(() =>
+            copyProfileWorlds(paths, id, profile.id),
+          );
+          log.info(`copied ${count} worlds from ${id} to ${profile.id}`);
+        } catch (err) {
+          // Nothing half-made: the new profile goes again, the originals were only read.
+          await serialFs(async () => {
+            await mods.forgetProfile(profile.id);
+            await removeTree(paths.gameDir(profile.id)).catch(() => undefined);
+            await profiles.remove(profile.id);
+          });
+          changed();
+          throw err;
+        }
+        await sync([profile.id]); // adopts the copies into worlds/, owned by the copy
+      }
       changed();
       return profile;
     },
@@ -607,7 +917,115 @@ export function createLauncherService(dataDir: string, logger: Logger) {
 
     async listWorlds(profileId: string): Promise<WorldInfo[]> {
       await requireProfile(profileId);
-      return serialFs(() => listWorlds(paths, profileId));
+      return serialFs(() => worldsWithBackups(profileId));
+    },
+
+    // ---- World backups ----
+
+    /** Back up some (default: all) of a profile's worlds; unchanged ones are skipped. */
+    async backupWorlds(
+      profileId: string,
+      worldIds?: string[],
+    ): Promise<BackupResult> {
+      await requireProfile(profileId);
+      // The game writes its worlds while it runs: a backup now could be half-saved.
+      assertNotRunning(profileId);
+      if (moving) throw new AppError("BUSY", "The data folder is being moved.");
+      const ids = Array.isArray(worldIds)
+        ? worldIds.filter((id): id is string => typeof id === "string")
+        : undefined;
+      return runBackups(profileId, ids, "manual");
+    },
+
+    cancelBackup(): void {
+      backupJob?.controller.abort();
+    },
+
+    async listWorldBackups(
+      profileId: string,
+      worldId: string,
+    ): Promise<WorldBackup[]> {
+      await requireProfile(profileId);
+      const { key } = await findWorld(profileId, worldId);
+      return listBackups(paths, key);
+    },
+
+    /** Unpack a backup as a new world of the same profile. Resolves to its id. */
+    async restoreWorldBackup(
+      profileId: string,
+      worldId: string,
+      backupId: string,
+    ): Promise<string> {
+      await requireProfile(profileId);
+      assertNotRunning(profileId);
+      const { key } = await findWorld(profileId, worldId);
+      const newId = await serialFs(() =>
+        restoreBackup(paths, key, backupId, profileId),
+      );
+      await sync([profileId]);
+      changed();
+      return newId;
+    },
+
+    async deleteWorldBackup(
+      profileId: string,
+      worldId: string,
+      backupId: string,
+    ): Promise<void> {
+      await requireProfile(profileId);
+      const { key } = await findWorld(profileId, worldId);
+      await deleteBackup(paths, key, backupId);
+      changed();
+    },
+
+    async revealWorldBackup(
+      profileId: string,
+      worldId: string,
+      backupId: string,
+    ): Promise<void> {
+      await requireProfile(profileId);
+      const { key } = await findWorld(profileId, worldId);
+      const file = paths.backupFile(key, backupId);
+      if (!(await pathExists(file)))
+        throw new AppError("BACKUP_NOT_FOUND", "The backup file is missing.");
+      shell.showItemInFolder(file);
+    },
+
+    async backupSummary(): Promise<BackupSummary> {
+      await ready;
+      const summary: BackupSummary = {
+        count: 0,
+        totalBytes: 0,
+        orphans: { worlds: 0, count: 0, totalBytes: 0 },
+      };
+      for (const folder of await listBackupFolders(paths)) {
+        const bytes = folder.backups.reduce((n, b) => n + b.sizeBytes, 0);
+        summary.count += folder.backups.length;
+        summary.totalBytes += bytes;
+        if (folder.backups.length > 0 && (await isOrphanBackup(folder.key))) {
+          summary.orphans.worlds++;
+          summary.orphans.count += folder.backups.length;
+          summary.orphans.totalBytes += bytes;
+        }
+      }
+      return summary;
+    },
+
+    /** Delete the backups of worlds that no longer exist. */
+    async deleteOrphanBackups(): Promise<number> {
+      await ready;
+      let removed = 0;
+      for (const folder of await listBackupFolders(paths)) {
+        if (!(await isOrphanBackup(folder.key))) continue;
+        await deleteBackupFolder(paths, folder.key);
+        removed += folder.backups.length;
+      }
+      return removed;
+    },
+
+    async openBackupsFolder(): Promise<void> {
+      await mkdir(paths.backupsDir, { recursive: true });
+      await openFolder(paths.backupsDir);
     },
 
     async moveWorld(worldId: string, toProfileId: string): Promise<void> {
@@ -873,6 +1291,162 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     },
 
     /**
+     * Download the compatible version of every sourced library mod for a target
+     * (version + loader), straight into the store. Mods with no version are skipped.
+     */
+    async downloadLibraryMods(target: {
+      gameVersion: string;
+      loaderId: string;
+    }): Promise<BulkDownloadResult> {
+      await ready;
+      if (bulk) throw new AppError("MOD_BULK_BUSY", "A download is running.");
+      const gameVersion = target.gameVersion;
+      const loaderId = target.loaderId;
+      if (typeof gameVersion !== "string" || typeof loaderId !== "string")
+        throw new AppError("INVALID_TARGET", "Choose a version and a loader.");
+      const modTarget = { gameVersion, loaders: acceptedLoaders(loaderId) };
+      // Sourced library mods, grouped by source: projectId → its display name.
+      const bySource = new Map<string, Map<string, string>>();
+      for (const m of await mods.list()) {
+        if (!m.source) continue;
+        const byProject =
+          bySource.get(m.source.sourceId) ?? new Map<string, string>();
+        if (!byProject.has(m.source.projectId))
+          byProject.set(m.source.projectId, m.name);
+        bySource.set(m.source.sourceId, byProject);
+      }
+      const addedAs = await addedAsByProject();
+      const controller = new AbortController();
+      bulk = controller;
+      try {
+        let downloaded = 0;
+        const skipped: { name: string }[] = [];
+        for (const [sourceId, byProject] of bySource) {
+          const source = sources.get(sourceId);
+          const res = await resolveBulk(
+            source,
+            [...byProject.keys()],
+            modTarget,
+            controller.signal,
+          );
+          for (const n of res.none)
+            skipped.push({ name: byProject.get(n.projectId) ?? n.projectId });
+          if (res.found.length === 0) continue;
+          await serialFs(() =>
+            storeVersions(
+              { downloader, paths, library: mods, source },
+              res.found.map((f) => f.version),
+              {
+                signal: controller.signal,
+                onProgress: (p) => {
+                  broadcast("mods:bulkProgress", p);
+                },
+                addedAs,
+              },
+            ),
+          );
+          downloaded += res.found.length;
+        }
+        return { downloaded, skipped };
+      } finally {
+        bulk = undefined;
+        changed();
+      }
+    },
+
+    /**
+     * After a profile's version changed: re-fetch each enabled sourced mod's version
+     * for the new target and enable it (replacing the old one). Enabled sourced mods
+     * with no compatible version are disabled but kept in the library; enabled mods
+     * with no known source can't be re-fetched and are reported unresolved.
+     */
+    async applyProfileMods(profileId: string): Promise<ApplyModsResult> {
+      const profile = await requireProfile(profileId);
+      assertNotRunning(profileId);
+      if (!profile.loader)
+        throw new AppError(
+          "MOD_INCOMPATIBLE",
+          "Vanilla profiles can't load mods.",
+        );
+      if (bulk) throw new AppError("MOD_BULK_BUSY", "A download is running.");
+      const modTarget = {
+        gameVersion: profile.gameVersion,
+        loaders: acceptedLoaders(profile.loader.id),
+      };
+      const enabled = await mods.enabledMods(profileId);
+      const unresolved = enabled
+        .filter((m) => !m.meta.source)
+        .map((m) => ({ name: m.meta.name }));
+      const bySource = new Map<
+        string,
+        { projectId: string; sha1: string; name: string }[]
+      >();
+      for (const m of enabled) {
+        if (!m.meta.source) continue;
+        const list = bySource.get(m.meta.source.sourceId) ?? [];
+        list.push({
+          projectId: m.meta.source.projectId,
+          sha1: m.sha1,
+          name: m.meta.name,
+        });
+        bySource.set(m.meta.source.sourceId, list);
+      }
+      const addedAs = await addedAsByProject();
+      const controller = new AbortController();
+      bulk = controller;
+      try {
+        let downloaded = 0;
+        const disabled: { name: string }[] = [];
+        for (const [sourceId, list] of bySource) {
+          const source = sources.get(sourceId);
+          const res = await resolveBulk(
+            source,
+            list.map((l) => l.projectId),
+            modTarget,
+            controller.signal,
+          );
+          if (res.found.length > 0) {
+            await serialFs(() =>
+              storeVersions(
+                { downloader, paths, library: mods, source },
+                res.found.map((f) => f.version),
+                {
+                  signal: controller.signal,
+                  onProgress: (p) => {
+                    broadcast("mods:bulkProgress", p);
+                  },
+                  addedAs,
+                },
+              ),
+            );
+            await serialFs(() =>
+              mods.enableAll(
+                profileId,
+                res.found.map((f) => f.version.file.sha1),
+              ),
+            );
+            downloaded += res.found.length;
+          }
+          const none = new Set(res.none.map((n) => n.projectId));
+          for (const l of list) {
+            if (!none.has(l.projectId)) continue;
+            await serialFs(() => mods.disable(profileId, l.sha1));
+            disabled.push({ name: l.name });
+          }
+        }
+        reports.clear();
+        return { downloaded, disabled, unresolved };
+      } finally {
+        bulk = undefined;
+        changed();
+      }
+    },
+
+    cancelBulkDownload(): void {
+      bulk?.abort();
+    },
+
+    /**
      * Tick or untick a library mod in a profile. Incompatible mods can't be enabled.
      * A mod that another enabled mod needs can't be unticked (`MOD_REQUIRED`); unticking
      * one also disables the dependencies nothing else needs any more.
@@ -1014,7 +1588,16 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     // ---- Settings ----
 
     getSettings: () => settings.load(),
-    updateSettings: (patch: unknown) => settings.update(patch),
+    async updateSettings(patch: unknown) {
+      const next = await settings.update(patch);
+      if (
+        typeof patch === "object" &&
+        patch !== null &&
+        ("backupKeepCount" in patch || "backupKeepDays" in patch)
+      )
+        void pruneAllBackups();
+      return next;
+    },
 
     // ---- Games ----
 
@@ -1070,6 +1653,20 @@ export function createLauncherService(dataDir: string, logger: Logger) {
           if (report.errorCount > 0 && problems === "check")
             return { status: "blocked", report };
           warnings = report.warningCount;
+        }
+
+        // The automatic backup before the start. Skipping it (cancel) or a failure
+        // never stops the game: the Play bar says which worlds weren't backed up.
+        let backupFailed: string[] | undefined;
+        if (!isRunning(profile.id)) {
+          const backups = await autoBackup(profile.id, "beforeStart").catch(
+            (err: unknown) => {
+              log.warn("backup before the start failed", err);
+              return undefined;
+            },
+          );
+          if (backups && backups.failed.length > 0)
+            backupFailed = backups.failed.map((b) => b.name);
         }
 
         const gameDir = paths.gameDir(profile.id);
@@ -1136,6 +1733,10 @@ export function createLauncherService(dataDir: string, logger: Logger) {
               .catch((err: unknown) => {
                 log.error("world sync after exit failed", err);
               })
+              .then(() => autoBackup(profile.id, "afterExit"))
+              .catch((err: unknown) => {
+                log.error("backup after the game closed failed", err);
+              })
               .finally(changed);
           }
         });
@@ -1144,13 +1745,80 @@ export function createLauncherService(dataDir: string, logger: Logger) {
         changed();
 
         applyOnGameStart(current.onGameStart);
-        return { status: "started", game, warnings };
+        return {
+          status: "started",
+          game,
+          warnings,
+          ...(backupFailed && { backupFailed }),
+        };
       } finally {
         starting.delete(startKey);
       }
     },
 
     // ---- Moving the data folder ----
+
+    // ---- Java runtimes (Settings) ----
+
+    /** Mojang runtimes (installed and offered) and Java found on the computer. */
+    async listJava(): Promise<JavaListResult> {
+      await ready;
+      const [{ runtimes, offline }, system] = await Promise.all([
+        listJavaRuntimes({ paths, downloader, platform }),
+        detectSystemJava({ platform, exclude: [paths.runtimesDir] }),
+      ]);
+      return { runtimes, system, offline };
+    },
+
+    /** Download (or complete) a Mojang Java runtime, checking every file. */
+    async installJava(component: string): Promise<void> {
+      await ready;
+      if (typeof component !== "string" || !isJavaComponent(component))
+        throw new AppError("JAVA_UNAVAILABLE", "Unknown Java runtime.");
+      if (moving) throw new AppError("BUSY", "The data folder is moving.");
+      if (javaInstall)
+        throw new AppError("BUSY", "Java is already being installed.");
+      if (queue.isAnyBusy())
+        throw new AppError("BUSY", "Wait for installs to finish.");
+      const controller = new AbortController();
+      const done = ensureJava({
+        component,
+        platform,
+        paths,
+        downloader,
+        mode: "full",
+        signal: controller.signal,
+        onProgress: (p) => {
+          broadcast("java:progress", { component, ...p });
+        },
+      }).then(() => undefined);
+      javaInstall = { component, controller, done };
+      try {
+        await done;
+      } finally {
+        javaInstall = undefined;
+      }
+    },
+
+    cancelJavaInstall(): void {
+      javaInstall?.controller.abort();
+    },
+
+    /**
+     * Delete a Mojang runtime. Versions that use it download it again when played;
+     * refused while a game runs on it or something is installing.
+     */
+    async removeJava(component: string): Promise<void> {
+      await ready;
+      if (typeof component !== "string" || !isJavaComponent(component))
+        throw new AppError("JAVA_UNAVAILABLE", "Unknown Java runtime.");
+      if (javaInstall || queue.isAnyBusy())
+        throw new AppError("BUSY", "Wait for installs to finish.");
+      const users = (await javaUsage(paths)).get(component) ?? [];
+      if ([...running.values()].some((g) => users.includes(g.versionId)))
+        throw new AppError("GAME_RUNNING", "Close the game first.");
+      await removeJavaRuntime(paths, component);
+    },
 
     /**
      * Stop background work so the folder can be moved. Refuses while games run or
@@ -1159,7 +1827,14 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     prepareToMove(): void {
       if (running.size > 0 || starting.size > 0)
         throw new AppError("GAME_RUNNING", "Close the game first.");
-      if (queue.isAnyBusy() || [...plans.values()].some((p) => p.controller))
+      if (
+        queue.isAnyBusy() ||
+        [...plans.values()].some((p) => p.controller) ||
+        bulk ||
+        javaInstall ||
+        backupJob ||
+        backupsWaiting > 0
+      )
         throw new AppError(
           "BUSY",
           "Wait for installs and downloads to finish.",

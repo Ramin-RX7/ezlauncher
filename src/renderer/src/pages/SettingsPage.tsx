@@ -6,7 +6,9 @@ import { TriangleAlert } from "lucide-react";
 import { joinArgs, splitArgs } from "@shared/args";
 import type { LauncherSettings, OnGameStart } from "@shared/launcher";
 import { ArgsField } from "../components/settings/ArgsField";
+import { BackupSettings } from "../components/settings/BackupSettings";
 import { DataDirChange } from "../components/settings/DataDirChange";
+import { JavaSettings } from "../components/settings/JavaSettings";
 import { Checkbox } from "../components/ui/Checkbox";
 import { Input } from "../components/ui/Input";
 import { RadioGroup } from "../components/ui/RadioGroup";
@@ -193,6 +195,21 @@ export function SettingsPage() {
         {update.isError && (
           <p className="text-sm text-danger">{errorMessage(t, update.error)}</p>
         )}
+      </Section>
+
+      <Section title={t("settings.backups.title")}>
+        {settings.data && (
+          <BackupSettings
+            settings={settings.data}
+            onChange={(patch) => {
+              update.mutate(patch);
+            }}
+          />
+        )}
+      </Section>
+
+      <Section title={t("settings.java.title")}>
+        <JavaSettings />
       </Section>
 
       <Section title={t("settings.versionList.title")}>

@@ -9,6 +9,7 @@ import { ThemeProvider } from "../theme/ThemeProvider";
 import { SettingsPage } from "./SettingsPage";
 
 const info = {
+  appName: "EZLauncher",
   version: "1.0.0",
   platform: "win32",
   arch: "x64",
@@ -44,7 +45,7 @@ describe("SettingsPage", () => {
     expect(
       await screen.findByText(/This computer has 8192 MB\./),
     ).toBeInTheDocument();
-    const field = screen.getByRole("spinbutton");
+    const field = screen.getByRole("spinbutton", { name: "Maximum memory" });
     fireEvent.change(field, { target: { value: "7168" } });
     expect(
       screen.getByText(/more than 75% of this computer's memory/),

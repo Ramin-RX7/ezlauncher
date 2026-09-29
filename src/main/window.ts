@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { BrowserWindow, shell } from "electron";
 import { is, optimizer } from "@electron-toolkit/utils";
+import { APP_DISPLAY_NAME } from "@shared/app";
 import { getLogger } from "./log";
 
 function openExternalSafely(url: string): void {
@@ -17,6 +18,7 @@ export function createMainWindow(): BrowserWindow {
   const log = getLogger().child("window");
 
   const win = new BrowserWindow({
+    title: APP_DISPLAY_NAME,
     width: 1100,
     height: 700,
     minWidth: 800,

@@ -1,6 +1,8 @@
 import type { ComponentType } from "react";
 import { NavLink, Outlet } from "react-router";
 import { useTranslation } from "react-i18next";
+import { AccountPicker } from "./accounts/AccountPicker";
+import { BackupIndicator } from "./backups/BackupIndicator";
 import {
   House,
   Layers,
@@ -22,33 +24,42 @@ const NAV: NavItem[] = [
   { to: "/settings", labelKey: "nav.settings", icon: Settings },
 ];
 
+/** App name and a row of tabs on top; the page below. */
 export function AppShell() {
   const { t } = useTranslation();
   return (
-    <div className="flex h-full">
-      <nav className="flex w-52 shrink-0 flex-col gap-1 border-e border-border bg-surface p-3">
-        <div className="mb-4 px-3 py-2 text-lg font-bold tracking-tight">
+    // overflow-hidden: only <main> scrolls; the top bar never moves.
+    <div className="flex h-full flex-col overflow-hidden">
+      <header className="flex shrink-0 items-end gap-6 border-b border-border bg-surface px-6">
+        <div className="py-3 text-lg font-bold tracking-tight">
           {t("app.name")}
         </div>
-        {NAV.map(({ to, labelKey, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end
-            className={({ isActive }) =>
-              `flex items-center gap-3 rounded-ezl px-3 py-2 text-sm transition-colors ${
-                isActive
-                  ? "bg-surface-2 font-medium text-text"
-                  : "text-muted hover:bg-surface-2 hover:text-text"
-              }`
-            }
-          >
-            <Icon size={18} aria-hidden />
-            {t(labelKey)}
-          </NavLink>
-        ))}
-      </nav>
-      <main className="min-w-0 flex-1 overflow-auto p-8">
+        <nav aria-label={t("nav.label")} className="flex items-end gap-1">
+          {NAV.map(({ to, labelKey, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === "/"}
+              className={({ isActive }) =>
+                `-mb-px flex items-center gap-2 border-b-2 px-3 py-3 text-sm transition-colors ${
+                  isActive
+                    ? "border-accent font-medium text-text"
+                    : "border-transparent text-muted hover:text-text"
+                }`
+              }
+            >
+              <Icon size={16} aria-hidden />
+              {t(labelKey)}
+            </NavLink>
+          ))}
+        </nav>
+        <div className="ms-auto flex items-center gap-4 self-center py-2">
+          <BackupIndicator />
+          <AccountPicker />
+        </div>
+      </header>
+      {/* relative: hidden inputs of Radix controls (position: absolute) stay inside the scroll area. */}
+      <main className="relative min-h-0 flex-1 overflow-auto p-8">
         <Outlet />
       </main>
     </div>

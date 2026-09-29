@@ -56,8 +56,8 @@ export function VersionRefresh() {
     list.data?.source === "none" && list.data.versions.length === 0;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <p className="text-sm text-muted" aria-live="polite">
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-3">
+      <p className="min-w-0 truncate text-xs text-muted" aria-live="polite">
         {notice ??
           (noList
             ? t("versions.noList")

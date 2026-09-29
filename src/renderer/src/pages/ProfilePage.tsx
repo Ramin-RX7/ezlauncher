@@ -4,7 +4,9 @@ import { useTranslation } from "react-i18next";
 import { ArrowLeft } from "lucide-react";
 import { ModsTab } from "../components/mods/ModsTab";
 import { DeleteProfileDialog } from "../components/profiles/DeleteProfileDialog";
+import { DuplicateProfileDialog } from "../components/profiles/DuplicateProfileDialog";
 import { ProfileEditor } from "../components/profiles/ProfileEditor";
+import { ProfileIcon } from "../components/profiles/ProfileIcon";
 import { WorldsTab } from "../components/profiles/WorldsTab";
 import { Button } from "../components/ui/Button";
 import { TabBar } from "../components/ui/Tabs";
@@ -20,6 +22,7 @@ export function ProfilePage() {
   const profiles = useProfiles();
   const [tab, setTab] = useState<Tab>("settings");
   const [deleting, setDeleting] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const list = profiles.data ?? [];
   const profile = list.find((p) => p.id === id);
 
@@ -39,17 +42,30 @@ export function ProfilePage() {
       ) : (
         <>
           <div className="flex items-center justify-between gap-3">
-            <h1 className="truncate text-lg font-semibold">{profile.name}</h1>
-            <Button
-              variant="ghost"
-              className="text-danger"
-              disabled={profile.running > 0}
-              onClick={() => {
-                setDeleting(true);
-              }}
-            >
-              {t("profiles.delete")}
-            </Button>
+            <div className="flex min-w-0 items-center gap-3">
+              <ProfileIcon iconId={profile.iconId} />
+              <h1 className="truncate text-lg font-semibold">{profile.name}</h1>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setDuplicating(true);
+                }}
+              >
+                {t("profiles.duplicate")}
+              </Button>
+              <Button
+                variant="ghost"
+                className="text-danger"
+                disabled={profile.running > 0}
+                onClick={() => {
+                  setDeleting(true);
+                }}
+              >
+                {t("profiles.delete")}
+              </Button>
+            </div>
           </div>
           <TabBar
             label={profile.name}
@@ -70,6 +86,17 @@ export function ProfilePage() {
           )}
           {tab === "worlds" && <WorldsTab profile={profile} />}
           {tab === "mods" && <ModsTab profile={profile} />}
+          {duplicating && (
+            <DuplicateProfileDialog
+              profile={profile}
+              onClose={() => {
+                setDuplicating(false);
+              }}
+              onDuplicated={(copy) => {
+                void navigate(`/profiles/${copy.id}`);
+              }}
+            />
+          )}
           {deleting && (
             <DeleteProfileDialog
               profile={profile}

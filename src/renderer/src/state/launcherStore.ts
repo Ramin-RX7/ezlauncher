@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type {
+  BackupProgress,
+  BackupStateEvent,
   GameExitEvent,
   GameLogEvent,
   InstallProgress,
@@ -35,6 +37,12 @@ export interface LauncherState {
   /** Oldest first. */
   games: GameEntry[];
   lastExit?: GameExitEvent;
+  /** The backup job in progress (none when idle). */
+  backup?: {
+    beforeStart: boolean;
+    profileId: string;
+    progress?: BackupProgress;
+  };
 }
 
 /**
@@ -69,6 +77,28 @@ function createLauncherStore() {
         ...state,
         installs: { ...state.installs, [e.versionId]: entry },
         ...(started && { latestInstallId: e.versionId }),
+      });
+    },
+    backupState(e: BackupStateEvent) {
+      if (e.status === "running") {
+        set({
+          ...state,
+          backup: { beforeStart: e.beforeStart, profileId: e.profileId },
+        });
+        return;
+      }
+      const next = { ...state };
+      delete next.backup;
+      set(next);
+    },
+    backupProgress(p: BackupProgress) {
+      set({
+        ...state,
+        backup: {
+          beforeStart: p.beforeStart,
+          profileId: p.profileId,
+          progress: p,
+        },
       });
     },
     installProgress(p: InstallProgress) {

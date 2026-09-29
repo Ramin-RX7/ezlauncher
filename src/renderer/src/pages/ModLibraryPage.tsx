@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { LibraryMod } from "@shared/launcher";
 import { AddMods } from "../components/mods/AddMods";
+import { DownloadForVersionDialog } from "../components/mods/DownloadForVersionDialog";
 import { loaderLabel } from "../components/mods/compatText";
+import { libraryTree, type LibraryNode } from "../components/mods/libraryTree";
 import { ModIcon } from "../components/mods/ModIcon";
 import { SourceBadge } from "../components/mods/SourceBadge";
 import { Button } from "../components/ui/Button";
@@ -23,6 +25,7 @@ export function ModLibraryPage() {
   const profiles = useProfiles();
   const [removing, setRemoving] = useState<LibraryMod>();
   const [confirmUnused, setConfirmUnused] = useState(false);
+  const [downloadForVersion, setDownloadForVersion] = useState(false);
   const [notice, setNotice] = useState<string>();
 
   const profileNames = useMemo(
@@ -31,7 +34,30 @@ export function ModLibraryPage() {
   );
   const names = (ids: string[]) =>
     ids.map((id) => profileNames[id] ?? id).join(", ");
-  const list = library.data ?? [];
+  const list = useMemo(() => library.data ?? [], [library.data]);
+  // Dependency-only mods sit under the mods that need them (under each, if several).
+  const rows = useMemo(() => {
+    const out: {
+      key: string;
+      mod: LibraryMod;
+      depth: number;
+      parent?: string;
+    }[] = [];
+    const walk = (
+      nodes: LibraryNode[],
+      depth: number,
+      prefix: string,
+      parent?: string,
+    ) => {
+      for (const n of nodes) {
+        const key = `${prefix}/${n.mod.sha1}`;
+        out.push({ key, mod: n.mod, depth, ...(parent && { parent }) });
+        walk(n.children, depth + 1, key, n.mod.name);
+      }
+    };
+    walk(libraryTree(list), 0, "");
+    return out;
+  }, [list]);
   const unused = list.filter((m) => m.usedBy.length === 0).length;
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["mods"] });
@@ -60,16 +86,30 @@ export function ModLibraryPage() {
           <h1 className="text-lg font-semibold">{t("mods.title")}</h1>
           <p className="text-sm text-muted">{t("mods.libraryHint")}</p>
         </div>
-        <Button
-          disabled={unused === 0}
-          onClick={() => {
-            removeUnused.reset();
-            setConfirmUnused(true);
-          }}
-        >
-          {t("mods.removeUnused")}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            onClick={() => {
+              setDownloadForVersion(true);
+            }}
+          >
+            {t("mods.bulk.open")}
+          </Button>
+          <Button
+            disabled={unused === 0}
+            onClick={() => {
+              removeUnused.reset();
+              setConfirmUnused(true);
+            }}
+          >
+            {t("mods.removeUnused")}
+          </Button>
+        </div>
       </div>
+
+      <DownloadForVersionDialog
+        open={downloadForVersion}
+        onOpenChange={setDownloadForVersion}
+      />
       {notice && (
         <p className="text-sm text-muted" aria-live="polite">
           {notice}
@@ -83,10 +123,11 @@ export function ModLibraryPage() {
           </p>
         ) : (
           <ul className="min-h-0 overflow-auto rounded-ezl border border-border bg-surface">
-            {list.map((m) => (
+            {rows.map(({ key, mod: m, depth, parent }) => (
               <li
-                key={m.sha1}
-                className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0"
+                key={key}
+                className="flex items-center gap-3 border-b border-border py-2 pe-3 last:border-b-0"
+                style={{ paddingInlineStart: `${0.75 + depth * 2.25}rem` }}
               >
                 <ModIcon mod={m} />
                 <div className="flex min-w-0 flex-1 flex-col">
@@ -104,12 +145,22 @@ export function ModLibraryPage() {
                         {t("mods.notChecked")}
                       </span>
                     )}
+                    {m.dependency && !parent && (
+                      <span className="rounded-ezl border border-border px-2 py-0.5 text-xs text-muted">
+                        {t("mods.dependencyBadge")}
+                      </span>
+                    )}
                     {m.usedBy.length === 0 && (
                       <span className="rounded-ezl border border-border px-2 py-0.5 text-xs text-muted">
                         {t("mods.unused")}
                       </span>
                     )}
                   </span>
+                  {parent && (
+                    <span className="truncate text-xs text-muted">
+                      {t("mods.dependencyOf", { name: parent })}
+                    </span>
+                  )}
                   <span className="truncate text-xs text-muted">
                     {[
                       m.version

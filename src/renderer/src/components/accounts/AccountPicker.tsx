@@ -1,56 +1,55 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Users } from "lucide-react";
-import { invoke } from "../../lib/api";
-import { keys, useAccounts, useSelection } from "../../state/queries";
+import { UserPlus, Users } from "lucide-react";
+import { useAccounts, useSelection } from "../../state/queries";
 import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
-import { AccountsDialog, NameForm } from "./AccountsDialog";
+import { AccountsDialog } from "./AccountsDialog";
 
 const NONE = "";
 
-/** Pick the account to play with; create the first one; Manage opens the account list. */
+/** The account to play with, in the top bar; Manage (or Create, with none yet) opens the account list. */
 export function AccountPicker() {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
   const accounts = useAccounts();
   const { accountId, selectAccount } = useSelection();
   const [managing, setManaging] = useState(false);
   const list = accounts.data ?? [];
   const selected = list.find((a) => a.id === accountId);
 
-  const create = useMutation({
-    mutationFn: (username: string) => invoke("account:add", username),
-    onSuccess: (account) => {
-      void queryClient.invalidateQueries({ queryKey: keys.accounts });
-      selectAccount(account.id); // creating it is an explicit choice
-    },
-  });
+  const dialog = managing && (
+    <AccountsDialog
+      onClose={() => {
+        setManaging(false);
+      }}
+    />
+  );
 
   if (accounts.isPending) return null;
 
   if (list.length === 0) {
     return (
-      <NameForm
-        label={t("accounts.create")}
-        submitLabel={t("accounts.create")}
-        hint={t("accounts.usernameRule")}
-        pending={create.isPending}
-        error={create.error}
-        onSubmit={(name) => {
-          create.mutate(name);
-        }}
-      />
+      <>
+        <Button
+          variant="primary"
+          onClick={() => {
+            setManaging(true);
+          }}
+        >
+          <UserPlus size={16} aria-hidden />
+          {t("accounts.create")}
+        </Button>
+        {dialog}
+      </>
     );
   }
 
   return (
-    <div className="flex flex-col gap-1 text-sm">
+    <div className="flex items-center gap-2 text-sm">
       <label htmlFor="account-select" className="text-muted">
         {t("accounts.label")}
       </label>
-      <div className="flex gap-2">
+      <div className="flex gap-1">
         <Select
           id="account-select"
           value={selected?.id ?? NONE}
@@ -76,13 +75,7 @@ export function AccountPicker() {
           <Users size={16} aria-hidden />
         </Button>
       </div>
-      {managing && (
-        <AccountsDialog
-          onClose={() => {
-            setManaging(false);
-          }}
-        />
-      )}
+      {dialog}
     </div>
   );
 }

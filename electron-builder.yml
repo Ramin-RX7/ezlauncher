@@ -1,5 +1,5 @@
 appId: com.ezlauncher.app
-productName: ezlauncher
+productName: EZLauncher
 directories:
   buildResources: build
   output: release

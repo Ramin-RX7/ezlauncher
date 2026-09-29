@@ -1,4 +1,6 @@
 import { registerAppIpc } from "./app";
+import { registerBackupsIpc } from "./backups";
+import { registerJavaIpc } from "./java";
 import { registerLauncherIpc } from "./launcher";
 import { registerModsIpc } from "./mods";
 import { registerProfilesIpc } from "./profiles";
@@ -11,4 +13,6 @@ export function registerIpc(): void {
   registerLauncherIpc();
   registerProfilesIpc();
   registerModsIpc();
+  registerJavaIpc();
+  registerBackupsIpc();
 }

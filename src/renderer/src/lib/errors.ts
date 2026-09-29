@@ -39,6 +39,11 @@ const KNOWN = [
   "DATA_DIR_NOT_EMPTY",
   "INVALID_PATH",
   "CANCELLED",
+  "MOD_BULK_BUSY",
+  "INVALID_TARGET",
+  "BACKUP_NOT_FOUND",
+  "BACKUP_DAMAGED",
+  "BACKUP_FAILED",
 ] as const;
 
 /** A user-facing message for an error code from the main process. */

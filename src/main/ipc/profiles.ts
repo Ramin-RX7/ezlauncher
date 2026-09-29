@@ -4,6 +4,11 @@ import { handle } from "./register";
 export function registerProfilesIpc(): void {
   handle("profiles:list", () => getService().listProfiles());
   handle("profiles:create", (_e, input) => getService().createProfile(input));
+  handle("profiles:duplicate", (_e, id, options) =>
+    getService().duplicateProfile(id, {
+      copyWorlds: options?.copyWorlds === true,
+    }),
+  );
   handle("profiles:update", (_e, id, patch) =>
     getService().updateProfile(id, patch),
   );

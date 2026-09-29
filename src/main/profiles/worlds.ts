@@ -1,4 +1,5 @@
 import {
+  cp,
   lstat,
   mkdir,
   readdir,
@@ -6,13 +7,13 @@ import {
   rename,
   stat,
 } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { z } from "zod";
 import type { OrphanWorld, WorldInfo } from "@shared/launcher";
 import { AppError } from "../core/errors";
 import { readJson, writeJsonAtomic } from "../core/fsAtomic";
 import type { Logger } from "../core/logger";
-import type { Paths } from "../minecraft/paths";
+import { safeFolderName, type Paths } from "../minecraft/paths";
 import {
   createDirLink,
   isLink,
@@ -98,7 +99,11 @@ export async function readWorldOwner(
   }
 }
 
-async function writeOwner(dir: string, profileId: string): Promise<void> {
+/** Make `profileId` the owner of the world folder `dir` (its flag file). */
+export async function writeOwner(
+  dir: string,
+  profileId: string,
+): Promise<void> {
   await writeJsonAtomic(join(dir, WORLD_FLAG), { schema: 1, profileId });
 }
 
@@ -350,6 +355,38 @@ export async function moveWorld(
     ...options,
     only: [toProfileId, ...(from ? [from] : [])],
   });
+}
+
+/**
+ * Copy every world of one profile into another profile's `saves/` as plain folders
+ * (a duplicate's own copies). The owner flag and Minecraft's lock file stay behind;
+ * the next world sync adopts the copies into `worlds/`, owned by `toProfileId`.
+ * Resolves to how many worlds were copied.
+ */
+export async function copyProfileWorlds(
+  paths: Paths,
+  fromProfileId: string,
+  toProfileId: string,
+): Promise<number> {
+  const worlds = await listWorlds(paths, fromProfileId);
+  const saves = paths.savesDir(toProfileId);
+  await mkdir(saves, { recursive: true });
+  for (const w of worlds) {
+    const from = w.linked
+      ? paths.worldDir(w.id)
+      : join(paths.savesDir(fromProfileId), w.id);
+    await cp(from, join(saves, safeFolderName(w.id)), {
+      recursive: true,
+      errorOnExist: true,
+      force: false,
+      filter: (src) =>
+        !(
+          dirname(src) === from &&
+          (basename(src) === WORLD_FLAG || basename(src) === "session.lock")
+        ),
+    });
+  }
+  return worlds.length;
 }
 
 /** Delete a world for good: links first, then its folder. */
