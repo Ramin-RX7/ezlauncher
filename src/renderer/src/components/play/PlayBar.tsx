@@ -71,6 +71,12 @@ export function PlayBar({
     install?.status === "queued" || install?.status === "running";
 
   const running = (profile?.running ?? 0) > 0;
+  // Each game of a profile needs its own account.
+  const accountPlaying = useLauncherState((s) =>
+    s.running.some(
+      (g) => g.profileId === profile?.id && g.accountId === account?.id,
+    ),
+  );
   const busy = installing || play.isPending;
   let label = profile?.installedVersionId
     ? t("play.play")
@@ -83,6 +89,8 @@ export function PlayBar({
   if (!profile && !account) hint = t("play.needBoth");
   else if (!profile) hint = t("play.needProfile");
   else if (!account) hint = t("play.needAccount");
+  else if (accountPlaying)
+    hint = t("play.accountPlaying", { name: account.username });
   else if (running) hint = t("play.runningHint");
 
   const loaderName = profile?.loader
@@ -110,7 +118,7 @@ export function PlayBar({
         <Button
           variant="primary"
           className="h-11 min-w-44 text-base"
-          disabled={!profile || !account || busy}
+          disabled={!profile || !account || busy || accountPlaying}
           aria-describedby={hint ? "play-hint" : undefined}
           onClick={() => {
             if (profile && account)

@@ -14,9 +14,11 @@ export function registerLauncherIpc(): void {
   handle("loaders:list", (_e, options) => getService().listLoaders(options));
 
   handle("account:list", () => getService().listAccounts());
-  handle("account:setUsername", (_e, username) =>
-    getService().setUsername(username),
+  handle("account:add", (_e, username) => getService().addAccount(username));
+  handle("account:rename", (_e, { id, username }) =>
+    getService().renameAccount(id, username),
   );
+  handle("account:remove", (_e, id) => getService().removeAccount(id));
 
   handle("settings:get", () => getService().getSettings());
   handle("settings:update", (_e, patch) => getService().updateSettings(patch));

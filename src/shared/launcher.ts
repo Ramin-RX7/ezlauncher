@@ -66,8 +66,10 @@ export interface Profile {
   installedVersionId?: string;
   /** Missing = use the global setting. */
   memoryMaxMb?: number;
-  /** One argument per item. Missing = none. */
+  /** One argument per item. Missing = use the global setting; `[]` = none. */
   extraJvmArgs?: string[];
+  /** Added after the version's game arguments. Missing = use the global setting. */
+  extraGameArgs?: string[];
   createdAt: string;
   lastPlayedAt?: string;
 }
@@ -79,6 +81,7 @@ export interface ProfileInput {
   loader: { id: string } | null;
   memoryMaxMb?: number | null;
   extraJvmArgs?: string[] | null;
+  extraGameArgs?: string[] | null;
 }
 
 export interface ProfileInfo extends Profile {
@@ -301,11 +304,29 @@ export interface InstallStateEvent {
 export type OnGameStart = "keep" | "minimize" | "close";
 
 export interface LauncherSettings {
+  /** Default `-Xmx` in MB; a profile can replace it. */
   memoryMaxMb: number;
+  /** Added after the version's JVM arguments; a profile's own list replaces these. */
+  extraJvmArgs: string[];
+  /** Added after the version's game arguments; a profile's own list replaces these. */
+  extraGameArgs: string[];
   onGameStart: OnGameStart;
+  /** Which version types the version list shows; releases always are. */
+  showSnapshots: boolean;
+  showOldBeta: boolean;
+  showOldAlpha: boolean;
   /** Last selected profile and account on the home screen. */
   selectedProfileId: string | null;
   selectedAccountId: string | null;
+}
+
+/** Moving the data folder (Settings → Data folder → Move my data there). */
+export interface MoveProgress {
+  step: "counting" | "copying" | "linking" | "cleaning";
+  files: number;
+  totalFiles: number;
+  bytes: number;
+  totalBytes: number;
 }
 
 export interface AccountInfo {

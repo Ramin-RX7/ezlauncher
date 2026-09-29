@@ -23,6 +23,7 @@ export function VersionsPage() {
   const profiles = useProfiles();
   const loaders = useLoaders();
   const installs = useLauncherState((s) => s.installs);
+  const running = useLauncherState((s) => s.running);
   const [deleting, setDeleting] = useState<InstalledVersionInfo>();
   const [error, setError] = useState<string>();
 
@@ -64,8 +65,16 @@ export function VersionsPage() {
         <ul className="overflow-hidden rounded-ezl border border-border bg-surface">
           {list.map((v) => {
             const install = installs[v.id];
-            const busy =
+            // A running game uses it, directly or through a loader install built on it.
+            const played = running.some(
+              (g) =>
+                g.versionId === v.id ||
+                list.find((x) => x.id === g.versionId)?.loader?.gameVersion ===
+                  v.id,
+            );
+            const installing =
               install?.status === "queued" || install?.status === "running";
+            const busy = played || installing;
             return (
               <li
                 key={v.id}
@@ -90,6 +99,7 @@ export function VersionsPage() {
                       {v.usedBy.length > 0
                         ? t("versionsPage.usedBy", { names: names(v.usedBy) })
                         : t("versionsPage.unused")}
+                      {played && ` · ${t("versionsPage.inUse")}`}
                     </span>
                   </div>
                   <Menu
@@ -127,7 +137,7 @@ export function VersionsPage() {
                     ]}
                   />
                 </div>
-                {busy && (
+                {installing && (
                   <InstallProgressRow
                     versionId={v.id}
                     progress={install.progress}

@@ -1,3 +1,4 @@
+import { totalmem } from "node:os";
 import { app } from "electron";
 import { handle } from "./register";
 
@@ -8,5 +9,6 @@ export function registerAppIpc(): void {
     arch: process.arch,
     electron: process.versions.electron,
     node: process.versions.node,
+    totalMemoryMb: Math.floor(totalmem() / (1024 * 1024)),
   }));
 }

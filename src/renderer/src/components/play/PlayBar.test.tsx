@@ -290,28 +290,42 @@ describe("PlayBar", () => {
     });
   });
 
-  it("can start another game of a profile that is already running", async () => {
+  it("plays a running profile again only with another account", async () => {
+    const alex = { id: "a2", username: "Alex", uuid: "u2" };
+    // Steve is playing p1 already.
+    launcherStore.setRunning([{ ...game, accountId: "a1" }]);
     const api = mockApi({
-      "account:list": () => [steve],
+      "account:list": () => [steve, alex],
       "settings:get": () => settings({ selectedAccountId: "a1" }),
+      "settings:update": (patch) => settings(patch as object),
       "loaders:list": () => loaders,
       "game:launch": () => ({ status: "started", game, warnings: 0 }),
     });
     renderBar(profile({ running: 1 }));
-    const again = await screen.findByRole("button", { name: "Play another" });
     expect(
       await screen.findByText(
-        /Already running\. Another copy uses the same profile folder/,
+        "Steve is already playing this profile. Pick another account to play it again.",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Play another" })).toBeDisabled();
+
+    fireEvent.change(await screen.findByRole("combobox", { name: "Account" }), {
+      target: { value: "a2" },
+    });
+    const again = screen.getByRole("button", { name: "Play another" });
     await waitFor(() => {
       expect(again).toBeEnabled();
     });
+    expect(
+      screen.getByText(
+        /Another game of this profile needs a different account/,
+      ),
+    ).toBeInTheDocument();
     fireEvent.click(again);
     await waitFor(() => {
       expect(api.invoke).toHaveBeenCalledWith("game:launch", {
         profileId: "p1",
-        accountId: "a1",
+        accountId: "a2",
       });
     });
   });
@@ -321,7 +335,7 @@ describe("PlayBar", () => {
       "account:list": () => [],
       "settings:get": () => settings(),
       "loaders:list": () => loaders,
-      "account:setUsername": (name) => ({ ...steve, username: name as string }),
+      "account:add": (name) => ({ ...steve, username: name as string }),
       "settings:update": (patch) => settings(patch as object),
     });
     renderBar(profile());
@@ -331,7 +345,7 @@ describe("PlayBar", () => {
     fireEvent.change(input, { target: { value: "Alex" } });
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
     await waitFor(() => {
-      expect(api.invoke).toHaveBeenCalledWith("account:setUsername", "Alex");
+      expect(api.invoke).toHaveBeenCalledWith("account:add", "Alex");
     });
     await waitFor(() => {
       expect(api.invoke).toHaveBeenCalledWith("settings:update", {

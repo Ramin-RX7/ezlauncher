@@ -5,7 +5,12 @@ import { readJson, writeJsonAtomic } from "../core/fsAtomic";
 
 export const DEFAULT_SETTINGS: LauncherSettings = {
   memoryMaxMb: 2048,
+  extraJvmArgs: [],
+  extraGameArgs: [],
   onGameStart: "keep",
+  showSnapshots: false,
+  showOldBeta: false,
+  showOldAlpha: false,
   selectedProfileId: null,
   selectedAccountId: null,
 };
@@ -13,11 +18,17 @@ export const DEFAULT_SETTINGS: LauncherSettings = {
 const memorySchema = z.number().int().min(512).max(65536);
 const onGameStartSchema = z.enum(["keep", "minimize", "close"]);
 const selectionSchema = z.string().max(64).nullable();
+export const argsSchema = z.array(z.string().max(4096)).max(200);
 
 const fileSchema = z.object({
   schema: z.literal(1),
   memoryMaxMb: memorySchema.catch(DEFAULT_SETTINGS.memoryMaxMb),
+  extraJvmArgs: argsSchema.optional().catch([]),
+  extraGameArgs: argsSchema.optional().catch([]),
   onGameStart: onGameStartSchema.catch(DEFAULT_SETTINGS.onGameStart),
+  showSnapshots: z.boolean().optional().catch(false),
+  showOldBeta: z.boolean().optional().catch(false),
+  showOldAlpha: z.boolean().optional().catch(false),
   selectedProfileId: selectionSchema.optional().catch(null),
   selectedAccountId: selectionSchema.optional().catch(null),
 });
@@ -25,7 +36,12 @@ const fileSchema = z.object({
 const patchSchema = z
   .object({
     memoryMaxMb: memorySchema,
+    extraJvmArgs: argsSchema,
+    extraGameArgs: argsSchema,
     onGameStart: onGameStartSchema,
+    showSnapshots: z.boolean(),
+    showOldBeta: z.boolean(),
+    showOldAlpha: z.boolean(),
     selectedProfileId: selectionSchema,
     selectedAccountId: selectionSchema,
   })
@@ -40,7 +56,12 @@ export function createSettingsStore(file: string) {
       if (!data) return { ...DEFAULT_SETTINGS };
       return {
         memoryMaxMb: data.memoryMaxMb,
+        extraJvmArgs: data.extraJvmArgs ?? [],
+        extraGameArgs: data.extraGameArgs ?? [],
         onGameStart: data.onGameStart,
+        showSnapshots: data.showSnapshots ?? false,
+        showOldBeta: data.showOldBeta ?? false,
+        showOldAlpha: data.showOldAlpha ?? false,
         selectedProfileId: data.selectedProfileId ?? null,
         selectedAccountId: data.selectedAccountId ?? null,
       };

@@ -13,6 +13,7 @@ import type {
   DisablePlan,
   LaunchResult,
   LibraryMod,
+  MoveProgress,
   ModDownloadProgress,
   RemoteMatchCard,
   InstallStateEvent,
@@ -38,6 +39,8 @@ export interface AppInfo {
   arch: string;
   electron: string;
   node: string;
+  /** The computer's total memory, for the memory setting. */
+  totalMemoryMb: number;
 }
 
 /** Renderer → main request/response calls (`ipcRenderer.invoke`). `void` = returns nothing. */
@@ -50,6 +53,12 @@ export interface IpcInvokeContract {
   "setup:chooseFolder": { args: []; result: string | null };
   /** Sets the data folder. If one was already set, the app restarts. */
   "setup:setDataDir": { args: [dir: string]; result: void };
+  /**
+   * Moves the data folder to `dir` (an empty folder), then restarts. Progress comes as
+   * `setup:moveProgress`. Fails with `GAME_RUNNING` / `BUSY` while things are running.
+   */
+  "setup:moveDataDir": { args: [dir: string]; result: void };
+  "setup:cancelMove": { args: []; result: void };
 
   "versions:list": {
     args: [options: { refresh?: boolean }];
@@ -159,8 +168,15 @@ export interface IpcInvokeContract {
   "mods:redownload": { args: [sha1: string]; result: void };
 
   "account:list": { args: []; result: AccountInfo[] };
-  /** Creates the offline account, or renames it (the UUID is kept). */
-  "account:setUsername": { args: [username: string]; result: AccountInfo };
+  /** Fails with `ACCOUNT_NAME_TAKEN` when another account has the name (ignoring case). */
+  "account:add": { args: [username: string]; result: AccountInfo };
+  /** Only the name changes; the UUID stays. */
+  "account:rename": {
+    args: [options: { id: string; username: string }];
+    result: AccountInfo;
+  };
+  /** Removes the account from the launcher; world files are not touched. */
+  "account:remove": { args: [id: string]; result: void };
 
   "settings:get": { args: []; result: LauncherSettings };
   "settings:update": {
@@ -188,6 +204,7 @@ export interface IpcEventContract {
   /** Profiles, their worlds or running counts changed; refetch. */
   "profiles:changed": Record<string, never>;
   "mods:download": ModDownloadProgress;
+  "setup:moveProgress": MoveProgress;
 }
 
 export type InvokeChannel = keyof IpcInvokeContract;
@@ -204,6 +221,8 @@ export const INVOKE_CHANNELS = [
   "setup:getState",
   "setup:chooseFolder",
   "setup:setDataDir",
+  "setup:moveDataDir",
+  "setup:cancelMove",
   "versions:list",
   "versions:install",
   "versions:cancel",
@@ -234,7 +253,9 @@ export const INVOKE_CHANNELS = [
   "mods:disablePlan",
   "mods:redownload",
   "account:list",
-  "account:setUsername",
+  "account:add",
+  "account:rename",
+  "account:remove",
   "settings:get",
   "settings:update",
   "game:launch",
@@ -248,6 +269,7 @@ export const EVENT_CHANNELS = [
   "game:exit",
   "profiles:changed",
   "mods:download",
+  "setup:moveProgress",
 ] as const satisfies readonly EventChannel[];
 
 /** Errors cross the IPC boundary in this shape. */

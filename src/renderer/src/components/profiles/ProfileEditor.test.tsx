@@ -40,20 +40,84 @@ describe("ProfileEditor", () => {
     fireEvent.change(screen.getByLabelText("Mod loader"), {
       target: { value: "quilt" },
     });
-    fireEvent.change(screen.getByLabelText("Extra JVM arguments"), {
-      target: { value: "-XX:+UseG1GC\n\n -Dx=1 " },
-    });
     fireEvent.click(screen.getByRole("button", { name: "Create profile" }));
     await waitFor(() => {
       expect(api.invoke).toHaveBeenCalledWith("profiles:create", {
         name: "Modded",
         gameVersion: "1.18.2",
         loader: { id: "quilt" },
+        // Everything else uses the global settings.
         memoryMaxMb: null,
-        extraJvmArgs: ["-XX:+UseG1GC", "-Dx=1"],
+        extraJvmArgs: null,
+        extraGameArgs: null,
       });
     });
     expect(onSaved).toHaveBeenCalled();
+  });
+
+  it("replaces global memory and arguments with the profile's own", async () => {
+    const api = setup({
+      "profiles:update": (_id, patch) => ({
+        ...profile(),
+        ...(patch as object),
+      }),
+    });
+    renderEditor({ profile: profile() });
+    const [memory, jvm, game] = await screen.findAllByRole("checkbox", {
+      name: /Use global setting/,
+    });
+    fireEvent.click(memory!);
+    fireEvent.change(screen.getByLabelText("Maximum memory (MB)"), {
+      target: { value: "6144" },
+    });
+    fireEvent.click(jvm!);
+    fireEvent.change(screen.getByLabelText("Extra JVM arguments"), {
+      target: { value: '-XX:+UseZGC "-Dname=a b"' },
+    });
+    fireEvent.click(game!);
+    // An empty field means "no extra game arguments", not the global ones.
+    fireEvent.change(screen.getByLabelText("Extra game arguments"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith(
+        "profiles:update",
+        "p1",
+        expect.objectContaining({
+          memoryMaxMb: 6144,
+          extraJvmArgs: ["-XX:+UseZGC", "-Dname=a b"],
+          extraGameArgs: [],
+        }),
+      );
+    });
+  });
+
+  it("can't save an unclosed quote, and warns about -Xmx in JVM arguments", async () => {
+    setup();
+    renderEditor({ profile: profile() });
+    const [, jvm] = await screen.findAllByRole("checkbox", {
+      name: /Use global setting/,
+    });
+    fireEvent.click(jvm!);
+    const field = screen.getByLabelText("Extra JVM arguments");
+    fireEvent.change(field, { target: { value: "-Xmx4G" } });
+    expect(
+      screen.getByText("-Xmx and -Xms are set by Memory; leave them out here."),
+    ).toBeInTheDocument();
+    fireEvent.change(field, { target: { value: '"-Dopen' } });
+    expect(screen.getByText("A quote isn't closed.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("can't be changed while its game runs", async () => {
+    setup();
+    renderEditor({ profile: profile(), running: true });
+    expect(
+      await screen.findByText("Close the game first to change this profile."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Name")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
   it("disables loaders that don't support the picked version", async () => {

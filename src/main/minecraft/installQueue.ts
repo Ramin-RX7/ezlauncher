@@ -97,6 +97,11 @@ export class InstallQueue {
     return this.find(versionId) !== undefined;
   }
 
+  /** Is any install running or waiting? */
+  isAnyBusy(): boolean {
+    return this.running !== undefined || this.waiting.length > 0;
+  }
+
   private find(versionId: string): Entry | undefined {
     if (this.running?.versionId === versionId) return this.running;
     return this.waiting.find((e) => e.versionId === versionId);

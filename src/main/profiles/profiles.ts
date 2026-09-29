@@ -15,7 +15,7 @@ const idString = z.string().refine((s) => {
 }, "invalid id");
 
 const memorySchema = z.number().int().min(512).max(65536);
-const jvmArgsSchema = z.array(z.string().min(1).max(4096)).max(200);
+const argsSchema = z.array(z.string().max(4096)).max(200);
 
 const profileSchema = z.object({
   id: idString,
@@ -24,7 +24,8 @@ const profileSchema = z.object({
   loader: z.object({ id: idString }).nullable(),
   installedVersionId: idString.optional(),
   memoryMaxMb: memorySchema.optional(),
-  extraJvmArgs: jvmArgsSchema.optional(),
+  extraJvmArgs: argsSchema.optional(),
+  extraGameArgs: argsSchema.optional(),
   createdAt: z.string(),
   lastPlayedAt: z.string().optional(),
 });
@@ -41,7 +42,8 @@ const inputSchema = z
     gameVersion: idString,
     loader: z.object({ id: idString }).strict().nullable(),
     memoryMaxMb: memorySchema.nullable().optional(),
-    extraJvmArgs: jvmArgsSchema.nullable().optional(),
+    extraJvmArgs: argsSchema.nullable().optional(),
+    extraGameArgs: argsSchema.nullable().optional(),
   })
   .strict();
 
@@ -63,10 +65,13 @@ function applyOptional(profile: Profile, input: Partial<Input>): Profile {
   if (input.memoryMaxMb === null) delete next.memoryMaxMb;
   else if (input.memoryMaxMb !== undefined)
     next.memoryMaxMb = input.memoryMaxMb;
-  if (input.extraJvmArgs === null || input.extraJvmArgs?.length === 0)
-    delete next.extraJvmArgs;
+  // An empty list is a real override: "no extra arguments", instead of the global ones.
+  if (input.extraJvmArgs === null) delete next.extraJvmArgs;
   else if (input.extraJvmArgs !== undefined)
     next.extraJvmArgs = input.extraJvmArgs;
+  if (input.extraGameArgs === null) delete next.extraGameArgs;
+  else if (input.extraGameArgs !== undefined)
+    next.extraGameArgs = input.extraGameArgs;
   return next;
 }
 

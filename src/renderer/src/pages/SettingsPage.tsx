@@ -2,18 +2,25 @@ import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ToggleGroup } from "radix-ui";
+import { TriangleAlert } from "lucide-react";
+import { joinArgs, splitArgs } from "@shared/args";
 import type { LauncherSettings, OnGameStart } from "@shared/launcher";
-import { Button } from "../components/ui/Button";
+import { ArgsField } from "../components/settings/ArgsField";
+import { DataDirChange } from "../components/settings/DataDirChange";
+import { Checkbox } from "../components/ui/Checkbox";
 import { Input } from "../components/ui/Input";
 import { RadioGroup } from "../components/ui/RadioGroup";
 import { invoke } from "../lib/api";
 import { errorMessage } from "../lib/errors";
+import { keys } from "../state/queries";
 import { THEME_MODES, type ThemeMode } from "../theme/theme";
 import { useTheme } from "../theme/useTheme";
 
 const MEMORY_MIN = 512;
-const MEMORY_MAX = 16384;
+const MEMORY_LIMIT = 65536;
 const MEMORY_STEP = 256;
+/** Warn when the game may take more than this share of the computer's memory. */
+const MEMORY_WARN_SHARE = 0.75;
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -26,12 +33,14 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+type ArgsKey = "extraJvmArgs" | "extraGameArgs";
+
 export function SettingsPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { mode, setMode } = useTheme();
   const settings = useQuery({
-    queryKey: ["settings"],
+    queryKey: keys.settings,
     queryFn: () => invoke("settings:get"),
   });
   const setup = useQuery({
@@ -47,9 +56,18 @@ export function SettingsPage() {
     mutationFn: (patch: Partial<LauncherSettings>) =>
       invoke("settings:update", patch),
     onSuccess: (next) => {
-      queryClient.setQueryData(["settings"], next);
+      queryClient.setQueryData(keys.settings, next);
     },
   });
+
+  // The slider goes up to the computer's memory.
+  const totalMb = info.data?.totalMemoryMb;
+  const memoryMax = totalMb
+    ? Math.max(
+        MEMORY_MIN * 2,
+        Math.min(MEMORY_LIMIT, Math.floor(totalMb / MEMORY_STEP) * MEMORY_STEP),
+      )
+    : 16384;
 
   // Memory is edited locally and saved when the slider or field is released.
   const [memoryDraft, setMemory] = useState<number>();
@@ -57,20 +75,41 @@ export function SettingsPage() {
   const saveMemory = () => {
     if (memoryDraft === undefined) return;
     const clamped = Math.min(
-      MEMORY_MAX,
+      MEMORY_LIMIT,
       Math.max(MEMORY_MIN, Math.round(memoryDraft)),
     );
     setMemory(undefined);
     if (clamped !== settings.data?.memoryMaxMb)
       update.mutate({ memoryMaxMb: clamped });
   };
+  const tooMuch =
+    totalMb !== undefined &&
+    memory !== undefined &&
+    memory > totalMb * MEMORY_WARN_SHARE;
 
-  const changeDir = useMutation({
-    mutationFn: async () => {
-      const chosen = await invoke("setup:chooseFolder");
-      if (chosen) await invoke("setup:setDataDir", chosen); // the app restarts
-    },
-  });
+  // Argument fields are text; they're saved as arrays when the field is left.
+  const [argsDraft, setArgsDraft] = useState<Partial<Record<ArgsKey, string>>>(
+    {},
+  );
+  const argsText = (key: ArgsKey) =>
+    argsDraft[key] ?? joinArgs(settings.data?.[key] ?? []);
+  const saveArgs = (key: ArgsKey) => {
+    const text = argsDraft[key];
+    if (text === undefined) return;
+    const split = splitArgs(text);
+    if ("error" in split) return; // shown on the field; kept as typed
+    setArgsDraft((d) =>
+      Object.fromEntries(Object.entries(d).filter(([k]) => k !== key)),
+    );
+    if (joinArgs(split.args) !== joinArgs(settings.data?.[key] ?? []))
+      update.mutate({ [key]: split.args });
+  };
+
+  const toggles = [
+    ["showSnapshots", "snapshots"],
+    ["showOldBeta", "oldBeta"],
+    ["showOldAlpha", "oldAlpha"],
+  ] as const;
 
   return (
     <div className="flex max-w-2xl flex-col gap-6">
@@ -86,7 +125,7 @@ export function SettingsPage() {
               type="range"
               aria-label={t("settings.memory.label")}
               min={MEMORY_MIN}
-              max={MEMORY_MAX}
+              max={memoryMax}
               step={MEMORY_STEP}
               value={memory ?? MEMORY_MIN}
               onChange={(e) => {
@@ -101,7 +140,7 @@ export function SettingsPage() {
                 id="memory"
                 type="number"
                 min={MEMORY_MIN}
-                max={MEMORY_MAX}
+                max={MEMORY_LIMIT}
                 step={MEMORY_STEP}
                 value={memory ?? ""}
                 onChange={(e) => {
@@ -110,12 +149,70 @@ export function SettingsPage() {
                 onBlur={saveMemory}
                 className="w-24"
               />
-              <span className="text-sm text-muted">MB</span>
+              <span className="text-sm text-muted">
+                {t("settings.memory.mb")}
+              </span>
             </div>
           </div>
-          <p className="text-xs text-muted">{t("settings.memory.hint")}</p>
+          <p className="text-xs text-muted">
+            {t("settings.memory.hint")}
+            {totalMb !== undefined &&
+              ` ${t("settings.memory.total", { mb: totalMb })}`}
+          </p>
+          {tooMuch && (
+            <p className="flex items-center gap-2 text-xs text-warning">
+              <TriangleAlert size={14} aria-hidden />
+              {t("settings.memory.tooMuch")}
+            </p>
+          )}
         </div>
 
+        <ArgsField
+          label={t("settings.args.jvm")}
+          hint={t("settings.args.jvmHint")}
+          jvm
+          text={argsText("extraJvmArgs")}
+          onText={(text) => {
+            setArgsDraft((d) => ({ ...d, extraJvmArgs: text }));
+          }}
+          onBlur={() => {
+            saveArgs("extraJvmArgs");
+          }}
+        />
+        <ArgsField
+          label={t("settings.args.game")}
+          hint={t("settings.args.gameHint")}
+          text={argsText("extraGameArgs")}
+          onText={(text) => {
+            setArgsDraft((d) => ({ ...d, extraGameArgs: text }));
+          }}
+          onBlur={() => {
+            saveArgs("extraGameArgs");
+          }}
+        />
+        {update.isError && (
+          <p className="text-sm text-danger">{errorMessage(t, update.error)}</p>
+        )}
+      </Section>
+
+      <Section title={t("settings.versionList.title")}>
+        <div className="flex flex-col gap-2">
+          {toggles.map(([key, label]) => (
+            <Checkbox
+              key={key}
+              checked={settings.data?.[key] ?? false}
+              onChange={(checked) => {
+                update.mutate({ [key]: checked });
+              }}
+            >
+              {t(`settings.versionList.${label}`)}
+            </Checkbox>
+          ))}
+          <p className="text-xs text-muted">{t("settings.versionList.hint")}</p>
+        </div>
+      </Section>
+
+      <Section title={t("settings.launcher")}>
         <div className="flex flex-col gap-2">
           <span id="on-start-label" className="text-sm font-medium">
             {t("settings.onGameStart.label")}
@@ -134,12 +231,7 @@ export function SettingsPage() {
             />
           )}
         </div>
-        {update.isError && (
-          <p className="text-sm text-danger">{errorMessage(t, update.error)}</p>
-        )}
-      </Section>
 
-      <Section title={t("settings.launcher")}>
         <div className="flex flex-col gap-2">
           <span className="text-sm font-medium">
             {t("settings.dataDir.label")}
@@ -151,14 +243,7 @@ export function SettingsPage() {
             >
               {setup.data?.dataDir}
             </code>
-            <Button
-              disabled={changeDir.isPending}
-              onClick={() => {
-                changeDir.mutate();
-              }}
-            >
-              {t("settings.dataDir.change")}
-            </Button>
+            <DataDirChange current={setup.data?.dataDir ?? undefined} />
           </div>
           <p className="text-xs text-muted">{t("settings.dataDir.hint")}</p>
         </div>

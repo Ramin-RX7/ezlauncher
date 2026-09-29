@@ -1,12 +1,25 @@
 import { useSyncExternalStore } from "react";
 import type {
   GameExitEvent,
+  GameLogEvent,
   InstallProgress,
   InstallStateEvent,
   RunningGame,
 } from "@shared/launcher";
 
 export const MAX_LOG_LINES = 5000;
+/** Closed games whose log is kept (running ones always are). */
+export const MAX_CLOSED_GAMES = 5;
+
+/** One game's output, kept separately from the others. */
+export interface GameEntry {
+  launchId: string;
+  profileId: string;
+  /** Empty until `game:started` arrives (output can come first). */
+  accountId: string;
+  lines: string[];
+  exit?: { code: number | null; crashed: boolean };
+}
 
 export interface InstallEntry {
   status: InstallStateEvent["status"];
@@ -19,7 +32,8 @@ export interface LauncherState {
   /** The install that most recently started or was queued (a new loader install's id is only known then). */
   latestInstallId?: string;
   running: RunningGame[];
-  log: string[];
+  /** Oldest first. */
+  games: GameEntry[];
   lastExit?: GameExitEvent;
 }
 
@@ -28,7 +42,7 @@ export interface LauncherState {
  * A tiny store on `useSyncExternalStore`, so any component can read it.
  */
 function createLauncherStore() {
-  let state: LauncherState = { installs: {}, running: [], log: [] };
+  let state: LauncherState = { installs: {}, running: [], games: [] };
   const listeners = new Set<() => void>();
   const set = (next: LauncherState) => {
     state = next;
@@ -68,33 +82,75 @@ function createLauncherStore() {
       });
     },
     gameStarted(game: RunningGame) {
+      const known = state.games.some((g) => g.launchId === game.launchId);
       set({
         ...state,
         running: [
           ...state.running.filter((g) => g.launchId !== game.launchId),
           game,
         ],
+        games: known
+          ? state.games.map((g) =>
+              g.launchId === game.launchId
+                ? { ...g, accountId: game.accountId }
+                : g,
+            )
+          : [
+              ...state.games,
+              {
+                launchId: game.launchId,
+                profileId: game.profileId,
+                accountId: game.accountId,
+                lines: [],
+              },
+            ],
       });
     },
-    gameLog(lines: string[]) {
-      const log = [...state.log, ...lines];
+    gameLog(e: GameLogEvent) {
+      const entry = state.games.find((g) => g.launchId === e.launchId) ?? {
+        launchId: e.launchId,
+        profileId: e.profileId,
+        accountId: "",
+        lines: [],
+      };
+      const all = [...entry.lines, ...e.lines];
+      const next = {
+        ...entry,
+        lines: all.length > MAX_LOG_LINES ? all.slice(-MAX_LOG_LINES) : all,
+      };
       set({
         ...state,
-        log: log.length > MAX_LOG_LINES ? log.slice(-MAX_LOG_LINES) : log,
+        games: state.games.some((g) => g.launchId === e.launchId)
+          ? state.games.map((g) => (g.launchId === e.launchId ? next : g))
+          : [...state.games, next],
       });
     },
     gameExit(e: GameExitEvent) {
+      const games = state.games.map((g) =>
+        g.launchId === e.launchId
+          ? { ...g, exit: { code: e.code, crashed: e.crashed } }
+          : g,
+      );
+      // Keep only the newest closed games.
+      const closed = games.filter((g) => g.exit);
+      const drop = new Set(
+        closed
+          .slice(0, Math.max(0, closed.length - MAX_CLOSED_GAMES))
+          .map((g) => g.launchId),
+      );
       set({
         ...state,
         running: state.running.filter((g) => g.launchId !== e.launchId),
+        games: games.filter((g) => !drop.has(g.launchId)),
         lastExit: e,
       });
     },
     setRunning(running: RunningGame[]) {
       set({ ...state, running });
     },
-    clearLog() {
-      set({ ...state, log: [] });
+    /** Forget the closed games' logs; running games keep theirs. */
+    clearClosed() {
+      set({ ...state, games: state.games.filter((g) => !g.exit) });
     },
     dismissExit() {
       const next = { ...state };

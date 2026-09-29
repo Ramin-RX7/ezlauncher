@@ -35,16 +35,16 @@ Version pins: electron-vite 5 needs **Vite ≤ 7** (so `@vitejs/plugin-react` 5.
 - `src/main/`: Electron main process. Does all file system, network and process work.
   - `src/main/minecraft/`: core launcher logic (version list, installing, launching). Plain TypeScript with **no Electron imports**, so it can be tested on its own.
   - `src/main/core/`: helpers every scope uses: `fsAtomic.ts` (`writeJsonAtomic`, `readJson` with a zod schema), `logger.ts`, `errors.ts` (`AppError` with a `code`). No Electron imports.
-  - `src/main/auth/`: login providers behind `AuthProvider` (`providers/offline.ts`), and `accountStore.ts`. No Electron imports.
+  - `src/main/auth/`: login providers behind `AuthProvider` (`providers/offline.ts`), `accountStore.ts`, and `accounts.ts` (add / rename / remove; names unique ignoring case; renaming keeps the UUID). No Electron imports.
   - `src/main/profiles/`: profiles (`launcher/profiles.json`), world sync (worlds live in `worlds/`, linked into `profiles/<id>/saves/`, owner flag in each world), and migration of old `games/<versionId>/` folders. `links.ts` is the only place that knows link types; delete folders with its `removeTree`, which never follows links. `mods.ts` is the shared mod library (`mods-store/<sha1>.jar`, hard-linked into profiles, `launcher/mods.json`). No Electron imports.
   - `src/main/modsources/`: mod websites behind `ModSource` (`modrinth.ts` is the only adapter; nothing else knows Modrinth URLs or JSON). `resolveDependencies.ts` and `downloadMods.ts` use the interface only; tests use `testing/fakeModSource.ts`. No Electron imports.
   - `src/main/validation/`: mod checks before launch and on the Mods tab. `validate.ts` is a pure function (profile + enabled mods → issues, and which mod needs which); `collect.ts` gathers its input, `integrity.ts` checks files for damage, `versions/` parses Fabric/Maven ranges and Minecraft ids. Issues carry a `code` + params; the renderer words them. No Electron imports.
-  - `src/main/settings/`: `bootstrap.json` (where the data folder is, in Electron's userData) and `launcher/settings.json`.
+  - `src/main/settings/`: `bootstrap.json` (where the data folder is, in Electron's userData) and `launcher/settings.json`. `launchSettings.ts` (`resolveLaunchSettings`: a profile's memory/arguments replace the global ones) and `moveData.ts` (move the data folder: rename on one drive, copy keeping hard links on another, re-point world links).
   - `src/main/services/`: `launcherService.ts` is the composition root that wires the core to Electron (`net.fetch`, windows, events); `current.ts` holds the service for the chosen data folder.
   - `src/main/ipc/`: one `register…Ipc()` file per feature, using `handle()` and `broadcast()` from `register.ts`.
 - `src/preload/`: exposes a small typed API to the renderer via `contextBridge`.
 - `src/renderer/`: React UI only. No Node or file system access.
-- `src/shared/`: types and IPC channel names shared by the processes. No Node or DOM types here.
+- `src/shared/`: types and IPC channel names shared by the processes, and `args.ts` (split extra arguments shell-style, never through a shell). No Node or DOM types here.
 
 Security: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`. The CSP lives in a `<meta>` tag in `src/renderer/index.html` (it's removed only in dev). New windows and navigation are blocked; http(s) links open in the system browser.
 

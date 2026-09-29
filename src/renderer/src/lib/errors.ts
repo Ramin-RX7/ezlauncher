@@ -33,6 +33,12 @@ const KNOWN = [
   "SOURCE_UNKNOWN",
   "MOD_REQUIRED",
   "MOD_NO_SOURCE",
+  "ACCOUNT_NAME_TAKEN",
+  "ACCOUNT_PLAYING",
+  "RENAME_UNSUPPORTED",
+  "DATA_DIR_NOT_EMPTY",
+  "INVALID_PATH",
+  "CANCELLED",
 ] as const;
 
 /** A user-facing message for an error code from the main process. */

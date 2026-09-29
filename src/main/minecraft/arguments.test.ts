@@ -185,7 +185,7 @@ describe("buildLaunchCommand", () => {
     ]);
   });
 
-  it("puts extra JVM arguments after the version's and before the main class", () => {
+  it("puts extra JVM arguments before the main class, and extra game arguments last", () => {
     const cmd = buildLaunchCommand({
       installed: installed({
         id: "v",
@@ -199,6 +199,7 @@ describe("buildLaunchCommand", () => {
       gameDir: "/data/profiles/p",
       memoryMaxMb: 1024,
       extraJvmArgs: ["-XX:+UseG1GC", "-Dname=with space ${not_filled}"],
+      extraGameArgs: ["--width", "1280"],
       launcherName: "ezlauncher",
       launcherVersion: "1.0",
     });
@@ -207,6 +208,8 @@ describe("buildLaunchCommand", () => {
       "-Dname=with space ${not_filled}",
       "Main",
       "--demo",
+      "--width",
+      "1280",
     ]);
   });
 

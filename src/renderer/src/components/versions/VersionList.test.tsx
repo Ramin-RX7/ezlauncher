@@ -1,9 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { versionList } from "../../test/fixtures";
-import { VersionList } from "./VersionList";
+import { VersionList, type VersionListProps } from "./VersionList";
 
-function renderList(onSelect = vi.fn()) {
+function renderList(
+  onSelect = vi.fn(),
+  props: Partial<Pick<VersionListProps, "types" | "selectedId">> = {},
+) {
   render(
     <VersionList
       versions={[
@@ -17,6 +20,7 @@ function renderList(onSelect = vi.fn()) {
       ]}
       selectedId="26.3"
       onSelect={onSelect}
+      {...props}
     />,
   );
   return onSelect;
@@ -57,5 +61,35 @@ describe("VersionList", () => {
       .getAllByRole("option")
       .find((o) => o.getAttribute("aria-selected") === "true");
     expect(selected?.textContent).toContain("26.3");
+  });
+
+  it("shows only the version types that are turned on; releases always", () => {
+    renderList(vi.fn(), { types: ["release", "snapshot"] });
+    expect(screen.getByRole("tab", { name: "Snapshots" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Old beta" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Old alpha" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows no tabs when only releases are on", () => {
+    renderList(vi.fn(), { types: ["release"] });
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(ids().join()).toMatch(/26.3/);
+  });
+
+  it("keeps showing a hidden type's tab when the profile uses such a version", () => {
+    renderList(vi.fn(), { types: ["release"], selectedId: "b1.7.3" });
+    // Opens on its tab, with its version.
+    expect(screen.getByRole("tab", { name: "Old beta" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(ids()[0]).toContain("b1.7.3");
+    expect(
+      screen.queryByRole("tab", { name: "Snapshots" }),
+    ).not.toBeInTheDocument();
   });
 });

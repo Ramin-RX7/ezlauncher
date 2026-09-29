@@ -20,6 +20,11 @@ export interface VersionListProps {
   versions: VersionSummary[];
   selectedId: string | undefined;
   onSelect: (id: string) => void;
+  /**
+   * The version types to show (default: all). The selected version's type is always
+   * shown, so a profile on a hidden type still shows its version.
+   */
+  types?: readonly VersionTab[];
 }
 
 function tabOf(type: string): VersionTab {
@@ -69,9 +74,17 @@ export function VersionList({
   versions,
   selectedId,
   onSelect,
+  types = TABS,
 }: VersionListProps) {
   const { t, i18n } = useTranslation();
-  const [tab, setTab] = useState<VersionTab>("release");
+  const selectedTab = tabOf(
+    versions.find((v) => v.id === selectedId)?.type ?? "release",
+  );
+  const tabs = TABS.filter(
+    (v) => v === "release" || v === selectedTab || types.includes(v),
+  );
+  const [picked, setTab] = useState<VersionTab>(selectedTab);
+  const tab = tabs.includes(picked) ? picked : "release";
   const [query, setQuery] = useState("");
 
   const visible = useMemo(() => {
@@ -100,18 +113,22 @@ export function VersionList({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <TabBar
-          label={t("versions.search")}
-          items={TABS.map((value) => ({
-            value,
-            label: t(`versions.tabs.${value}`),
-          }))}
-          value={tab}
-          onChange={(v) => {
-            setTab(v);
-            reset();
-          }}
-        />
+        {tabs.length > 1 ? (
+          <TabBar
+            label={t("versions.search")}
+            items={tabs.map((value) => ({
+              value,
+              label: t(`versions.tabs.${value}`),
+            }))}
+            value={tab}
+            onChange={(v) => {
+              setTab(v);
+              reset();
+            }}
+          />
+        ) : (
+          <span />
+        )}
         <div className="relative">
           <Search
             size={16}

@@ -68,7 +68,12 @@ export function settings(
 ): LauncherSettings {
   return {
     memoryMaxMb: 2048,
+    extraJvmArgs: [],
+    extraGameArgs: [],
     onGameStart: "keep",
+    showSnapshots: false,
+    showOldBeta: false,
+    showOldAlpha: false,
     selectedProfileId: null,
     selectedAccountId: null,
     ...overrides,

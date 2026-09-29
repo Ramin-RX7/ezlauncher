@@ -30,7 +30,7 @@ export function LauncherEvents() {
     launcherStore.gameStarted(g);
   });
   useIpcEvent("game:log", (e) => {
-    launcherStore.gameLog(e.lines);
+    launcherStore.gameLog(e);
   });
   useIpcEvent("game:exit", (e) => {
     launcherStore.gameExit(e);

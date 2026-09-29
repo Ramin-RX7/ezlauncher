@@ -36,7 +36,8 @@ describe("profile store", () => {
     [{ ...base, gameVersion: "../evil" }],
     [{ ...base, loader: { id: "a/b" } }],
     [{ ...base, memoryMaxMb: 100 }],
-    [{ ...base, extraJvmArgs: [""] }],
+    [{ ...base, extraJvmArgs: ["x".repeat(4097)] }],
+    [{ ...base, extraGameArgs: "--width 1280" }],
     [{ ...base, unknown: 1 }],
   ])("refuses invalid input %#", async (input) => {
     await expect(store().create(input)).rejects.toMatchObject({
@@ -74,12 +75,17 @@ describe("profile store", () => {
       extraJvmArgs: ["-Xss2M"],
     });
     expect(p).toMatchObject({ memoryMaxMb: 4096, extraJvmArgs: ["-Xss2M"] });
+    // An empty list is an override ("no extra arguments"); null goes back to global.
+    const empty = await s.update(p.id, { extraJvmArgs: [], extraGameArgs: [] });
+    expect(empty).toMatchObject({ extraJvmArgs: [], extraGameArgs: [] });
     const cleared = await s.update(p.id, {
       memoryMaxMb: null,
-      extraJvmArgs: [],
+      extraJvmArgs: null,
+      extraGameArgs: null,
     });
     expect(cleared.memoryMaxMb).toBeUndefined();
     expect(cleared.extraJvmArgs).toBeUndefined();
+    expect(cleared.extraGameArgs).toBeUndefined();
   });
 
   it("keeps every change when many happen at once", async () => {

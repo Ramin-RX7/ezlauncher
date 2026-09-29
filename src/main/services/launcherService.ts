@@ -23,6 +23,7 @@ import type {
   WorldInfo,
 } from "@shared/launcher";
 import { createAccountStore } from "../auth/accountStore";
+import { createAccounts } from "../auth/accounts";
 import { OFFLINE_PROVIDER_ID } from "../auth/providers/offline";
 import { getProvider } from "../auth/registry";
 import type { Account } from "../auth/types";
@@ -80,6 +81,7 @@ import {
   syncWorlds,
   worldsOwnedBy,
 } from "../profiles/worlds";
+import { resolveLaunchSettings } from "../settings/launchSettings";
 import { createSettingsStore } from "../settings/settings";
 import { collectInput } from "../validation/collect";
 import { checkIntegrity } from "../validation/integrity";
@@ -108,7 +110,15 @@ export function createLauncherService(dataDir: string, logger: Logger) {
   const loaders = createLoaderRegistry({ downloader });
   const loaderDeps = { ...deps, loaders };
   const settings = createSettingsStore(paths.launcherFile("settings.json"));
-  const accounts = createAccountStore(paths.launcherFile("accounts.json"));
+  const accounts = createAccounts({
+    store: createAccountStore(paths.launcherFile("accounts.json")),
+    provider: getProvider(OFFLINE_PROVIDER_ID),
+    getProvider,
+  });
+  /** Launches between their checks and the game starting, as `profileId:accountId`. */
+  const starting = new Set<string>();
+  /** The data folder is being moved: no background work may touch it. */
+  let moving = false;
   const profiles = createProfileStore(paths.launcherFile("profiles.json"));
   const mods = createModLibrary({ paths, logger: log });
   const sources = createModSourceRegistry({
@@ -181,6 +191,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
   /** Ask the mod sources about new jars soon; several adds in a row make one request. */
   function scheduleIdentify(delayMs = 2000): void {
     if (identifyTimer) clearTimeout(identifyTimer);
+    if (moving) return;
     identifyTimer = setTimeout(() => {
       identifyTimer = undefined;
       void identifyPending().catch((err: unknown) => {
@@ -365,6 +376,31 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     }
   }
 
+  /** Also a running game on an install built on this version (e.g. Fabric on 1.18.2). */
+  async function assertVersionNotPlayed(versionId: string): Promise<void> {
+    assertVersionIdle(versionId);
+    for (const g of running.values()) {
+      const base = (await readInstallMarker(paths, g.versionId))?.loader
+        ?.gameVersion;
+      if (base === versionId)
+        throw new AppError("GAME_RUNNING", "Close the game first.");
+    }
+  }
+
+  function assertAccountFree(profileId: string, account: Account): void {
+    const key = `${profileId}:${account.id}`;
+    const playing =
+      starting.has(key) ||
+      [...running.values()].some(
+        (g) => g.profileId === profileId && g.accountId === account.id,
+      );
+    if (playing)
+      throw new AppError(
+        "ACCOUNT_PLAYING",
+        `${account.username} is already playing this profile.`,
+      );
+  }
+
   /** Profiles that play each installed version, directly or through a loader install on it. */
   async function versionUsers(): Promise<Map<string, string[]>> {
     const installed = await listInstalledVersions(paths);
@@ -444,6 +480,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     },
 
     async repairVersion(versionId: string): Promise<void> {
+      await assertVersionNotPlayed(versionId);
       await ensureInstalled(versionId, "repair");
     },
 
@@ -507,6 +544,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
 
     async updateProfile(id: string, patch: unknown): Promise<Profile> {
       await requireProfile(id);
+      assertNotRunning(id);
       validateLoader((patch as { loader?: unknown } | null)?.loader);
       const profile = await profiles.update(id, patch);
       changed();
@@ -950,28 +988,27 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     // ---- Accounts ----
 
     async listAccounts(): Promise<AccountInfo[]> {
-      return (await accounts.load()).accounts.map(toInfo);
+      return (await accounts.list()).map(toInfo);
     },
 
-    /** Scope 03 has one offline account: create it, or rename it (keeping its UUID). */
-    async setUsername(username: string): Promise<AccountInfo> {
-      const data = await accounts.load();
-      const provider = getProvider(OFFLINE_PROVIDER_ID);
-      const current =
-        data.accounts.find((a) => a.id === data.selectedId) ?? data.accounts[0];
-      let account: Account;
-      if (current && provider.renameAccount) {
-        account = await provider.renameAccount(current, username);
-        data.accounts = data.accounts.map((a) =>
-          a.id === account.id ? account : a,
-        );
-      } else {
-        account = await provider.createAccount({ username });
-        data.accounts.push(account);
-      }
-      data.selectedId = account.id;
-      await accounts.save(data);
-      return toInfo(account);
+    /** A new offline account; the name must be free (ignoring case). */
+    async addAccount(username: unknown): Promise<AccountInfo> {
+      return toInfo(await accounts.add(username));
+    },
+
+    /** Rename an account. Its UUID stays, so its stats and advancements stay too. */
+    async renameAccount(id: unknown, username: unknown): Promise<AccountInfo> {
+      return toInfo(await accounts.rename(id, username));
+    },
+
+    /** Remove an account from the launcher; world files are not touched. */
+    async removeAccount(id: unknown): Promise<void> {
+      if ([...running.values()].some((g) => g.accountId === id))
+        throw new AppError("GAME_RUNNING", "Close the game first.");
+      await accounts.remove(id);
+      const current = await settings.load();
+      if (current.selectedAccountId === id)
+        await settings.update({ selectedAccountId: null });
     },
 
     // ---- Settings ----
@@ -990,111 +1027,151 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       problems = "check",
     }: LaunchRequest): Promise<LaunchResult> {
       let profile = await requireProfile(profileId);
-      const account = (await accounts.load()).accounts.find(
-        (a) => a.id === accountId,
-      );
+      if (moving) throw new AppError("BUSY", "The data folder is being moved.");
+      const account =
+        typeof accountId === "string"
+          ? await accounts.get(accountId)
+          : undefined;
       if (!account)
         throw new AppError("NO_ACCOUNT", "Choose an account first.");
-      const identity = await getProvider(account.providerId).getLaunchIdentity(
-        account,
-      );
-      const current = await settings.load();
+      // Several games of one profile are fine, each with its own account.
+      assertAccountFree(profile.id, account);
+      const startKey = `${profile.id}:${account.id}`;
+      starting.add(startKey);
+      try {
+        const identity = await getProvider(
+          account.providerId,
+        ).getLaunchIdentity(account);
+        const current = await settings.load();
 
-      const { versionId, installed } = await ensureProfileInstall(profile);
-      if (profile.installedVersionId !== versionId)
-        await profiles.setInstalled(profile.id, versionId);
+        const { versionId, installed } = await ensureProfileInstall(profile);
+        if (profile.installedVersionId !== versionId)
+          await profiles.setInstalled(profile.id, versionId);
 
-      // A profile that is already running keeps its folders as they are.
-      if (!isRunning(profile.id)) await sync([profile.id]);
+        // A profile that is already running keeps its folders as they are.
+        if (!isRunning(profile.id)) await sync([profile.id]);
 
-      // Check the mods. With errors the user decides: see them, disable those mods, or play anyway.
-      let warnings = 0;
-      if (profile.loader) {
-        profile = await requireProfile(profile.id); // with its install recorded
-        const id = profile.id;
-        if (typeof problems === "object" && !isRunning(id)) {
-          const off = Array.isArray(problems.disable)
-            ? problems.disable.filter((s): s is string => typeof s === "string")
-            : [];
-          await serialFs(async () => {
-            for (const sha1 of off) await mods.disable(id, sha1);
-          });
+        // Check the mods. With errors the user decides: see them, disable those mods, or play anyway.
+        let warnings = 0;
+        if (profile.loader) {
+          profile = await requireProfile(profile.id); // with its install recorded
+          const id = profile.id;
+          if (typeof problems === "object" && !isRunning(id)) {
+            const off = Array.isArray(problems.disable)
+              ? problems.disable.filter(
+                  (s): s is string => typeof s === "string",
+                )
+              : [];
+            await serialFs(async () => {
+              for (const sha1 of off) await mods.disable(id, sha1);
+            });
+          }
+          const { report } = await checkProfileMods(profile);
+          if (report.errorCount > 0 && problems === "check")
+            return { status: "blocked", report };
+          warnings = report.warningCount;
         }
-        const { report } = await checkProfileMods(profile);
-        if (report.errorCount > 0 && problems === "check")
-          return { status: "blocked", report };
-        warnings = report.warningCount;
-      }
 
-      const gameDir = paths.gameDir(profile.id);
-      await applyLegacyAssets(
-        installed.assetIndex,
-        installed.assetIndexId,
-        paths,
-        gameDir,
-      );
-      const command = buildLaunchCommand({
-        installed,
-        identity,
-        paths,
-        platform,
-        gameDir,
-        memoryMaxMb: profile.memoryMaxMb ?? current.memoryMaxMb,
-        ...(profile.extraJvmArgs && { extraJvmArgs: profile.extraJvmArgs }),
-        launcherName: "ezlauncher",
-        launcherVersion: app.getVersion(),
-        logger: log,
-      });
-      log.info(
-        `launching profile ${profile.id} (${versionId}) as ${identity.username}`,
-      );
-      log.debug([command.javaPath, ...command.args].join(" "));
-
-      const handle = await launchGame(command, {
-        logFile: join(gameDir, "logs", "ezlauncher-output.log"),
-      });
-      const game: RunningGame = {
-        launchId: randomUUID(),
-        profileId: profile.id,
-        accountId: account.id,
-        versionId,
-        pid: handle.pid,
-      };
-      running.set(game.launchId, game);
-      handle.onLog((lines) => {
-        broadcast("game:log", {
-          launchId: game.launchId,
-          profileId: profile.id,
-          lines,
-        });
-      });
-      handle.onExit(({ code, crashed }) => {
-        running.delete(game.launchId);
-        log.info(
-          `${versionId} exited with code ${String(code)}${crashed ? " (crashed)" : ""}`,
+        const gameDir = paths.gameDir(profile.id);
+        await applyLegacyAssets(
+          installed.assetIndex,
+          installed.assetIndexId,
+          paths,
+          gameDir,
         );
-        broadcast("game:exit", {
-          launchId: game.launchId,
-          profileId: profile.id,
-          versionId,
-          code,
-          crashed,
+        const command = buildLaunchCommand({
+          installed,
+          identity,
+          paths,
+          platform,
+          gameDir,
+          ...resolveLaunchSettings(profile, current),
+          launcherName: "ezlauncher",
+          launcherVersion: app.getVersion(),
+          logger: log,
         });
-        // The last game of this profile closed: pick up worlds created or deleted in game.
-        if (!isRunning(profile.id)) {
-          void sync([profile.id])
-            .catch((err: unknown) => {
-              log.error("world sync after exit failed", err);
-            })
-            .finally(changed);
-        }
-      });
-      broadcast("game:started", game);
-      await profiles.touchLastPlayed(profile.id);
-      changed();
+        log.info(
+          `launching profile ${profile.id} (${versionId}) as ${identity.username}`,
+        );
+        log.debug([command.javaPath, ...command.args].join(" "));
 
-      applyOnGameStart(current.onGameStart);
-      return { status: "started", game, warnings };
+        const handle = await launchGame(command, {
+          // One file per account: two games of a profile never share one.
+          logFile: join(
+            gameDir,
+            "logs",
+            `ezlauncher-output-${account.username}.log`,
+          ),
+        });
+        const game: RunningGame = {
+          launchId: randomUUID(),
+          profileId: profile.id,
+          accountId: account.id,
+          versionId,
+          pid: handle.pid,
+        };
+        running.set(game.launchId, game);
+        handle.onLog((lines) => {
+          broadcast("game:log", {
+            launchId: game.launchId,
+            profileId: profile.id,
+            lines,
+          });
+        });
+        handle.onExit(({ code, crashed }) => {
+          running.delete(game.launchId);
+          log.info(
+            `${versionId} exited with code ${String(code)}${crashed ? " (crashed)" : ""}`,
+          );
+          broadcast("game:exit", {
+            launchId: game.launchId,
+            profileId: profile.id,
+            versionId,
+            code,
+            crashed,
+          });
+          // The last game of this profile closed: pick up worlds created or deleted in game.
+          if (!isRunning(profile.id)) {
+            void sync([profile.id])
+              .catch((err: unknown) => {
+                log.error("world sync after exit failed", err);
+              })
+              .finally(changed);
+          }
+        });
+        broadcast("game:started", game);
+        await profiles.touchLastPlayed(profile.id);
+        changed();
+
+        applyOnGameStart(current.onGameStart);
+        return { status: "started", game, warnings };
+      } finally {
+        starting.delete(startKey);
+      }
+    },
+
+    // ---- Moving the data folder ----
+
+    /**
+     * Stop background work so the folder can be moved. Refuses while games run or
+     * installs and mod downloads are busy.
+     */
+    prepareToMove(): void {
+      if (running.size > 0 || starting.size > 0)
+        throw new AppError("GAME_RUNNING", "Close the game first.");
+      if (queue.isAnyBusy() || [...plans.values()].some((p) => p.controller))
+        throw new AppError(
+          "BUSY",
+          "Wait for installs and downloads to finish.",
+        );
+      moving = true;
+      if (identifyTimer) clearTimeout(identifyTimer);
+      identifyTimer = undefined;
+    },
+
+    /** The move failed or was cancelled: back to normal on the old folder. */
+    resumeAfterMove(): void {
+      moving = false;
     },
   };
 }

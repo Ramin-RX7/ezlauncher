@@ -16,6 +16,8 @@ export interface LaunchContext {
   memoryMaxMb: number;
   /** Extra JVM arguments (one item each), after the version's and before the main class. */
   extraJvmArgs?: readonly string[];
+  /** Extra game arguments (one item each), after the version's. */
+  extraGameArgs?: readonly string[];
   launcherName: string;
   launcherVersion: string;
   logger?: Logger;
@@ -146,7 +148,13 @@ export function buildLaunchCommand(ctx: LaunchContext): LaunchCommand {
   return {
     javaPath: installed.javaPath,
     // Extra arguments are passed as they are: never through a shell, no placeholders.
-    args: [...jvm, ...(ctx.extraJvmArgs ?? []), mainClass, ...game],
+    args: [
+      ...jvm,
+      ...(ctx.extraJvmArgs ?? []),
+      mainClass,
+      ...game,
+      ...(ctx.extraGameArgs ?? []),
+    ],
     cwd: gameDir,
   };
 }

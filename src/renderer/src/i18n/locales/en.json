@@ -73,19 +73,26 @@
     "needAccount": "Create or pick an account to play.",
     "needBoth": "Pick a profile and an account to play.",
     "playAnother": "Play another",
-    "runningHint": "Already running. Another copy uses the same profile folder: open a different world in each."
+    "runningHint": "Already running. Another game of this profile needs a different account, and uses the same profile folder: open a different world in each.",
+    "accountPlaying": "{{name}} is already playing this profile. Pick another account to play it again."
   },
   "log": {
     "title": "Game log",
     "empty": "The game's output appears here while it runs.",
-    "clear": "Clear"
+    "clear": "Clear closed",
+    "tab": "{{profile}} · {{account}}",
+    "exited": "exited ({{code}})",
+    "games": "Games"
   },
   "settings": {
     "title": "Settings",
     "game": "Game",
     "memory": {
       "label": "Maximum memory",
-      "hint": "How much RAM the game may use. 2048–4096 MB suits most vanilla versions."
+      "hint": "How much RAM the game may use. 2048–4096 MB suits most vanilla versions.",
+      "mb": "MB",
+      "total": "This computer has {{mb}} MB.",
+      "tooMuch": "That's more than 75% of this computer's memory. The rest of the system may slow down."
     },
     "onGameStart": {
       "label": "When the game starts",
@@ -97,7 +104,24 @@
     "dataDir": {
       "label": "Data folder",
       "change": "Change…",
-      "hint": "Changing it restarts the launcher. Files are not moved."
+      "hint": "Changing it restarts the launcher.",
+      "dialogTitle": "Change the data folder",
+      "dialogBody": "New folder: {{dir}}",
+      "move": "Move my data there",
+      "moveHint": "Profiles, worlds, mods, accounts and game files go with it. The folder must be empty.",
+      "empty": "Start empty there",
+      "emptyHint": "The current folder stays as it is; the launcher starts fresh in the new one.",
+      "cancel": "Cancel",
+      "moving": "Moving your data…",
+      "movingSteps": {
+        "counting": "Counting files",
+        "copying": "Copying files",
+        "linking": "Linking worlds",
+        "cleaning": "Removing the old folder"
+      },
+      "progress": "{{files}} / {{totalFiles}} files · {{mb}} / {{totalMb}} MB",
+      "cancelMove": "Cancel",
+      "keepOpen": "Keep the launcher open until it's done; it restarts by itself."
     },
     "theme": {
       "label": "Theme",
@@ -108,7 +132,22 @@
     "saved": "Saved",
     "about": "About",
     "version": "Version",
-    "platform": "Platform"
+    "platform": "Platform",
+    "args": {
+      "jvm": "Extra JVM arguments",
+      "jvmHint": "Added after the version's own, e.g. -XX:+UseG1GC. Quote values with spaces.",
+      "game": "Extra game arguments",
+      "gameHint": "Added after the version's own, e.g. --width 1280 --height 720.",
+      "unclosedQuote": "A quote isn't closed.",
+      "memoryFlags": "-Xmx and -Xms are set by Memory; leave them out here."
+    },
+    "versionList": {
+      "title": "Version list",
+      "hint": "Releases are always shown. A profile on a hidden type keeps working.",
+      "snapshots": "Show snapshots",
+      "oldBeta": "Show old beta",
+      "oldAlpha": "Show old alpha"
+    }
   },
   "errors": {
     "OFFLINE": "Can't reach Mojang's servers. Check your internet connection and try again.",
@@ -142,7 +181,13 @@
     "PLAN_EXPIRED": "This search is too old. Search again, then press Download.",
     "SOURCE_UNKNOWN": "This mod site isn't supported.",
     "MOD_REQUIRED": "Another enabled mod needs this one. Untick that mod first.",
-    "MOD_NO_SOURCE": "This mod can't be downloaded again: its site isn't known, or no longer has this file."
+    "MOD_NO_SOURCE": "This mod can't be downloaded again: its site isn't known, or no longer has this file.",
+    "ACCOUNT_NAME_TAKEN": "Another account already has that name (names ignore case).",
+    "ACCOUNT_PLAYING": "That account is already playing this profile. Pick another account.",
+    "RENAME_UNSUPPORTED": "This account can't be renamed.",
+    "DATA_DIR_NOT_EMPTY": "Choose an empty folder to move your data into.",
+    "INVALID_PATH": "Choose another folder.",
+    "CANCELLED": "Cancelled."
   },
   "error": {
     "title": "Something went wrong",
@@ -174,15 +219,22 @@
       "version": "Minecraft version",
       "loader": "Mod loader",
       "memory": "Maximum memory (MB)",
-      "memoryHint": "Leave empty to use the global setting ({{mb}} MB).",
+      "memoryHint": "The profile's own value replaces the global one.",
       "jvmArgs": "Extra JVM arguments",
-      "jvmArgsHint": "One argument per line, e.g. -XX:+UseG1GC",
+      "jvmArgsHint": "Replaces the global JVM arguments, e.g. -XX:+UseG1GC",
       "create": "Create profile",
       "save": "Save",
       "saved": "Saved",
       "cancel": "Cancel",
       "pickVersion": "Pick a version",
-      "nothingDownloaded": "Nothing is downloaded until you press Play."
+      "nothingDownloaded": "Nothing is downloaded until you press Play.",
+      "useGlobal": "Use global setting",
+      "globalMemory": "Global: {{mb}} MB",
+      "globalArgs": "Global: {{args}}",
+      "globalNone": "Global: none",
+      "gameArgs": "Extra game arguments",
+      "gameArgsHint": "Replaces the global game arguments, e.g. --width 1280",
+      "running": "Close the game first to change this profile."
     },
     "changeWarning": {
       "title": "Change version or loader?",
@@ -223,7 +275,6 @@
   },
   "accounts": {
     "label": "Account",
-    "none": "No account yet",
     "create": "Create account",
     "rename": "Rename",
     "save": "Save",
@@ -231,7 +282,24 @@
     "usernamePlaceholder": "Steve",
     "usernameRule": "3–16 characters: letters, numbers and _",
     "renameHint": "Renaming keeps the account's UUID, so its progress stays.",
-    "choose": "Choose an account"
+    "choose": "Choose an account",
+    "manage": "Manage accounts",
+    "title": "Accounts",
+    "close": "Close",
+    "add": "Add account",
+    "newName": "New account's name",
+    "renameLabel": "New name for {{name}}",
+    "renameAction": "Rename {{name}}",
+    "deleteAction": "Delete {{name}}",
+    "delete": "Delete",
+    "deleteTitle": "Delete {{name}}?",
+    "deleteBody": "The account is only removed from the launcher. Worlds are not touched, so its progress is still there if you add the same name again.",
+    "uuid": "UUID",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyUuid": "Copy UUID of {{name}}",
+    "serverWarning": "On offline-mode multiplayer servers a renamed account counts as a new player: those servers work out the UUID from the name.",
+    "playing": "Playing"
   },
   "versionsPage": {
     "title": "Installed versions",
@@ -243,7 +311,7 @@
     "delete": "Delete…",
     "deleteTitle": "Delete {{id}}?",
     "deleteBody": "This removes the version's files. Shared files and every profile's worlds and settings are kept.",
-    "inUse": "Profiles using it will download it again on their next Play: {{names}}",
+    "inUse": "Close the game first.",
     "dependents": "These installs are built on it and will be deleted too: {{ids}}",
     "deleteConfirm": "Delete",
     "cancel": "Cancel"

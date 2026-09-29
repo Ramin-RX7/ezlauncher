@@ -1,13 +1,18 @@
 import { isAbsolute } from "node:path";
 import { app, BrowserWindow, dialog, type OpenDialogOptions } from "electron";
 import { AppError } from "../core/errors";
-import { hasService, startService } from "../services/current";
+import { getLogger } from "../log";
+import { getService, hasService, startService } from "../services/current";
+import { moveDataDir } from "../settings/moveData";
 import {
   readDataDir,
   suggestedDataDir,
   writeDataDir,
 } from "../settings/bootstrap";
-import { handle } from "./register";
+import { broadcast, handle } from "./register";
+
+/** The move in progress, so it can be cancelled. */
+let moving: AbortController | undefined;
 
 export function registerSetupIpc(): void {
   handle("setup:getState", async () => ({
@@ -39,5 +44,41 @@ export function registerSetupIpc(): void {
       return;
     }
     startService(dir);
+  });
+
+  // "Move my data there": everything goes to the new folder, then the launcher restarts.
+  handle("setup:moveDataDir", async (_event, dir) => {
+    if (typeof dir !== "string" || !isAbsolute(dir)) {
+      throw new AppError("INVALID_PATH", "Choose a full folder path.");
+    }
+    const from = await readDataDir();
+    if (!from || !hasService())
+      throw new AppError("NO_DATA_DIR", "There is no data folder to move yet.");
+    if (moving)
+      throw new AppError("BUSY", "The data folder is already moving.");
+    const service = getService();
+    service.prepareToMove();
+    moving = new AbortController();
+    try {
+      const { warnings } = await moveDataDir(from, dir, {
+        signal: moving.signal,
+        onProgress: (p) => {
+          broadcast("setup:moveProgress", p);
+        },
+      });
+      for (const w of warnings)
+        getLogger().warn(`moving the data folder: ${w}`);
+    } catch (err) {
+      service.resumeAfterMove();
+      throw err;
+    } finally {
+      moving = undefined;
+    }
+    await writeDataDir(dir);
+    app.relaunch();
+    app.exit(0);
+  });
+  handle("setup:cancelMove", () => {
+    moving?.abort();
   });
 }

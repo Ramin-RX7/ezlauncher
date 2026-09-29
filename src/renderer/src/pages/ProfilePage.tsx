@@ -64,6 +64,7 @@ export function ProfilePage() {
             <ProfileEditor
               key={profile.id}
               profile={profile}
+              running={profile.running > 0}
               onSaved={() => undefined}
             />
           )}

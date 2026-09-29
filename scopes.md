@@ -598,7 +598,7 @@ Saved in `launcher/settings.json` (atomic write). Sections:
 - [ ] Global extra args are replaced, not added to, by a profile's own args.
 - [ ] Snapshots, old beta and old alpha appear in the version list only when their toggles are on.
 - [ ] Changing the data directory with "Move my data there" keeps profiles, worlds, mods and accounts working.
-- [ ] Unit tests: `resolveLaunchSettings`, argument splitting (quotes, spaces, empty input), account name rules.
+- [x] Unit tests: `resolveLaunchSettings`, argument splitting (quotes, spaces, empty input), account name rules.
 
 ---
 
