@@ -29,7 +29,8 @@ export function mockApi(handlers: Handlers) {
     listeners.set(channel, [...(listeners.get(channel) ?? []), listener]);
     return () => undefined;
   });
-  window.api = { invoke, on } as unknown as typeof window.api;
+  const pathForFile = vi.fn((file: File) => `/dropped/${file.name}`);
+  window.api = { invoke, on, pathForFile } as unknown as typeof window.api;
   return {
     invoke,
     emit(channel: string, payload: unknown) {

@@ -1,16 +1,24 @@
 import type { ComponentType } from "react";
 import { NavLink, Outlet } from "react-router";
 import { useTranslation } from "react-i18next";
-import { House, Settings, type LucideProps } from "lucide-react";
+import {
+  House,
+  Layers,
+  Package,
+  Settings,
+  type LucideProps,
+} from "lucide-react";
 
 interface NavItem {
   to: string;
-  labelKey: "nav.home" | "nav.settings";
+  labelKey: "nav.home" | "nav.mods" | "nav.versions" | "nav.settings";
   icon: ComponentType<LucideProps>;
 }
 
 const NAV: NavItem[] = [
   { to: "/", labelKey: "nav.home", icon: House },
+  { to: "/mods", labelKey: "nav.mods", icon: Package },
+  { to: "/versions", labelKey: "nav.versions", icon: Layers },
   { to: "/settings", labelKey: "nav.settings", icon: Settings },
 ];
 

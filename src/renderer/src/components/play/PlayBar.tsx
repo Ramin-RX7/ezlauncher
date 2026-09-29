@@ -1,117 +1,90 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { TFunction } from "i18next";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Play, X } from "lucide-react";
-import {
-  USERNAME_PATTERN,
-  type LaunchTarget,
-  type LoaderInfo,
-  type VersionSummary,
+import { Play, TriangleAlert, X } from "lucide-react";
+import type {
+  LaunchRequest,
+  ProfileInfo,
+  ValidationReport,
 } from "@shared/launcher";
 import { invoke } from "../../lib/api";
 import { errorMessage } from "../../lib/errors";
 import { launcherStore, useLauncherState } from "../../state/launcherStore";
+import { useAccounts, useLoaders, useSelection } from "../../state/queries";
+import { AccountPicker } from "../accounts/AccountPicker";
 import { Button } from "../ui/Button";
-import { Input } from "../ui/Input";
 import { Progress } from "../ui/Progress";
-import { Select } from "../ui/Select";
+import { LaunchProblemsDialog } from "./LaunchProblemsDialog";
 
 const MB = 1024 * 1024;
-const VANILLA = "vanilla";
 
-export interface PlayBarProps {
-  /** The Minecraft version picked in the list. */
-  version: VersionSummary | undefined;
-  loaders?: LoaderInfo[];
-  /** The picked loader; null = Vanilla. */
-  loaderId?: string | null;
-  onLoaderChange?: (loaderId: string | null) => void;
-  /** Installed loader installs of this version (by loader id); they always stay playable. */
-  installedLoaders?: Record<string, VersionSummary>;
-}
-
+/** Account choice and Play for the selected profile, with install progress. */
 export function PlayBar({
-  version,
-  loaders = [],
-  loaderId = null,
-  onLoaderChange,
-  installedLoaders = {},
-}: PlayBarProps) {
+  profile,
+  profiles = [],
+}: {
+  profile: ProfileInfo | undefined;
+  /** All profiles, to name the one that crashed. */
+  profiles?: ProfileInfo[];
+}) {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const account = useQuery({
-    queryKey: ["account"],
-    queryFn: () => invoke("account:get"),
-  });
-  const [draft, setDraft] = useState<string | undefined>(undefined);
-  const username = draft ?? account.data?.username ?? "";
-  const validName = USERNAME_PATTERN.test(username.trim());
+  const accounts = useAccounts();
+  const loaders = useLoaders();
+  const { accountId } = useSelection();
+  const account = accounts.data?.find((a) => a.id === accountId);
 
-  const loader = loaders.find((l) => l.id === loaderId);
-  const supports = (l: LoaderInfo) =>
-    version !== undefined &&
-    (installedLoaders[l.id] !== undefined ||
-      (l.gameVersions?.includes(version.id) ?? false));
-  const loaderUnavailable = loaderId !== null && (!loader || !supports(loader));
-
-  // What Play starts: an installed version, or a new loader install.
-  const installedEntry = loaderId
-    ? installedLoaders[loaderId]
-    : version?.installed
-      ? version
-      : undefined;
-  const target: LaunchTarget | undefined = !version
-    ? undefined
-    : installedEntry
-      ? { versionId: installedEntry.id }
-      : loaderId
-        ? { gameVersion: version.id, loaderId }
-        : { versionId: version.id };
-
-  // A new loader install's version id is only known once its install starts.
+  // A new install's version id is only known once it starts, so follow the
+  // install that started after Play was pressed.
   const latestInstallId = useLauncherState((s) => s.latestInstallId);
   const [installIdBefore, setInstallIdBefore] = useState<string>();
-  const newInstallId =
-    latestInstallId !== installIdBefore ? latestInstallId : undefined;
-
+  const queryClient = useQueryClient();
+  /** Mod errors found at Play: the user decides what to do. */
+  const [blocked, setBlocked] = useState<{
+    request: LaunchRequest;
+    report: ValidationReport;
+  }>();
+  const [warnings, setWarnings] = useState(0);
   const play = useMutation({
     onMutate: () => {
       setInstallIdBefore(launcherStore.getState().latestInstallId);
-    },
-    mutationFn: async (launchTarget: LaunchTarget) => {
-      const name = username.trim();
-      if (name !== account.data?.username) {
-        const saved = await invoke("account:setUsername", name);
-        queryClient.setQueryData(["account"], saved);
-        setDraft(undefined);
-      }
       launcherStore.dismissExit();
-      return invoke("game:launch", launchTarget);
+      setWarnings(0);
+    },
+    mutationFn: (request: LaunchRequest) => invoke("game:launch", request),
+    onSuccess: (result, request) => {
+      if (result.status === "blocked")
+        setBlocked({ request, report: result.report });
+      else setWarnings(result.warnings);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["mods"] });
     },
   });
-
-  const installKey =
-    target && "versionId" in target
-      ? target.versionId
-      : play.isPending
-        ? newInstallId
-        : undefined;
+  const newInstallId =
+    latestInstallId !== installIdBefore ? latestInstallId : undefined;
+  const installKey = play.isPending
+    ? (newInstallId ?? profile?.installedVersionId)
+    : profile?.installedVersionId;
   const install = useLauncherState((s) =>
     installKey ? s.installs[installKey] : undefined,
-  );
-  const running = useLauncherState((s) =>
-    s.running.some((g) => g.versionId === installKey),
   );
   const lastExit = useLauncherState((s) => s.lastExit);
   const installing =
     install?.status === "queued" || install?.status === "running";
 
+  const running = (profile?.running ?? 0) > 0;
   const busy = installing || play.isPending;
-  let label = installedEntry ? t("play.play") : t("play.installAndPlay");
+  let label = profile?.installedVersionId
+    ? t("play.play")
+    : t("play.installAndPlay");
   if (installing) label = t("play.installing");
   else if (play.isPending) label = t("play.starting");
   else if (running) label = t("play.running");
+
+  let hint: string | undefined;
+  if (!profile && !account) hint = t("play.needBoth");
+  else if (!profile) hint = t("play.needProfile");
+  else if (!account) hint = t("play.needAccount");
 
   const p = install?.progress;
   const percent =
@@ -120,70 +93,36 @@ export function PlayBar({
       : p && p.totalFiles > 0
         ? (p.files / p.totalFiles) * 100
         : undefined;
+  const loaderName = profile?.loader
+    ? (loaders.data?.find((l) => l.id === profile.loader?.id)?.displayName ??
+      profile.loader.id)
+    : undefined;
+  const crashedName =
+    profiles.find((x) => x.id === lastExit?.profileId)?.name ??
+    lastExit?.versionId;
 
   return (
     <section className="flex flex-col gap-3 rounded-ezl border border-border bg-surface p-4">
       <div className="flex flex-wrap items-end gap-4">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted">{t("play.username")}</span>
-          <Input
-            value={username}
-            placeholder={t("play.usernamePlaceholder")}
-            maxLength={16}
-            aria-invalid={username.length > 0 && !validName}
-            aria-describedby="username-rule"
-            onChange={(e) => {
-              setDraft(e.target.value);
-            }}
-            className="w-52"
-          />
-        </label>
+        <AccountPicker />
         <div className="min-w-0 flex-1">
           <div className="text-xs text-muted">
-            {version ? typeLabel(t, version.type) : "\u00a0"}
+            {profile
+              ? [profile.gameVersion, loaderName].filter(Boolean).join(" · ")
+              : " "}
           </div>
           <div className="truncate text-lg font-semibold">
-            {version?.id ?? t("play.noVersion")}
+            {profile?.name ?? t("profiles.choose")}
           </div>
         </div>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted">{t("loaders.label")}</span>
-          <Select
-            value={loaderId ?? VANILLA}
-            disabled={!version || busy}
-            onChange={(value) =>
-              onLoaderChange?.(value === VANILLA ? null : value)
-            }
-            className="w-56"
-            options={[
-              { value: VANILLA, label: t("loaders.vanilla") },
-              ...loaders.map((l) => {
-                const ok = supports(l);
-                const installedBuild = installedLoaders[l.id]?.loader;
-                return {
-                  value: l.id,
-                  label: installedBuild
-                    ? t("loaders.badge", {
-                        name: l.displayName,
-                        version: installedBuild.loaderVersion,
-                      })
-                    : ok
-                      ? l.displayName
-                      : t("loaders.unsupported", { name: l.displayName }),
-                  disabled: !ok,
-                };
-              }),
-            ]}
-          />
-        </label>
         <Button
           variant="primary"
           className="h-11 min-w-44 text-base"
-          disabled={
-            !target || !validName || busy || running || loaderUnavailable
-          }
+          disabled={!profile || !account || busy || running}
+          aria-describedby={hint ? "play-hint" : undefined}
           onClick={() => {
-            if (target) play.mutate(target);
+            if (profile && account)
+              play.mutate({ profileId: profile.id, accountId: account.id });
           }}
         >
           <Play size={18} aria-hidden />
@@ -191,19 +130,9 @@ export function PlayBar({
         </Button>
       </div>
 
-      <p
-        id="username-rule"
-        className={`text-xs ${username.length > 0 && !validName ? "text-danger" : "text-muted"}`}
-      >
-        {t("play.usernameRule")}
-      </p>
-
-      {loaderUnavailable && version && (
-        <p className="text-xs text-danger">
-          {t("loaders.unsupportedHint", {
-            name: loader?.displayName ?? loaderId,
-            version: version.id,
-          })}
+      {hint && (
+        <p id="play-hint" className="text-xs text-muted">
+          {hint}
         </p>
       )}
 
@@ -240,6 +169,26 @@ export function PlayBar({
         </div>
       )}
 
+      {blocked && (
+        <LaunchProblemsDialog
+          profileId={blocked.request.profileId}
+          report={blocked.report}
+          onClose={() => {
+            setBlocked(undefined);
+          }}
+          onPlay={(problems) => {
+            const { request } = blocked;
+            setBlocked(undefined);
+            play.mutate({ ...request, problems });
+          }}
+        />
+      )}
+      {warnings > 0 && !play.isPending && (
+        <p className="flex items-center gap-2 text-xs text-warning">
+          <TriangleAlert size={14} aria-hidden />
+          {t("launchProblems.warnings", { count: warnings })}
+        </p>
+      )}
       {play.isError && !isCancelled(play.error) && (
         <p role="alert" className="text-sm text-danger">
           {errorMessage(t, play.error)}
@@ -248,20 +197,13 @@ export function PlayBar({
       {lastExit?.crashed && (
         <p role="alert" className="text-sm text-danger">
           {t("play.crashed", {
-            id: lastExit.versionId,
+            name: crashedName ?? "",
             code: String(lastExit.code),
           })}
         </p>
       )}
     </section>
   );
-}
-
-const TYPES = ["release", "snapshot", "old_beta", "old_alpha"] as const;
-
-function typeLabel(t: TFunction, type: string): string {
-  const known = TYPES.find((k) => k === type);
-  return known ? t(`versions.types.${known}`) : type;
 }
 
 function isCancelled(error: unknown): boolean {

@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MoreHorizontal, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import type { VersionSummary } from "@shared/launcher";
 import { Input } from "../ui/Input";
-import { Menu } from "../ui/Menu";
 import { TabBar } from "../ui/Tabs";
 
 export type VersionTab = "release" | "snapshot" | "old_beta" | "old_alpha";
@@ -20,13 +19,7 @@ const OVERSCAN = 8;
 export interface VersionListProps {
   versions: VersionSummary[];
   selectedId: string | undefined;
-  /** Display names of mod loaders by id, for loader install badges. */
-  loaderNames?: Record<string, string>;
   onSelect: (id: string) => void;
-  onRepair: (id: string) => void;
-  onOpenFolder: (id: string) => void;
-  onOpenModsFolder: (id: string) => void;
-  onDelete: (id: string) => void;
 }
 
 function tabOf(type: string): VersionTab {
@@ -75,12 +68,7 @@ function useWindow(count: number) {
 export function VersionList({
   versions,
   selectedId,
-  loaderNames = {},
   onSelect,
-  onRepair,
-  onOpenFolder,
-  onOpenModsFolder,
-  onDelete,
 }: VersionListProps) {
   const { t, i18n } = useTranslation();
   const [tab, setTab] = useState<VersionTab>("release");
@@ -88,12 +76,12 @@ export function VersionList({
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
+    // Minecraft versions only: loader installs are picked through a profile's loader.
     return versions.filter(
       (v) =>
+        !v.loader &&
         tabOf(v.type) === tab &&
-        (!q ||
-          v.id.toLowerCase().includes(q) ||
-          (v.loader?.gameVersion.toLowerCase().includes(q) ?? false)),
+        (!q || v.id.toLowerCase().includes(q)),
     );
   }, [versions, tab, query]);
 
@@ -180,72 +168,16 @@ export function VersionList({
                       className={`size-2 shrink-0 rounded-full ${selected ? "bg-accent" : "bg-transparent"}`}
                       aria-hidden
                     />
-                    <span className="truncate font-medium">
-                      {v.loader?.gameVersion ?? v.id}
+                    <span className="truncate font-medium">{v.id}</span>
+                    <span className="text-xs text-muted">
+                      {dateFormat.format(new Date(v.releaseTime))}
                     </span>
-                    {v.loader && (
-                      <span className="shrink-0 rounded-ezl border border-border px-2 py-0.5 text-xs text-muted">
-                        {t("loaders.badge", {
-                          name: loaderNames[v.loader.id] ?? v.loader.id,
-                          version: v.loader.loaderVersion,
-                        })}
-                      </span>
-                    )}
-                    {!v.loader && (
-                      <span className="text-xs text-muted">
-                        {dateFormat.format(new Date(v.releaseTime))}
-                      </span>
-                    )}
                     {v.installed && (
                       <span className="ms-auto rounded-ezl bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">
                         {t("versions.installed")}
                       </span>
                     )}
                   </button>
-                  {v.installed && (
-                    <Menu
-                      trigger={
-                        <button
-                          type="button"
-                          aria-label={t("versions.menu", { id: v.id })}
-                          className="rounded-ezl p-1.5 text-muted hover:bg-bg hover:text-text"
-                        >
-                          <MoreHorizontal size={16} />
-                        </button>
-                      }
-                      items={[
-                        {
-                          label: t("versions.repair"),
-                          onSelect: () => {
-                            onRepair(v.id);
-                          },
-                        },
-                        {
-                          label: t("versions.openFolder"),
-                          onSelect: () => {
-                            onOpenFolder(v.id);
-                          },
-                        },
-                        ...(v.loader
-                          ? [
-                              {
-                                label: t("versions.openModsFolder"),
-                                onSelect: () => {
-                                  onOpenModsFolder(v.id);
-                                },
-                              },
-                            ]
-                          : []),
-                        {
-                          label: t("versions.delete"),
-                          danger: true,
-                          onSelect: () => {
-                            onDelete(v.id);
-                          },
-                        },
-                      ]}
-                    />
-                  )}
                 </li>
               );
             })}

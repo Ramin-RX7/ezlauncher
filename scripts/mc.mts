@@ -15,6 +15,7 @@ import { parseArgs } from "node:util";
 import { offlineProvider } from "../src/main/auth/providers/offline";
 import { createLogger } from "../src/main/core/logger";
 import { buildLaunchCommand } from "../src/main/minecraft/arguments";
+import { applyLegacyAssets } from "../src/main/minecraft/assets";
 import { createDownloader } from "../src/main/minecraft/downloader";
 import { launchGame } from "../src/main/minecraft/gameProcess";
 import {
@@ -137,6 +138,12 @@ async function install(id: string, mode: InstallMode) {
 
 async function command(id: string) {
   const { versionId, installed } = await install(id, "quick");
+  await applyLegacyAssets(
+    installed.assetIndex,
+    installed.assetIndexId,
+    paths,
+    paths.devGameDir(versionId),
+  );
   const account = await offlineProvider.createAccount({
     username: values.user,
   });
@@ -146,7 +153,7 @@ async function command(id: string) {
     identity,
     paths,
     platform,
-    gameDir: paths.gameDir(versionId),
+    gameDir: paths.devGameDir(versionId),
     memoryMaxMb: 2048,
     launcherName: "ezlauncher",
     launcherVersion: "dev",
@@ -188,7 +195,7 @@ try {
       const { versionId, cmd: c } = await command(requireId());
       const game = await launchGame(c, {
         logFile: join(
-          paths.gameDir(versionId),
+          paths.devGameDir(versionId),
           "logs",
           "ezlauncher-output.log",
         ),

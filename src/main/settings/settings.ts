@@ -6,19 +6,29 @@ import { readJson, writeJsonAtomic } from "../core/fsAtomic";
 export const DEFAULT_SETTINGS: LauncherSettings = {
   memoryMaxMb: 2048,
   onGameStart: "keep",
+  selectedProfileId: null,
+  selectedAccountId: null,
 };
 
 const memorySchema = z.number().int().min(512).max(65536);
 const onGameStartSchema = z.enum(["keep", "minimize", "close"]);
+const selectionSchema = z.string().max(64).nullable();
 
 const fileSchema = z.object({
   schema: z.literal(1),
   memoryMaxMb: memorySchema.catch(DEFAULT_SETTINGS.memoryMaxMb),
   onGameStart: onGameStartSchema.catch(DEFAULT_SETTINGS.onGameStart),
+  selectedProfileId: selectionSchema.optional().catch(null),
+  selectedAccountId: selectionSchema.optional().catch(null),
 });
 
 const patchSchema = z
-  .object({ memoryMaxMb: memorySchema, onGameStart: onGameStartSchema })
+  .object({
+    memoryMaxMb: memorySchema,
+    onGameStart: onGameStartSchema,
+    selectedProfileId: selectionSchema,
+    selectedAccountId: selectionSchema,
+  })
   .partial()
   .strict();
 
@@ -28,7 +38,12 @@ export function createSettingsStore(file: string) {
     try {
       const data = await readJson(file, fileSchema);
       if (!data) return { ...DEFAULT_SETTINGS };
-      return { memoryMaxMb: data.memoryMaxMb, onGameStart: data.onGameStart };
+      return {
+        memoryMaxMb: data.memoryMaxMb,
+        onGameStart: data.onGameStart,
+        selectedProfileId: data.selectedProfileId ?? null,
+        selectedAccountId: data.selectedAccountId ?? null,
+      };
     } catch {
       return { ...DEFAULT_SETTINGS };
     }

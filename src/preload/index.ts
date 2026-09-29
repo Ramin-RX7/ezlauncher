@@ -1,4 +1,9 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import {
+  contextBridge,
+  ipcRenderer,
+  webUtils,
+  type IpcRendererEvent,
+} from "electron";
 import {
   EVENT_CHANNELS,
   INVOKE_CHANNELS,
@@ -43,6 +48,11 @@ const api: Api = {
     };
     ipcRenderer.on(channel, wrapped);
     return () => ipcRenderer.removeListener(channel, wrapped);
+  },
+
+  /** The path of a file dropped into the page (a sandboxed page can't see it otherwise). */
+  pathForFile(file: File): string {
+    return webUtils.getPathForFile(file);
   },
 };
 

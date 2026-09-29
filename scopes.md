@@ -374,7 +374,7 @@ Each mod jar is stored **once**, however many profiles use it.
 - [ ] A jar dropped into `mods/` by hand ends up in the store and stays enabled for that profile.
 - [ ] Unticking a mod in every profile keeps it in the library as "unused"; **Remove unused** deletes it.
 - [ ] Mod name, version and loader are read from Fabric and Quilt jars.
-- [ ] Unit tests for mod sync (adopt, missing store file, usage count), mod metadata parsing, and one-version-per-modId; plus unit tests for world sync (adopt, fix links, deleted world, orphan), name-collision handling, and profile validation.
+- [x] Unit tests for mod sync (adopt, missing store file, usage count), mod metadata parsing, and one-version-per-modId; plus unit tests for world sync (adopt, fix links, deleted world, orphan), name-collision handling, and profile validation.
 
 ## Scope 04: Mod manager (Modrinth downloads)
 
@@ -466,7 +466,7 @@ interface RemoteVersion {
 - [ ] A jar downloaded from the Modrinth website by hand and dropped in gets the Modrinth badge.
 - [ ] Incompatible library mods are disabled in the Add mod list, with a reason.
 - [ ] Searching a Quilt profile also finds Fabric-only mods.
-- [ ] Unit tests with a fake `ModSource` (no network): dependency resolution (reuse, cycles, missing dependency), version picking (release before beta), exact-match filtering. The library and UI code must work with the fake source unchanged.
+- [x] Unit tests with a fake `ModSource` (no network): dependency resolution (reuse, cycles, missing dependency), version picking (release before beta), exact-match filtering. The library and UI code must work with the fake source unchanged.
 
 ## Scope 05: Mod validation
 
@@ -540,7 +540,7 @@ Optional dependencies (`recommends`, `suggests`, optional `type`) are not checke
 - [ ] A jar with one changed byte is reported as damaged, with Re-download for Modrinth mods.
 - [ ] "Disable problem mods and play" also disables mods that depended on the disabled ones, and shows the list first.
 - [ ] "Play anyway" launches without changing anything.
-- [ ] Unit tests for `validate.ts` with fixture mod metadata (every check in the table), `fabricRange.ts`, `mavenRange.ts`, `mcVersion.ts`, and nested-jar collection.
+- [x] Unit tests for `validate.ts` with fixture mod metadata (every check in the table), `fabricRange.ts`, `mavenRange.ts`, `mcVersion.ts`, and nested-jar collection.
 
 ## Scope 06: Accounts and settings
 

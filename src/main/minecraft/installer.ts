@@ -3,7 +3,7 @@ import type { InstallProgress, InstallStep } from "@shared/launcher";
 import { AppError } from "../core/errors";
 import { readJson, writeJsonAtomic } from "../core/fsAtomic";
 import type { Logger } from "../core/logger";
-import { applyLegacyAssets, assetIndexId, assetObjectTasks } from "./assets";
+import { assetIndexId, assetObjectTasks } from "./assets";
 import type { Downloader } from "./downloader";
 import type { FileTask } from "./fileTask";
 import { uniqueTasks } from "./fileTask";
@@ -242,11 +242,10 @@ export async function installVersion(
     await extractNatives(libraries.natives, nativesDir);
   }
 
-  // 6. Old versions read assets by name.
-  report("assets");
-  await applyLegacyAssets(assetIndex, indexId, paths, paths.gameDir(versionId));
+  // Old versions that read assets by name get them at launch (`applyLegacyAssets`),
+  // because some copy them into the profile's own game folder.
 
-  // 7. The marker comes last: without it, the version counts as not installed.
+  // 6. The marker comes last: without it, the version counts as not installed.
   if (
     writeMarker &&
     (mode !== "quick" || !(await isInstalled(paths, versionId)))
@@ -305,15 +304,9 @@ export async function listDependents(
   return result.sort();
 }
 
-/** Remove a version's own folder. Shared libraries and assets stay. */
-export async function deleteVersion(
-  paths: Paths,
-  id: string,
-  { deleteGameDir }: { deleteGameDir: boolean },
-): Promise<void> {
+/** Remove a version's own folder. Shared libraries and assets stay, and so do profiles' game folders. */
+export async function deleteVersion(paths: Paths, id: string): Promise<void> {
   // Remove the marker first, so a half-finished delete never looks installed.
   await rm(paths.installMarker(id), { force: true });
   await rm(paths.versionDir(id), { recursive: true, force: true });
-  if (deleteGameDir)
-    await rm(paths.gameDir(id), { recursive: true, force: true });
 }

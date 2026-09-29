@@ -7,105 +7,242 @@ import {
 } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { LoaderInfo, VersionSummary } from "@shared/launcher";
+import type {
+  LaunchRequest,
+  ProfileInfo,
+  ValidationReport,
+} from "@shared/launcher";
 import { createQueryClient } from "../../lib/queryClient";
 import { launcherStore } from "../../state/launcherStore";
+import {
+  libraryMod,
+  loaders,
+  profile,
+  settings,
+  steve,
+} from "../../test/fixtures";
 import { mockApi } from "../../test/mockApi";
 import { PlayBar } from "./PlayBar";
 
-const installed: VersionSummary = {
-  id: "1.8.9",
-  type: "release",
-  releaseTime: "2015-12-03T00:00:00Z",
-  installed: true,
-};
-const fresh: VersionSummary = { ...installed, id: "26.3", installed: false };
-
-const loaders: LoaderInfo[] = [
-  { id: "fabric", displayName: "Fabric", gameVersions: ["26.3"] },
-  { id: "quilt", displayName: "Quilt", gameVersions: null },
-];
-
-function renderBar(
-  version: VersionSummary,
-  props: Partial<Parameters<typeof PlayBar>[0]> = {},
-) {
+function renderBar(p: ProfileInfo | undefined, profiles: ProfileInfo[] = []) {
   render(
     <QueryClientProvider client={createQueryClient()}>
-      <PlayBar version={version} loaders={loaders} {...props} />
+      <PlayBar profile={p} profiles={profiles} />
     </QueryClientProvider>,
   );
 }
 
+const game = {
+  launchId: "l",
+  profileId: "p1",
+  accountId: "a1",
+  versionId: "fabric-loader-0.19.5-1.18.2",
+  pid: 1,
+};
+
+const SODIUM = "1".repeat(40);
+const INDIUM = "2".repeat(40);
+const library = [
+  libraryMod({ sha1: SODIUM, name: "Sodium", enabled: true }),
+  libraryMod({ sha1: INDIUM, name: "Indium", enabled: true }),
+];
+const report: ValidationReport = {
+  issues: [
+    {
+      severity: "error",
+      code: "mcVersion",
+      range: "1.20.x",
+      gameVersion: "1.18.2",
+      modSha1: SODIUM,
+    },
+  ],
+  requiredBy: { [SODIUM]: [INDIUM] },
+  errorCount: 1,
+  warningCount: 0,
+};
+
+async function clickPlay() {
+  await screen.findByText("1.18.2 · Fabric");
+  const play = screen.getByRole("button", { name: "Play" });
+  await waitFor(() => {
+    expect(play).toBeEnabled();
+  });
+  fireEvent.click(play);
+}
+
 beforeEach(() => {
   launcherStore.setRunning([]);
+  launcherStore.dismissExit();
 });
 
 describe("PlayBar", () => {
-  it("says Install & Play for a version that isn't installed", async () => {
+  it("needs a profile and an account, and says which is missing", async () => {
     mockApi({
-      "account:get": () => ({ id: "a", username: "Steve", uuid: "u" }),
+      "account:list": () => [steve],
+      "settings:get": () => settings(),
+      "loaders:list": () => loaders,
     });
-    renderBar(fresh);
-    await screen.findByDisplayValue("Steve");
+    renderBar(undefined);
     expect(
-      screen.getByRole("button", { name: "Install & Play" }),
-    ).toBeEnabled();
+      await screen.findByText("Pick a profile and an account to play."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Install & Play/ }),
+    ).toBeDisabled();
   });
 
-  it("disables Play until the username is valid", async () => {
-    mockApi({ "account:get": () => null });
-    renderBar(installed);
-    const button = await screen.findByRole("button", { name: "Play" });
-    expect(button).toBeDisabled();
-    fireEvent.change(screen.getByRole("textbox"), {
-      target: { value: "no spaces!" },
+  it("asks for an account when only the profile is picked", async () => {
+    mockApi({
+      "account:list": () => [steve],
+      "settings:get": () => settings({ selectedProfileId: "p1" }),
+      "loaders:list": () => loaders,
     });
-    expect(button).toBeDisabled();
-    expect(screen.getByRole("textbox")).toHaveAttribute("aria-invalid", "true");
-    fireEvent.change(screen.getByRole("textbox"), {
-      target: { value: "Alex_2" },
-    });
-    expect(button).toBeEnabled();
+    renderBar(profile());
+    expect(
+      await screen.findByText("Create or pick an account to play."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Play" })).toBeDisabled();
+    // The account has to be chosen explicitly.
+    expect(
+      await screen.findByRole("combobox", { name: "Account" }),
+    ).toHaveValue("");
   });
 
-  it("saves a new username before launching", async () => {
+  it("launches the profile with the selected account", async () => {
     const api = mockApi({
-      "account:get": () => ({ id: "a", username: "Steve", uuid: "u" }),
-      "account:setUsername": (name) => ({
-        id: "a",
-        username: name as string,
-        uuid: "u",
-      }),
-      "game:launch": (id) => ({
-        launchId: "l",
-        versionId: id as string,
-        pid: 1,
-      }),
+      "account:list": () => [steve],
+      "settings:get": () => settings({ selectedAccountId: "a1" }),
+      "loaders:list": () => loaders,
+      "game:launch": () => ({ status: "started", game, warnings: 0 }),
     });
-    renderBar(installed);
-    await screen.findByDisplayValue("Steve");
-    fireEvent.change(screen.getByRole("textbox"), {
-      target: { value: "Alex" },
+    renderBar(profile());
+    await screen.findByText("1.18.2 · Fabric");
+    const play = screen.getByRole("button", { name: "Play" });
+    await waitFor(() => {
+      expect(play).toBeEnabled();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    fireEvent.click(play);
     await waitFor(() => {
       expect(api.invoke).toHaveBeenCalledWith("game:launch", {
-        versionId: "1.8.9",
+        profileId: "p1",
+        accountId: "a1",
       });
     });
-    const calls = api.invoke.mock.calls.map((c) => c[0]);
-    expect(calls.indexOf("account:setUsername")).toBeLessThan(
-      calls.indexOf("game:launch"),
+  });
+
+  it("shows mod errors at Play and plays anyway when asked", async () => {
+    const api = mockApi({
+      "account:list": () => [steve],
+      "settings:get": () => settings({ selectedAccountId: "a1" }),
+      "loaders:list": () => loaders,
+      "mods:library": () => library,
+      "game:launch": (request) =>
+        (request as LaunchRequest).problems === "ignore"
+          ? { status: "started", game, warnings: 2 }
+          : { status: "blocked", report },
+    });
+    renderBar(profile());
+    await clickPlay();
+    expect(
+      await screen.findByText("Some mods have problems"),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Sodium")).toBeInTheDocument();
+    expect(
+      screen.getByText("Made for 1.20.x, profile is 1.18.2"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Play anyway" }));
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("game:launch", {
+        profileId: "p1",
+        accountId: "a1",
+        problems: "ignore",
+      });
+    });
+    expect(
+      await screen.findByText("Started with 2 mod warnings. See the Mods tab."),
+    ).toBeInTheDocument();
+  });
+
+  it("lists the mods it will disable before disabling them and playing", async () => {
+    const api = mockApi({
+      "account:list": () => [steve],
+      "settings:get": () => settings({ selectedAccountId: "a1" }),
+      "loaders:list": () => loaders,
+      "mods:library": () => library,
+      "mods:disablePlan": () => ({
+        mods: [
+          { sha1: SODIUM, name: "Sodium", reason: "error" },
+          { sha1: INDIUM, name: "Indium", reason: "dependency" },
+        ],
+      }),
+      "game:launch": (request) =>
+        typeof (request as LaunchRequest).problems === "object"
+          ? { status: "started", game, warnings: 0 }
+          : { status: "blocked", report },
+    });
+    renderBar(profile());
+    await clickPlay();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Disable problem mods and play",
+      }),
     );
+    expect(await screen.findByText("Indium")).toBeInTheDocument();
+    expect(
+      screen.getByText("needs a mod that gets disabled"),
+    ).toBeInTheDocument();
+    // Nothing is disabled until confirmed.
+    expect(
+      api.invoke.mock.calls.filter(([channel]) => channel === "game:launch"),
+    ).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Disable and play" }));
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("game:launch", {
+        profileId: "p1",
+        accountId: "a1",
+        problems: { disable: [SODIUM, INDIUM] },
+      });
+    });
+  });
+
+  it("offers to create an account when there is none", async () => {
+    const api = mockApi({
+      "account:list": () => [],
+      "settings:get": () => settings(),
+      "loaders:list": () => loaders,
+      "account:setUsername": (name) => ({ ...steve, username: name as string }),
+      "settings:update": (patch) => settings(patch as object),
+    });
+    renderBar(profile());
+    const input = await screen.findByLabelText("Create account");
+    fireEvent.change(input, { target: { value: "no spaces!" } });
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    fireEvent.change(input, { target: { value: "Alex" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("account:setUsername", "Alex");
+    });
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("settings:update", {
+        selectedAccountId: "a1",
+      });
+    });
   });
 
   it("shows install progress with a cancel button", async () => {
     const api = mockApi({
-      "account:get": () => ({ id: "a", username: "Steve", uuid: "u" }),
+      "account:list": () => [steve],
+      "settings:get": () => settings({ selectedAccountId: "a1" }),
+      "loaders:list": () => loaders,
       "versions:cancel": () => true,
     });
-    renderBar(fresh);
+    renderBar(
+      profile({
+        installedVersionId: "26.3",
+        gameVersion: "26.3",
+        loader: null,
+      }),
+    );
     act(() => {
       launcherStore.installState({ versionId: "26.3", status: "running" });
       launcherStore.installProgress({
@@ -120,87 +257,23 @@ describe("PlayBar", () => {
     expect(
       await screen.findByRole("button", { name: "Installing…" }),
     ).toBeDisabled();
-    expect(screen.getByText("Downloading game files")).toBeInTheDocument();
     expect(screen.getByText("5 / 10 files · 1.0 / 2.0 MB")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(api.invoke).toHaveBeenCalledWith("versions:cancel", "26.3");
   });
 
-  it("disables loaders that don't support the version", async () => {
+  it("names the profile that crashed", async () => {
     mockApi({
-      "account:get": () => ({ id: "a", username: "Steve", uuid: "u" }),
+      "account:list": () => [steve],
+      "settings:get": () => settings(),
+      "loaders:list": () => loaders,
     });
-    renderBar(installed); // 1.8.9: Fabric lists only 26.3, Quilt's list is unknown
-    await screen.findByDisplayValue("Steve");
-    expect(screen.getByRole("option", { name: "Vanilla" })).toBeEnabled();
-    expect(
-      screen.getByRole("option", {
-        name: "Fabric (not available for this version)",
-      }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole("option", {
-        name: "Quilt (not available for this version)",
-      }),
-    ).toBeDisabled();
-  });
-
-  it("installs a new loader by game version and loader", async () => {
-    const api = mockApi({
-      "account:get": () => ({ id: "a", username: "Steve", uuid: "u" }),
-      "game:launch": () => ({ launchId: "l", versionId: "x", pid: 1 }),
-    });
-    renderBar({ ...fresh, installed: true }, { loaderId: "fabric" });
-    await screen.findByDisplayValue("Steve");
-    fireEvent.click(screen.getByRole("button", { name: "Install & Play" }));
-    await waitFor(() => {
-      expect(api.invoke).toHaveBeenCalledWith("game:launch", {
-        gameVersion: "26.3",
-        loaderId: "fabric",
-      });
-    });
-  });
-
-  it("plays an installed loader install by its id, even offline", async () => {
-    const api = mockApi({
-      "account:get": () => ({ id: "a", username: "Steve", uuid: "u" }),
-      "game:launch": () => ({ launchId: "l", versionId: "x", pid: 1 }),
-    });
-    const fabricInstall: VersionSummary = {
-      ...installed,
-      id: "fabric-loader-0.19.5-1.8.9",
-      loader: { id: "fabric", loaderVersion: "0.19.5", gameVersion: "1.8.9" },
-    };
-    renderBar(installed, {
-      loaders: [{ id: "fabric", displayName: "Fabric", gameVersions: null }],
-      loaderId: "fabric",
-      installedLoaders: { fabric: fabricInstall },
-    });
-    await screen.findByDisplayValue("Steve");
-    expect(screen.getByRole("option", { name: "Fabric 0.19.5" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "Play" }));
-    await waitFor(() => {
-      expect(api.invoke).toHaveBeenCalledWith("game:launch", {
-        versionId: "fabric-loader-0.19.5-1.8.9",
-      });
-    });
-  });
-
-  it("shows a crash message", async () => {
-    mockApi({
-      "account:get": () => ({ id: "a", username: "Steve", uuid: "u" }),
-    });
-    renderBar(installed);
+    renderBar(undefined, [profile()]);
     act(() => {
-      launcherStore.gameExit({
-        launchId: "l",
-        versionId: "1.8.9",
-        code: 1,
-        crashed: true,
-      });
+      launcherStore.gameExit({ ...game, code: 1, crashed: true });
     });
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "1.8.9 crashed (exit code 1)",
+      "Survival crashed (exit code 1)",
     );
   });
 });

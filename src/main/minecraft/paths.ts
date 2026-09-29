@@ -17,6 +17,31 @@ export function safeId(id: string): string {
   return id;
 }
 
+/**
+ * A single folder name chosen by the game or the user (e.g. a world folder
+ * `New World (1)`): any characters except path separators, characters Windows
+ * forbids, control characters, and names that are only dots.
+ */
+export function safeFolderName(name: string): string {
+  if (
+    name.length === 0 ||
+    name.length > 128 ||
+    // eslint-disable-next-line no-control-regex
+    /[<>:"/\\|?*\u0000-\u001f]/.test(name) ||
+    /^\.+$/.test(name) ||
+    /[. ]$/.test(name)
+  ) {
+    throw new AppError("INVALID_ID", `Invalid name: ${name}`);
+  }
+  return name;
+}
+
+function sha1Name(hash: string): string {
+  if (!/^[0-9a-f]{40}$/i.test(hash))
+    throw new AppError("INVALID_ID", `Invalid hash: ${hash}`);
+  return hash.toLowerCase();
+}
+
 /** Join a forward-slash relative path under `root`, refusing `..` and empty segments. */
 export function safeJoin(root: string, relPath: string): string {
   const parts = relPath.split("/");
@@ -28,7 +53,6 @@ export function safeJoin(root: string, relPath: string): string {
 
 /**
  * Every path under the data directory is built here and nowhere else.
- * Later scopes (profiles) change `gameDir` in this one place.
  */
 export function createPaths(dataDir: string) {
   const versions = join(dataDir, "versions");
@@ -36,6 +60,9 @@ export function createPaths(dataDir: string) {
   const assets = join(dataDir, "assets");
   const runtimes = join(dataDir, "runtimes");
   const launcher = join(dataDir, "launcher");
+  const profiles = join(dataDir, "profiles");
+  const worlds = join(dataDir, "worlds");
+  const modsStore = join(dataDir, "mods-store");
 
   return {
     dataDir,
@@ -55,9 +82,8 @@ export function createPaths(dataDir: string) {
     assetIndex: (indexId: string) =>
       join(assets, "indexes", `${safeId(indexId)}.json`),
     assetObject: (hash: string) => {
-      if (!/^[0-9a-f]{40}$/i.test(hash))
-        throw new AppError("INVALID_ID", `Invalid hash: ${hash}`);
-      return join(assets, "objects", hash.slice(0, 2), hash);
+      const h = sha1Name(hash);
+      return join(assets, "objects", h.slice(0, 2), h);
     },
     assetsVirtual: (indexId: string) =>
       join(assets, "virtual", safeId(indexId)),
@@ -69,11 +95,29 @@ export function createPaths(dataDir: string) {
     runtimeMarker: (component: string) =>
       join(runtimes, safeId(component), ".installed.json"),
 
-    /** The game's working folder (worlds, options, logs) for a version. */
-    gameDir: (versionId: string) => join(dataDir, "games", safeId(versionId)),
-    /** The mods folder inside a version's game folder. */
-    modsDir: (versionId: string) =>
-      join(dataDir, "games", safeId(versionId), "mods"),
+    profilesDir: profiles,
+    /** A profile's game folder (mods, config, options, saves…). Named by id, so renaming moves nothing. */
+    gameDir: (profileId: string) => join(profiles, safeId(profileId)),
+    modsDir: (profileId: string) => join(profiles, safeId(profileId), "mods"),
+    savesDir: (profileId: string) => join(profiles, safeId(profileId), "saves"),
+    /** A world's link inside a profile's `saves/`. */
+    saveLink: (profileId: string, worldId: string) =>
+      join(profiles, safeId(profileId), "saves", safeFolderName(worldId)),
+
+    /** Every world, whichever profile owns it. */
+    worldsDir: worlds,
+    worldDir: (worldId: string) => join(worlds, safeFolderName(worldId)),
+
+    modsStoreDir: modsStore,
+    modStoreFile: (sha1: string) => join(modsStore, `${sha1Name(sha1)}.jar`),
+    modIcon: (sha1: string) =>
+      join(modsStore, "icons", `${sha1Name(sha1)}.png`),
+
+    /** Scope 01–02 game folders (`games/<versionId>`); only read to migrate them into profiles. */
+    legacyGamesDir: join(dataDir, "games"),
+    /** Game folder of the Node-only dev CLI, which has no profiles. */
+    devGameDir: (versionId: string) =>
+      join(dataDir, "dev-games", safeId(versionId)),
 
     launcherFile: (name: string) => join(launcher, name),
     /** Cached list of the Minecraft versions a mod loader supports. */

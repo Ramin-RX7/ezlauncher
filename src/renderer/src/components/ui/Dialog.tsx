@@ -56,7 +56,9 @@ export function Dialog({
           )}
           {children && <div className="mt-4">{children}</div>}
           {footer && (
-            <div className="mt-6 flex justify-end gap-2">{footer}</div>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              {footer}
+            </div>
           )}
         </RadixDialog.Content>
       </RadixDialog.Portal>

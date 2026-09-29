@@ -10,8 +10,12 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { TooltipProvider } from "./components/ui/Tooltip";
 import { invoke } from "./lib/api";
 import { HomePage } from "./pages/HomePage";
+import { ModLibraryPage } from "./pages/ModLibraryPage";
+import { NewProfilePage } from "./pages/NewProfilePage";
+import { ProfilePage } from "./pages/ProfilePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
+import { VersionsPage } from "./pages/VersionsPage";
 import { LauncherEvents } from "./state/LauncherEvents";
 import { ThemeProvider } from "./theme/ThemeProvider";
 
@@ -41,6 +45,10 @@ function Root() {
         <Routes>
           <Route element={<AppShell />}>
             <Route index element={<HomePage />} />
+            <Route path="profiles/new" element={<NewProfilePage />} />
+            <Route path="profiles/:id" element={<ProfilePage />} />
+            <Route path="mods" element={<ModLibraryPage />} />
+            <Route path="versions" element={<VersionsPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Routes>

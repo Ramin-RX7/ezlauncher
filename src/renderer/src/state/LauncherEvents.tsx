@@ -18,8 +18,10 @@ export function LauncherEvents() {
 
   useIpcEvent("install:state", (e) => {
     launcherStore.installState(e);
-    if (e.status === "done")
+    if (e.status === "done") {
       void queryClient.invalidateQueries({ queryKey: ["versions"] });
+      void queryClient.invalidateQueries({ queryKey: ["profiles"] });
+    }
   });
   useIpcEvent("install:progress", (p) => {
     launcherStore.installProgress(p);
@@ -32,6 +34,12 @@ export function LauncherEvents() {
   });
   useIpcEvent("game:exit", (e) => {
     launcherStore.gameExit(e);
+  });
+  useIpcEvent("profiles:changed", () => {
+    void queryClient.invalidateQueries({ queryKey: ["profiles"] });
+    void queryClient.invalidateQueries({ queryKey: ["worlds"] });
+    void queryClient.invalidateQueries({ queryKey: ["versions"] });
+    void queryClient.invalidateQueries({ queryKey: ["mods"] });
   });
   return null;
 }

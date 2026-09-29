@@ -1,120 +1,34 @@
-import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
-import { RefreshCw } from "lucide-react";
-import type {
-  LoaderInfo,
-  VersionListResult,
-  VersionSummary,
-} from "@shared/launcher";
+import { Plus } from "lucide-react";
 import { GameLog } from "../components/play/GameLog";
 import { PlayBar } from "../components/play/PlayBar";
-import { Button } from "../components/ui/Button";
-import { Checkbox } from "../components/ui/Checkbox";
-import { Dialog } from "../components/ui/Dialog";
-import { VersionList } from "../components/versions/VersionList";
+import { DeleteProfileDialog } from "../components/profiles/DeleteProfileDialog";
+import { OrphanWorlds } from "../components/profiles/OrphanWorlds";
+import { ProfileList } from "../components/profiles/ProfileList";
 import { invoke } from "../lib/api";
 import { errorMessage } from "../lib/errors";
 import { useLauncherState } from "../state/launcherStore";
-
-const SELECTED_KEY = "ezlauncher.selectedVersion";
-const LOADER_KEY = "ezlauncher.selectedLoader";
-
-function loadStored(key: string): string | undefined {
-  try {
-    return localStorage.getItem(key) ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function store(key: string, value: string | null): void {
-  try {
-    if (value === null) localStorage.removeItem(key);
-    else localStorage.setItem(key, value);
-  } catch {
-    // storage unavailable
-  }
-}
+import { useLoaders, useProfiles, useSelection } from "../state/queries";
 
 export function HomePage() {
-  const { t, i18n } = useTranslation();
-  const queryClient = useQueryClient();
-  const list = useQuery({
-    queryKey: ["versions"],
-    queryFn: () => invoke("versions:list", {}),
-  });
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const profiles = useProfiles();
+  const loaders = useLoaders();
+  const { profileId, selectProfile } = useSelection();
+  const list = useMemo(() => profiles.data ?? [], [profiles.data]);
+  const selected = list.find((p) => p.id === profileId);
+  const [deleting, setDeleting] = useState<string>();
+  const [actionError, setActionError] = useState<string>();
 
-  const loaders = useQuery({
-    queryKey: ["loaders"],
-    queryFn: () => invoke("loaders:list", {}),
-  });
+  // First start (or every profile deleted): go straight to creating one.
+  useEffect(() => {
+    if (profiles.isSuccess && profiles.data.length === 0)
+      void navigate("/profiles/new", { replace: true });
+  }, [profiles.isSuccess, profiles.data, navigate]);
 
-  const [notice, setNotice] = useState<string>();
-  const refresh = useMutation({
-    mutationFn: async () => {
-      const [result, loaderList] = await Promise.all([
-        invoke("versions:list", { refresh: true }),
-        invoke("loaders:list", { refresh: true }),
-      ]);
-      queryClient.setQueryData<LoaderInfo[]>(["loaders"], loaderList);
-      return result;
-    },
-    onSuccess: (result) => {
-      const before = new Set(list.data?.versions.map((v) => v.id));
-      queryClient.setQueryData<VersionListResult>(["versions"], result);
-      if (result.refreshError) {
-        setNotice(t("versions.offlineRefresh"));
-        return;
-      }
-      const added =
-        before.size === 0
-          ? 0
-          : result.versions.filter((v) => !before.has(v.id)).length;
-      setNotice(
-        added > 0
-          ? t("versions.newFound", { count: added })
-          : t("versions.upToDate"),
-      );
-    },
-  });
-
-  // The selection is a Minecraft version plus a loader (null = Vanilla).
-  const [selectedId, setSelectedId] = useState(() => loadStored(SELECTED_KEY));
-  const [loaderId, setLoaderId] = useState<string | null>(
-    () => loadStored(LOADER_KEY) ?? null,
-  );
-  const selectLoader = (id: string | null) => {
-    setLoaderId(id);
-    store(LOADER_KEY, id);
-  };
-  const versions = useMemo(() => list.data?.versions ?? [], [list.data]);
-  const gameVersions = useMemo(
-    () => versions.filter((v) => !v.loader),
-    [versions],
-  );
-  const select = (id: string) => {
-    // A loader install's row selects its Minecraft version and loader.
-    const row = versions.find((v) => v.id === id);
-    const gameVersion = row?.loader?.gameVersion ?? id;
-    setSelectedId(gameVersion);
-    store(SELECTED_KEY, gameVersion);
-    selectLoader(row?.loader?.id ?? null);
-  };
-  const selected =
-    gameVersions.find((v) => v.id === selectedId) ??
-    gameVersions.find((v) => v.id === list.data?.latest?.release) ??
-    gameVersions[0];
-  const installedLoaders = useMemo(() => {
-    const byLoader: Record<string, VersionSummary> = {};
-    for (const v of versions) {
-      if (v.loader && v.loader.gameVersion === selected?.id)
-        byLoader[v.loader.id] ??= v;
-    }
-    return byLoader;
-  }, [versions, selected?.id]);
-  const selectedRowId =
-    (loaderId && installedLoaders[loaderId]?.id) ?? selected?.id;
   const loaderNames = useMemo(
     () =>
       Object.fromEntries(
@@ -129,120 +43,50 @@ export function HomePage() {
     (s) => s.running.length > 0 || s.lastExit?.crashed === true,
   );
   const logOpen = logChoice ?? autoOpen;
-
-  const [deleting, setDeleting] = useState<string>();
-  const [deleteWorlds, setDeleteWorlds] = useState(false);
-  const [actionError, setActionError] = useState<string>();
-  const onActionError = (err: unknown) => {
-    setActionError(errorMessage(t, err));
-  };
-  const dependents = useQuery({
-    queryKey: ["dependents", deleting],
-    queryFn: () => invoke("versions:dependents", deleting ?? ""),
-    enabled: deleting !== undefined,
-  });
-  const dependentIds = dependents.data ?? [];
-  const remove = useMutation({
-    mutationFn: (args: {
-      versionId: string;
-      deleteGameDir: boolean;
-      deleteDependents: boolean;
-    }) => invoke("versions:delete", args),
-    onSuccess: () => {
-      setDeleting(undefined);
-      void queryClient.invalidateQueries({ queryKey: ["versions"] });
-    },
-    onError: onActionError,
-  });
-
-  const fetchedAt = list.data?.fetchedAt
-    ? new Intl.DateTimeFormat(i18n.language, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(new Date(list.data.fetchedAt))
-    : undefined;
+  const deletingProfile = list.find((p) => p.id === deleting);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted" aria-live="polite">
-          {notice ?? (fetchedAt && t("versions.listFrom", { date: fetchedAt }))}
-        </p>
-        <Button
-          variant="secondary"
-          disabled={refresh.isPending || list.isPending}
-          onClick={() => {
-            setNotice(undefined);
-            refresh.mutate();
-          }}
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-lg font-semibold">{t("profiles.title")}</h1>
+        <Link
+          to="/profiles/new"
+          className="inline-flex items-center gap-2 rounded-ezl border border-border bg-surface-2 px-4 py-2 text-sm font-medium hover:border-muted"
         >
-          <RefreshCw
-            size={16}
-            className={refresh.isPending ? "animate-spin" : ""}
-            aria-hidden
-          />
-          {refresh.isPending ? t("versions.checking") : t("versions.check")}
-        </Button>
+          <Plus size={16} aria-hidden />
+          {t("profiles.new")}
+        </Link>
       </div>
 
-      {list.isPending && (
-        <p className="text-sm text-muted">{t("versions.loading")}</p>
-      )}
-      {list.data?.source === "none" && list.data.versions.length === 0 && (
-        <div className="flex flex-col items-center gap-3 rounded-ezl border border-border bg-surface p-8 text-center">
-          <p className="text-sm text-muted">{t("versions.noList")}</p>
-          <Button
-            variant="primary"
-            disabled={refresh.isPending}
-            onClick={() => {
-              refresh.mutate();
-            }}
-          >
-            {t("versions.tryAgain")}
-          </Button>
-        </div>
-      )}
-      {list.isError && (
-        <p className="text-sm text-danger">{errorMessage(t, list.error)}</p>
-      )}
       {actionError && (
         <p role="alert" className="text-sm text-danger">
           {actionError}
         </p>
       )}
 
-      {versions.length > 0 && (
-        <VersionList
-          versions={versions}
-          selectedId={selectedRowId}
-          loaderNames={loaderNames}
-          onSelect={select}
-          onRepair={(id) => {
-            setActionError(undefined);
-            select(id); // its progress shows in the play bar
-            invoke("versions:repair", id).catch(onActionError);
-          }}
-          onOpenFolder={(id) => {
-            invoke("versions:openGameDir", id).catch(onActionError);
-          }}
-          onOpenModsFolder={(id) => {
-            invoke("versions:openModsDir", id).catch(onActionError);
-          }}
-          onDelete={(id) => {
-            setDeleteWorlds(false);
-            setActionError(undefined);
-            setDeleting(id);
-          }}
-        />
-      )}
+      <div className="min-h-0 flex-1 overflow-auto">
+        {list.length > 0 && (
+          <ProfileList
+            profiles={list}
+            selectedId={selected?.id ?? null}
+            loaderNames={loaderNames}
+            onSelect={selectProfile}
+            onEdit={(id) => {
+              void navigate(`/profiles/${id}`);
+            }}
+            onOpenFolder={(id) => {
+              setActionError(undefined);
+              invoke("profiles:openFolder", id).catch((err: unknown) => {
+                setActionError(errorMessage(t, err));
+              });
+            }}
+            onDelete={setDeleting}
+          />
+        )}
+      </div>
 
-      <PlayBar
-        version={selected}
-        loaders={loaders.data ?? []}
-        loaderId={loaderId}
-        onLoaderChange={selectLoader}
-        installedLoaders={installedLoaders}
-      />
+      <OrphanWorlds />
+      <PlayBar profile={selected} profiles={list} />
       <GameLog
         open={logOpen}
         onToggle={() => {
@@ -250,61 +94,15 @@ export function HomePage() {
         }}
       />
 
-      <Dialog
-        open={deleting !== undefined}
-        onOpenChange={(open) => {
-          if (!open) setDeleting(undefined);
-        }}
-        title={t("versions.deleteTitle", { id: deleting ?? "" })}
-        description={t("versions.deleteBody")}
-        closeLabel={t("versions.cancel")}
-        footer={
-          <>
-            <Button
-              onClick={() => {
-                setDeleting(undefined);
-              }}
-            >
-              {t("versions.cancel")}
-            </Button>
-            <Button
-              variant="danger"
-              disabled={remove.isPending || dependents.isPending}
-              onClick={() => {
-                if (deleting)
-                  remove.mutate({
-                    versionId: deleting,
-                    deleteGameDir: deleteWorlds,
-                    deleteDependents: dependentIds.length > 0,
-                  });
-              }}
-            >
-              {dependentIds.length > 0
-                ? t("versions.deleteAllConfirm")
-                : t("versions.deleteConfirm")}
-            </Button>
-          </>
-        }
-      >
-        {dependentIds.length > 0 && (
-          <div className="mb-3 flex flex-col gap-1 text-sm">
-            <p className="text-warning">
-              {t("versions.dependentsWarning", {
-                count: dependentIds.length,
-                id: deleting ?? "",
-              })}
-            </p>
-            <ul className="list-disc ps-5">
-              {dependentIds.map((id) => (
-                <li key={id}>{id}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        <Checkbox checked={deleteWorlds} onChange={setDeleteWorlds}>
-          {t("versions.deleteWorlds")}
-        </Checkbox>
-      </Dialog>
+      {deletingProfile && (
+        <DeleteProfileDialog
+          profile={deletingProfile}
+          profiles={list}
+          onClose={() => {
+            setDeleting(undefined);
+          }}
+        />
+      )}
     </div>
   );
 }

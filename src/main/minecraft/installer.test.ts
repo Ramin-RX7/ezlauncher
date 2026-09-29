@@ -100,7 +100,7 @@ describe("installVersion", () => {
   it("delete removes the version folder but keeps shared files and, by default, the game folder", async () => {
     const { deps } = setup();
     await installVersion(deps, "1.0", { mode: "install" });
-    await deleteVersion(paths, "1.0", { deleteGameDir: false });
+    await deleteVersion(paths, "1.0");
     expect(await isInstalled(paths, "1.0")).toBe(false);
     await expect(stat(paths.versionDir("1.0"))).rejects.toThrow();
     await expect(

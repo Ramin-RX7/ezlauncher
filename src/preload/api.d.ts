@@ -16,6 +16,8 @@ export interface Api {
     channel: C,
     listener: (payload: EventPayload<C>) => void,
   ): () => void;
+  /** Path of a file dropped into the page; empty if it isn't a file on disk. */
+  pathForFile(file: File): string;
 }
 
 declare global {

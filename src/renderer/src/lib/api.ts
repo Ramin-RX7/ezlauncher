@@ -27,3 +27,8 @@ export async function invoke<C extends InvokeChannel>(
   if (!response.ok) throw new IpcCallError(channel, response.error);
   return response.value;
 }
+
+/** The path of a file dropped into the page. */
+export function pathForFile(file: File): string {
+  return window.api.pathForFile(file);
+}

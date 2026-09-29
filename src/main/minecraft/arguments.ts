@@ -14,6 +14,8 @@ export interface LaunchContext {
   platform: Platform;
   gameDir: string;
   memoryMaxMb: number;
+  /** Extra JVM arguments (one item each), after the version's and before the main class. */
+  extraJvmArgs?: readonly string[];
   launcherName: string;
   launcherVersion: string;
   logger?: Logger;
@@ -143,7 +145,8 @@ export function buildLaunchCommand(ctx: LaunchContext): LaunchCommand {
   const mainClass = version.mainClass ?? "net.minecraft.client.main.Main";
   return {
     javaPath: installed.javaPath,
-    args: [...jvm, mainClass, ...game],
+    // Extra arguments are passed as they are: never through a shell, no placeholders.
+    args: [...jvm, ...(ctx.extraJvmArgs ?? []), mainClass, ...game],
     cwd: gameDir,
   };
 }

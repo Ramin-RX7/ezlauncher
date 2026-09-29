@@ -185,6 +185,31 @@ describe("buildLaunchCommand", () => {
     ]);
   });
 
+  it("puts extra JVM arguments after the version's and before the main class", () => {
+    const cmd = buildLaunchCommand({
+      installed: installed({
+        id: "v",
+        chain: ["v"],
+        mainClass: "Main",
+        arguments: { jvm: ["-cp", "${classpath}"], game: ["--demo"] },
+      }),
+      identity,
+      paths,
+      platform: linux,
+      gameDir: "/data/profiles/p",
+      memoryMaxMb: 1024,
+      extraJvmArgs: ["-XX:+UseG1GC", "-Dname=with space ${not_filled}"],
+      launcherName: "ezlauncher",
+      launcherVersion: "1.0",
+    });
+    expect(cmd.args.slice(3)).toEqual([
+      "-XX:+UseG1GC",
+      "-Dname=with space ${not_filled}",
+      "Main",
+      "--demo",
+    ]);
+  });
+
   it("uses the Windows classpath separator and adds macOS first-thread flag for legacy versions", () => {
     const windows = detectPlatform("win32", "x64", "10.0");
     const legacy = {
