@@ -2,17 +2,19 @@
 
 A desktop Minecraft: Java Edition launcher. **Offline mode only**: no Microsoft/Mojang authentication.
 
+**Start here:** [ARCHITECTURE.md](ARCHITECTURE.md) is the codebase map for anyone (human or AI) doing a task — the process model, the end-to-end flows, the on-disk layout, a file-by-file reference, the invariants, and "where do I add X?" recipes. Read it before searching the tree; it usually saves opening more than the few files a change actually touches.
+
 ## Scopes
 
-All scopes are defined in [scopes.md](scopes.md), the single source of truth for what to build. Read the scope you are working on before starting, and don't build features from later scopes. New scopes are added to that file, not as separate documents.
+All scopes are defined in [scopes.md](scopes.md), the single source of truth for what each scope required. **All six scopes (00–06) are implemented.** Read a scope before changing its area. New scopes are added to that file, not as separate documents.
 
 - Scope 00, Project setup: tooling, secure Electron window, typed IPC bridge, theming, i18n, packaging (done).
 - Scope 01, Core launcher: version list, multi-version install, offline launch, abstract auth (done).
-- Scope 02, Mod loaders: Fabric and Quilt through a loader provider interface built to also fit Forge/NeoForge later.
-- Scope 03, Profiles and worlds: every launch uses a profile + account; per-profile settings; all worlds in one folder, linked into their profile; shared mod library with hard links into each profile.
-- Scope 04, Mod manager: exact-name Modrinth download with dependencies, identify hand-added jars by hash; all behind a `ModSource` adapter.
-- Scope 05, Mod validation: pre-launch checks of loader, Minecraft/loader/Java versions, dependencies, conflicts and damaged files; jar metadata first.
-- Scope 06, Accounts and settings: multiple offline accounts with fixed UUIDs (rename-safe); settings page with per-profile memory and argument overrides.
+- Scope 02, Mod loaders: Fabric and Quilt through a loader provider interface built to also fit Forge/NeoForge later (done).
+- Scope 03, Profiles and worlds: every launch uses a profile + account; per-profile settings; all worlds in one folder, linked into their profile; shared mod library with hard links into each profile (done).
+- Scope 04, Mod manager: exact-name Modrinth download with dependencies, identify hand-added jars by hash; all behind a `ModSource` adapter (done).
+- Scope 05, Mod validation: pre-launch checks of loader, Minecraft/loader/Java versions, dependencies, conflicts and damaged files; jar metadata first (done).
+- Scope 06, Accounts and settings: multiple offline accounts with fixed UUIDs (rename-safe); settings page with per-profile memory and argument overrides (done).
 
 Out of scope until a scope covers it: Microsoft login, Forge/NeoForge, CurseForge, mod updates, modpacks, skins, multiplayer server lists.
 
