@@ -165,6 +165,26 @@ describe("buildLaunchCommand", () => {
     ]);
   });
 
+  it("keeps the legacy JVM arguments when a mod loader adds its own", () => {
+    const cmd = command(
+      {
+        id: "loader-1.8.9",
+        chain: ["loader-1.8.9", "1.8.9"],
+        mainClass: "net.fabricmc.loader.impl.launch.knot.KnotClient",
+        minecraftArguments: "--username ${auth_player_name}",
+        arguments: { jvm: ["-DFabricMcEmu= x "] },
+      },
+      linux,
+    );
+    expect(cmd.args.slice(0, 5)).toEqual([
+      "-Xmx3072M",
+      `-Djava.library.path=${join("/data", "versions", "loader-1.8.9", "natives")}`,
+      "-cp",
+      "/data/libraries/a.jar:/data/libraries/b.jar:/data/versions/v/v.jar",
+      "-DFabricMcEmu= x ",
+    ]);
+  });
+
   it("uses the Windows classpath separator and adds macOS first-thread flag for legacy versions", () => {
     const windows = detectPlatform("win32", "x64", "10.0");
     const legacy = {

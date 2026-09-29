@@ -71,8 +71,14 @@ export function createPaths(dataDir: string) {
 
     /** The game's working folder (worlds, options, logs) for a version. */
     gameDir: (versionId: string) => join(dataDir, "games", safeId(versionId)),
+    /** The mods folder inside a version's game folder. */
+    modsDir: (versionId: string) =>
+      join(dataDir, "games", safeId(versionId), "mods"),
 
     launcherFile: (name: string) => join(launcher, name),
+    /** Cached list of the Minecraft versions a mod loader supports. */
+    loaderCache: (loaderId: string) =>
+      join(launcher, "loaders", `${safeId(loaderId)}.json`),
   };
 }
 

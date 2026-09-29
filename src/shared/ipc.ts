@@ -10,6 +10,8 @@ import type {
   InstallProgress,
   InstallStateEvent,
   LauncherSettings,
+  LaunchTarget,
+  LoaderInfo,
   RunningGame,
   SetupState,
   VersionListResult,
@@ -43,11 +45,28 @@ export interface IpcInvokeContract {
   "versions:install": { args: [versionId: string]; result: void };
   "versions:cancel": { args: [versionId: string]; result: boolean };
   "versions:repair": { args: [versionId: string]; result: void };
+  /** Deletes the version. Fails with `HAS_DEPENDENTS` if others build on it, unless `deleteDependents`. */
   "versions:delete": {
-    args: [options: { versionId: string; deleteGameDir: boolean }];
+    args: [
+      options: {
+        versionId: string;
+        deleteGameDir: boolean;
+        deleteDependents: boolean;
+      },
+    ];
     result: void;
   };
+  /** Installed versions that build on this one (e.g. loader installs on a vanilla version). */
+  "versions:dependents": { args: [versionId: string]; result: string[] };
   "versions:openGameDir": { args: [versionId: string]; result: void };
+  /** Opens the version's `mods/` folder, creating it if missing. */
+  "versions:openModsDir": { args: [versionId: string]; result: void };
+
+  /** Mod loaders and the Minecraft versions each supports (cached; `refresh` asks the servers). */
+  "loaders:list": {
+    args: [options: { refresh?: boolean }];
+    result: LoaderInfo[];
+  };
 
   "account:get": { args: []; result: AccountInfo | null };
   /** Creates the offline account, or renames it (the UUID is kept). */
@@ -60,7 +79,7 @@ export interface IpcInvokeContract {
   };
 
   /** Installs or checks the version, then starts it. Resolves once the game has started. */
-  "game:launch": { args: [versionId: string]; result: RunningGame };
+  "game:launch": { args: [target: LaunchTarget]; result: RunningGame };
   "game:running": { args: []; result: RunningGame[] };
 }
 
@@ -94,7 +113,10 @@ export const INVOKE_CHANNELS = [
   "versions:cancel",
   "versions:repair",
   "versions:delete",
+  "versions:dependents",
   "versions:openGameDir",
+  "versions:openModsDir",
+  "loaders:list",
   "account:get",
   "account:setUsername",
   "settings:get",

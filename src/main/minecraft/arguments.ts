@@ -113,10 +113,14 @@ export function buildLaunchCommand(ctx: LaunchContext): LaunchCommand {
   const unknown = new Set<string>();
   const fill = (a: string) => substitute(a, values, (n) => unknown.add(n));
 
+  // Old versions have no JVM arguments of their own. A mod loader may still add some,
+  // so the legacy ones are needed whenever nothing sets the classpath.
   const versionJvm = flattenArguments(version.arguments?.jvm ?? [], env);
+  const setsClasspath = versionJvm.some((a) => a.includes("${classpath}"));
   const jvm = [
     `-Xmx${ctx.memoryMaxMb}M`,
-    ...(versionJvm.length > 0 ? versionJvm : legacyJvmArguments(platform)),
+    ...(setsClasspath ? [] : legacyJvmArguments(platform)),
+    ...versionJvm,
   ].map(fill);
 
   const logging = version.logging?.client;

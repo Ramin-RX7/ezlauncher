@@ -113,6 +113,12 @@ describe("downloader", () => {
     ).rejects.toMatchObject({ code: "DOWNLOAD_FAILED" });
   });
 
+  it("reports NOT_FOUND when fetching a missing resource", async () => {
+    await expect(
+      downloader().fetchText(`${base}/missing.sha1`),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
   it("reports OFFLINE when the server can't be reached", async () => {
     const offline = createDownloader({
       fetch: () => Promise.reject(new TypeError("fetch failed")),

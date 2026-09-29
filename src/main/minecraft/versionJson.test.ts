@@ -45,6 +45,23 @@ describe("mergeVersions", () => {
     ]);
   });
 
+  it("de-duplicates by classifier too, keeping other classifiers", () => {
+    const merged = mergeVersions(
+      {
+        id: "p",
+        libraries: [
+          { name: "org.lwjgl:lwjgl:3.2:natives-linux" },
+          { name: "org.lwjgl:lwjgl:3.2" },
+        ],
+      },
+      { id: "c", libraries: [{ name: "org.lwjgl:lwjgl:3.3" }] },
+    );
+    expect(merged.libraries?.map((l) => l.name)).toEqual([
+      "org.lwjgl:lwjgl:3.3",
+      "org.lwjgl:lwjgl:3.2:natives-linux",
+    ]);
+  });
+
   it("appends arguments", () => {
     const merged = mergeVersions(vanilla, loader);
     expect(merged.arguments?.jvm).toEqual([

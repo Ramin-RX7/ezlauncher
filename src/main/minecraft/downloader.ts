@@ -35,14 +35,21 @@ export interface DownloaderOptions {
 export interface Downloader {
   /** Download all tasks. Tasks must already be filtered to the ones that are missing or bad. */
   run(tasks: readonly FileTask[], options?: RunOptions): Promise<void>;
-  /** Fetch a small resource (JSON) into memory. */
+  /** Fetch a small resource (JSON) into memory. A 404 fails with code `NOT_FOUND`. */
   fetchText(url: string, options?: { signal?: AbortSignal }): Promise<string>;
 }
 
 /** No response at all (DNS, refused, reset): the machine is probably offline. */
 class NetworkError extends Error {}
 /** Got a response, but it's permanently wrong (e.g. 404): retrying won't help. */
-class PermanentError extends Error {}
+class PermanentError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw new AppError("CANCELLED", "Download cancelled.");
@@ -75,7 +82,7 @@ export function createDownloader(options: DownloaderOptions): Downloader {
     if (!res.ok) {
       const message = `HTTP ${res.status} for ${url}`;
       if (res.status >= 400 && res.status < 500 && res.status !== 429) {
-        throw new PermanentError(message);
+        throw new PermanentError(message, res.status);
       }
       throw new Error(message);
     }
@@ -164,9 +171,20 @@ export function createDownloader(options: DownloaderOptions): Downloader {
 
   return {
     async fetchText(url, opts = {}) {
-      return withRetries(url, opts.signal, async () =>
-        (await request(url, opts.signal)).text(),
-      );
+      try {
+        return await withRetries(url, opts.signal, async () =>
+          (await request(url, opts.signal)).text(),
+        );
+      } catch (err) {
+        if (
+          err instanceof AppError &&
+          err.cause instanceof PermanentError &&
+          err.cause.status === 404
+        ) {
+          throw new AppError("NOT_FOUND", `Not found: ${url}`, { cause: err });
+        }
+        throw err;
+      }
     },
 
     async run(tasks, { signal, onProgress } = {}) {

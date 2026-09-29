@@ -13,6 +13,10 @@ const KNOWN = [
   "GAME_RUNNING",
   "BUSY",
   "MISSING_FILE",
+  "NOT_FOUND",
+  "BAD_RESPONSE",
+  "LOADER_UNSUPPORTED",
+  "HAS_DEPENDENTS",
 ] as const;
 
 /** A user-facing message for an error code from the main process. */

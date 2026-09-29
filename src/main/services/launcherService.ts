@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { app, BrowserWindow, net, shell } from "electron";
+import { mkdir } from "node:fs/promises";
 import type {
   AccountInfo,
+  InstallProgress,
+  LaunchTarget,
+  LoaderInfo,
   RunningGame,
   VersionListResult,
 } from "@shared/launcher";
@@ -20,10 +24,22 @@ import {
   deleteVersion,
   installVersion,
   isInstalled,
+  listDependents,
+  readInstallMarker,
+  type InstalledVersion,
   type InstallMode,
 } from "../minecraft/installer";
 import { InstallQueue } from "../minecraft/installQueue";
-import { getVersionList } from "../minecraft/manifest";
+import {
+  installLoader,
+  prepareLoader,
+  type LoaderInstallRequest,
+} from "../minecraft/loaders/installLoader";
+import {
+  createLoaderRegistry,
+  getSupportedGameVersions,
+} from "../minecraft/loaders/registry";
+import { getVersionList, listInstalledVersions } from "../minecraft/manifest";
 import { createPaths } from "../minecraft/paths";
 import { detectPlatform } from "../minecraft/platform";
 import { createSettingsStore } from "../settings/settings";
@@ -43,6 +59,8 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     logger: logger.child("download"),
   });
   const deps = { paths, downloader, platform, logger: log };
+  const loaders = createLoaderRegistry({ downloader });
+  const loaderDeps = { ...deps, loaders };
   const settings = createSettingsStore(paths.launcherFile("settings.json"));
   const accounts = createAccountStore(paths.launcherFile("accounts.json"));
   const queue = new InstallQueue((event) => {
@@ -50,16 +68,84 @@ export function createLauncherService(dataDir: string, logger: Logger) {
   });
   const running = new Map<string, RunningGame>();
 
-  function install(versionId: string, mode: InstallMode) {
-    return queue.enqueue(versionId, (signal) =>
-      installVersion(deps, versionId, {
-        mode,
-        signal,
-        onProgress: (p) => {
-          broadcast("install:progress", p);
-        },
-      }),
+  const onProgress = (p: InstallProgress): void => {
+    broadcast("install:progress", p);
+  };
+
+  function queueLoaderInstall(
+    request: LoaderInstallRequest,
+    mode: InstallMode,
+  ): Promise<InstalledVersion> {
+    return queue.enqueue(request.versionId, (signal) =>
+      installLoader(loaderDeps, request, { mode, signal, onProgress }),
     );
+  }
+
+  /** Install, check or repair an installed version; loader installs go through their loader. */
+  async function ensureInstalled(
+    versionId: string,
+    mode: InstallMode,
+  ): Promise<InstalledVersion> {
+    const loader = (await readInstallMarker(paths, versionId))?.loader;
+    if (loader) {
+      return queueLoaderInstall(
+        {
+          providerId: loader.id,
+          gameVersion: loader.gameVersion,
+          loaderVersion: loader.loaderVersion,
+          versionId,
+        },
+        mode,
+      );
+    }
+    return queue.enqueue(versionId, (signal) =>
+      installVersion(deps, versionId, { mode, signal, onProgress }),
+    );
+  }
+
+  /** Get a launch target ready: the version to start, installed or checked first. */
+  async function prepareTarget(
+    target: LaunchTarget,
+  ): Promise<{ versionId: string; installed: InstalledVersion }> {
+    if ("versionId" in target) {
+      const { versionId } = target;
+      const mode = (await isInstalled(paths, versionId)) ? "quick" : "install";
+      return { versionId, installed: await ensureInstalled(versionId, mode) };
+    }
+    // An installed loader stays on its build: reuse it.
+    const { gameVersion, loaderId } = target;
+    const existing = (await listInstalledVersions(paths)).find(
+      (v) => v.loader?.id === loaderId && v.loader.gameVersion === gameVersion,
+    );
+    if (existing) {
+      return {
+        versionId: existing.id,
+        installed: await ensureInstalled(existing.id, "quick"),
+      };
+    }
+    const request = await prepareLoader(loaderDeps, loaderId, gameVersion);
+    return {
+      versionId: request.versionId,
+      installed: await queueLoaderInstall(request, "install"),
+    };
+  }
+
+  function assertNotBusy(versionId: string): void {
+    if (queue.isBusy(versionId)) {
+      throw new AppError(
+        "BUSY",
+        "Wait for the install to finish or cancel it first.",
+      );
+    }
+    if ([...running.values()].some((g) => g.versionId === versionId)) {
+      throw new AppError("GAME_RUNNING", "Close the game first.");
+    }
+  }
+
+  async function openFolder(dir: string): Promise<void> {
+    await mkdir(dir, { recursive: true });
+    const error = await shell.openPath(dir);
+    if (error) throw new AppError("OPEN_FAILED", error);
   }
 
   function toInfo(a: {
@@ -90,12 +176,27 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     },
 
     async installVersion(versionId: string): Promise<void> {
-      await install(versionId, "install");
+      await ensureInstalled(versionId, "install");
     },
 
     async repairVersion(versionId: string): Promise<void> {
-      await install(versionId, "repair");
+      await ensureInstalled(versionId, "repair");
     },
+
+    listLoaders({ refresh }: { refresh?: boolean }): Promise<LoaderInfo[]> {
+      return Promise.all(
+        loaders.providers.map(async (p) => ({
+          id: p.id,
+          displayName: p.displayName,
+          gameVersions: await getSupportedGameVersions(p, paths, {
+            ...(refresh !== undefined && { refresh }),
+            logger: log,
+          }),
+        })),
+      );
+    },
+
+    dependents: (versionId: string) => listDependents(paths, versionId),
 
     cancelInstall(versionId: string): boolean {
       return queue.cancel(versionId);
@@ -104,24 +205,29 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     async deleteVersion(
       versionId: string,
       deleteGameDir: boolean,
+      deleteDependents: boolean,
     ): Promise<void> {
-      if (queue.isBusy(versionId)) {
+      const dependents = await listDependents(paths, versionId);
+      if (dependents.length > 0 && !deleteDependents) {
         throw new AppError(
-          "BUSY",
-          "Wait for the install to finish or cancel it first.",
+          "HAS_DEPENDENTS",
+          `Other installs use ${versionId}: ${dependents.join(", ")}`,
         );
       }
-      if ([...running.values()].some((g) => g.versionId === versionId)) {
-        throw new AppError("GAME_RUNNING", "Close the game first.");
+      for (const id of [...dependents, versionId]) assertNotBusy(id);
+      // Dependents first, so a failure never leaves one without its base version.
+      for (const id of dependents) {
+        await deleteVersion(paths, id, { deleteGameDir });
       }
       await deleteVersion(paths, versionId, { deleteGameDir });
     },
 
     async openGameDir(versionId: string): Promise<void> {
-      const { mkdir } = await import("node:fs/promises");
-      await mkdir(paths.gameDir(versionId), { recursive: true });
-      const error = await shell.openPath(paths.gameDir(versionId));
-      if (error) throw new AppError("OPEN_FAILED", error);
+      await openFolder(paths.gameDir(versionId));
+    },
+
+    async openModsDir(versionId: string): Promise<void> {
+      await openFolder(paths.modsDir(versionId));
     },
 
     async getAccount(): Promise<AccountInfo | null> {
@@ -155,7 +261,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
 
     runningGames: (): RunningGame[] => [...running.values()],
 
-    async launch(versionId: string): Promise<RunningGame> {
+    async launch(target: LaunchTarget): Promise<RunningGame> {
       const account = await selectedAccount();
       if (!account) throw new AppError("NO_ACCOUNT", "Enter a username first.");
       const identity = await getProvider(account.providerId).getLaunchIdentity(
@@ -163,10 +269,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       );
       const current = await settings.load();
 
-      const mode: InstallMode = (await isInstalled(paths, versionId))
-        ? "quick"
-        : "install";
-      const installed = await install(versionId, mode);
+      const { versionId, installed } = await prepareTarget(target);
 
       const gameDir = paths.gameDir(versionId);
       const command = buildLaunchCommand({

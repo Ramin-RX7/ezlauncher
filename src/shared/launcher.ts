@@ -3,12 +3,34 @@
 export type VersionType =
   "release" | "snapshot" | "old_beta" | "old_alpha" | (string & {});
 
+/** What a mod loader install is built on. */
+export interface LoaderRef {
+  /** Loader provider id, e.g. `fabric`, `quilt`. */
+  id: string;
+  loaderVersion: string;
+  /** The Minecraft version it runs on. */
+  gameVersion: string;
+}
+
 export interface VersionSummary {
   id: string;
   type: VersionType;
   releaseTime: string;
   installed: boolean;
+  /** Set for mod loader installs. */
+  loader?: LoaderRef;
 }
+
+export interface LoaderInfo {
+  id: string;
+  displayName: string;
+  /** Minecraft versions the loader supports; null = not known yet (offline, never fetched). */
+  gameVersions: string[] | null;
+}
+
+/** What to launch: an installed version by id, or a Minecraft version with a loader. */
+export type LaunchTarget =
+  { versionId: string } | { gameVersion: string; loaderId: string };
 
 export interface VersionListResult {
   versions: VersionSummary[];
@@ -22,7 +44,13 @@ export interface VersionListResult {
 }
 
 export type InstallStep =
-  "metadata" | "checking" | "downloading" | "java" | "natives" | "assets";
+  | "metadata"
+  | "loader"
+  | "checking"
+  | "downloading"
+  | "java"
+  | "natives"
+  | "assets";
 
 export interface InstallProgress {
   versionId: string;

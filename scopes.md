@@ -253,10 +253,10 @@ Forge/NeoForge (1.13 and later) install differently: they download an installer 
 - [ ] Install and launch Fabric on 1.18.2 and on the latest release; Quilt on 1.18.2.
 - [ ] A Fabric mod dropped into `mods/` (e.g. Fabric API) loads in game.
 - [ ] Vanilla 1.18.2 and Fabric 1.18.2 have separate game folders; the vanilla one has no mods.
-- [ ] Installing Fabric on an already-installed vanilla version downloads only the loader libraries.
+- [x] Installing Fabric on an already-installed vanilla version downloads only the loader libraries. *(Dev CLI, real servers: 1.18.2 Fabric fetched 8 files, Quilt 5.)*
 - [ ] An installed Fabric/Quilt version launches with the network off.
 - [ ] The loader dropdown disables loaders that don't support the selected version (e.g. Fabric on 1.12.2).
-- [ ] Unit tests: the merge (child wins, library de-duplication, argument appending, multi-level chain), Maven coordinate paths, and Quilt "latest stable" selection.
+- [x] Unit tests: the merge (child wins, library de-duplication, argument appending, multi-level chain), Maven coordinate paths, and Quilt "latest stable" selection.
 
 ## Scope 03: Profiles and worlds
 

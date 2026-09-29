@@ -6,6 +6,9 @@
  *   npm run mc -- check   <id> --data <dir> [--full]
  *   npm run mc -- command <id> --data <dir> [--user Name]
  *   npm run mc -- launch  <id> --data <dir> [--user Name]
+ *
+ * With `--loader fabric|quilt`, <id> is the Minecraft version and the loader is
+ * installed on top of it (or the existing install of that loader is reused).
  */
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -16,9 +19,19 @@ import { createDownloader } from "../src/main/minecraft/downloader";
 import { launchGame } from "../src/main/minecraft/gameProcess";
 import {
   installVersion,
+  readInstallMarker,
   type InstallMode,
+  type InstallOptions,
 } from "../src/main/minecraft/installer";
-import { getVersionList } from "../src/main/minecraft/manifest";
+import {
+  installLoader,
+  prepareLoader,
+} from "../src/main/minecraft/loaders/installLoader";
+import { createLoaderRegistry } from "../src/main/minecraft/loaders/registry";
+import {
+  getVersionList,
+  listInstalledVersions,
+} from "../src/main/minecraft/manifest";
 import { createPaths } from "../src/main/minecraft/paths";
 import { detectPlatform } from "../src/main/minecraft/platform";
 
@@ -30,6 +43,7 @@ const { positionals, values } = parseArgs({
     full: { type: "boolean", default: false },
     refresh: { type: "boolean", default: false },
     user: { type: "string", default: "DevPlayer" },
+    loader: { type: "string" },
   },
 });
 const [cmd, id] = positionals;
@@ -62,39 +76,72 @@ process.on("SIGINT", () => {
   controller.abort();
 });
 
+const loaders = createLoaderRegistry({ downloader });
+const deps = { paths, downloader, platform, logger, loaders };
+
 let lastLine = 0;
-async function install(versionId: string, mode: InstallMode) {
+const options = (mode: InstallMode): InstallOptions => ({
+  mode,
+  signal: controller.signal,
+  onProgress: (p) => {
+    if (Date.now() - lastLine < 1000) return;
+    lastLine = Date.now();
+    const mb = (n: number) => (n / 1024 / 1024).toFixed(1);
+    console.log(
+      `  ${p.step}: ${p.files}/${p.totalFiles} files, ${mb(p.bytes)}/${mb(p.totalBytes)} MB`,
+    );
+  },
+});
+
+/** Resolve `<id> [--loader x]` to the version id to install and launch. */
+async function install(id: string, mode: InstallMode) {
   const started = Date.now();
-  const result = await installVersion(
-    { paths, downloader, platform, logger },
-    versionId,
-    {
-      mode,
-      signal: controller.signal,
-      onProgress: (p) => {
-        if (Date.now() - lastLine < 1000) return;
-        lastLine = Date.now();
-        const mb = (n: number) => (n / 1024 / 1024).toFixed(1);
-        console.log(
-          `  ${p.step}: ${p.files}/${p.totalFiles} files, ${mb(p.bytes)}/${mb(p.totalBytes)} MB`,
-        );
-      },
-    },
-  );
+  let versionId = id;
+  let result;
+  if (values.loader) {
+    const loaderId = values.loader;
+    const existing = (await listInstalledVersions(paths)).find(
+      (v) => v.loader?.id === loaderId && v.loader.gameVersion === id,
+    );
+    const request = existing?.loader
+      ? {
+          providerId: loaderId,
+          gameVersion: id,
+          loaderVersion: existing.loader.loaderVersion,
+          versionId: existing.id,
+        }
+      : await prepareLoader(deps, loaderId, id);
+    versionId = request.versionId;
+    result = await installLoader(deps, request, options(mode));
+  } else {
+    const loader = (await readInstallMarker(paths, id))?.loader;
+    result = loader
+      ? await installLoader(
+          deps,
+          {
+            providerId: loader.id,
+            gameVersion: loader.gameVersion,
+            loaderVersion: loader.loaderVersion,
+            versionId: id,
+          },
+          options(mode),
+        )
+      : await installVersion(deps, id, options(mode));
+  }
   console.log(
     `${versionId}: ${mode} done in ${((Date.now() - started) / 1000).toFixed(1)}s, ` +
       `${requests.length} network requests`,
   );
-  return result;
+  return { versionId, installed: result };
 }
 
-async function command(versionId: string) {
-  const installed = await install(versionId, "quick");
+async function command(id: string) {
+  const { versionId, installed } = await install(id, "quick");
   const account = await offlineProvider.createAccount({
     username: values.user,
   });
   const identity = await offlineProvider.getLaunchIdentity(account);
-  return buildLaunchCommand({
+  const cmd = buildLaunchCommand({
     installed,
     identity,
     paths,
@@ -105,6 +152,7 @@ async function command(versionId: string) {
     launcherVersion: "dev",
     logger,
   });
+  return { versionId, cmd };
 }
 
 try {
@@ -130,15 +178,14 @@ try {
       await install(requireId(), values.full ? "repair" : "quick");
       break;
     case "command": {
-      const c = await command(requireId());
+      const { cmd: c } = await command(requireId());
       console.log(
         [c.javaPath, ...c.args].map((a) => JSON.stringify(a)).join(" \\\n  "),
       );
       break;
     }
     case "launch": {
-      const versionId = requireId();
-      const c = await command(versionId);
+      const { versionId, cmd: c } = await command(requireId());
       const game = await launchGame(c, {
         logFile: join(
           paths.gameDir(versionId),

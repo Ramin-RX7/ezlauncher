@@ -2,7 +2,11 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { RefreshCw } from "lucide-react";
-import type { VersionListResult } from "@shared/launcher";
+import type {
+  LoaderInfo,
+  VersionListResult,
+  VersionSummary,
+} from "@shared/launcher";
 import { GameLog } from "../components/play/GameLog";
 import { PlayBar } from "../components/play/PlayBar";
 import { Button } from "../components/ui/Button";
@@ -14,12 +18,22 @@ import { errorMessage } from "../lib/errors";
 import { useLauncherState } from "../state/launcherStore";
 
 const SELECTED_KEY = "ezlauncher.selectedVersion";
+const LOADER_KEY = "ezlauncher.selectedLoader";
 
-function loadSelected(): string | undefined {
+function loadStored(key: string): string | undefined {
   try {
-    return localStorage.getItem(SELECTED_KEY) ?? undefined;
+    return localStorage.getItem(key) ?? undefined;
   } catch {
     return undefined;
+  }
+}
+
+function store(key: string, value: string | null): void {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    // storage unavailable
   }
 }
 
@@ -31,9 +45,21 @@ export function HomePage() {
     queryFn: () => invoke("versions:list", {}),
   });
 
+  const loaders = useQuery({
+    queryKey: ["loaders"],
+    queryFn: () => invoke("loaders:list", {}),
+  });
+
   const [notice, setNotice] = useState<string>();
   const refresh = useMutation({
-    mutationFn: () => invoke("versions:list", { refresh: true }),
+    mutationFn: async () => {
+      const [result, loaderList] = await Promise.all([
+        invoke("versions:list", { refresh: true }),
+        invoke("loaders:list", { refresh: true }),
+      ]);
+      queryClient.setQueryData<LoaderInfo[]>(["loaders"], loaderList);
+      return result;
+    },
     onSuccess: (result) => {
       const before = new Set(list.data?.versions.map((v) => v.id));
       queryClient.setQueryData<VersionListResult>(["versions"], result);
@@ -53,22 +79,49 @@ export function HomePage() {
     },
   });
 
-  const [selectedId, setSelectedId] = useState<string | undefined>(
-    loadSelected,
+  // The selection is a Minecraft version plus a loader (null = Vanilla).
+  const [selectedId, setSelectedId] = useState(() => loadStored(SELECTED_KEY));
+  const [loaderId, setLoaderId] = useState<string | null>(
+    () => loadStored(LOADER_KEY) ?? null,
   );
-  const select = (id: string) => {
-    setSelectedId(id);
-    try {
-      localStorage.setItem(SELECTED_KEY, id);
-    } catch {
-      // storage unavailable
-    }
+  const selectLoader = (id: string | null) => {
+    setLoaderId(id);
+    store(LOADER_KEY, id);
   };
   const versions = useMemo(() => list.data?.versions ?? [], [list.data]);
+  const gameVersions = useMemo(
+    () => versions.filter((v) => !v.loader),
+    [versions],
+  );
+  const select = (id: string) => {
+    // A loader install's row selects its Minecraft version and loader.
+    const row = versions.find((v) => v.id === id);
+    const gameVersion = row?.loader?.gameVersion ?? id;
+    setSelectedId(gameVersion);
+    store(SELECTED_KEY, gameVersion);
+    selectLoader(row?.loader?.id ?? null);
+  };
   const selected =
-    versions.find((v) => v.id === selectedId) ??
-    versions.find((v) => v.id === list.data?.latest?.release) ??
-    versions[0];
+    gameVersions.find((v) => v.id === selectedId) ??
+    gameVersions.find((v) => v.id === list.data?.latest?.release) ??
+    gameVersions[0];
+  const installedLoaders = useMemo(() => {
+    const byLoader: Record<string, VersionSummary> = {};
+    for (const v of versions) {
+      if (v.loader && v.loader.gameVersion === selected?.id)
+        byLoader[v.loader.id] ??= v;
+    }
+    return byLoader;
+  }, [versions, selected?.id]);
+  const selectedRowId =
+    (loaderId && installedLoaders[loaderId]?.id) ?? selected?.id;
+  const loaderNames = useMemo(
+    () =>
+      Object.fromEntries(
+        (loaders.data ?? []).map((l) => [l.id, l.displayName]),
+      ),
+    [loaders.data],
+  );
 
   // The log opens by itself while a game runs or after a crash, until the user toggles it.
   const [logChoice, setLogChoice] = useState<boolean>();
@@ -83,9 +136,18 @@ export function HomePage() {
   const onActionError = (err: unknown) => {
     setActionError(errorMessage(t, err));
   };
+  const dependents = useQuery({
+    queryKey: ["dependents", deleting],
+    queryFn: () => invoke("versions:dependents", deleting ?? ""),
+    enabled: deleting !== undefined,
+  });
+  const dependentIds = dependents.data ?? [];
   const remove = useMutation({
-    mutationFn: (args: { versionId: string; deleteGameDir: boolean }) =>
-      invoke("versions:delete", args),
+    mutationFn: (args: {
+      versionId: string;
+      deleteGameDir: boolean;
+      deleteDependents: boolean;
+    }) => invoke("versions:delete", args),
     onSuccess: () => {
       setDeleting(undefined);
       void queryClient.invalidateQueries({ queryKey: ["versions"] });
@@ -152,7 +214,8 @@ export function HomePage() {
       {versions.length > 0 && (
         <VersionList
           versions={versions}
-          selectedId={selected?.id}
+          selectedId={selectedRowId}
+          loaderNames={loaderNames}
           onSelect={select}
           onRepair={(id) => {
             setActionError(undefined);
@@ -162,6 +225,9 @@ export function HomePage() {
           onOpenFolder={(id) => {
             invoke("versions:openGameDir", id).catch(onActionError);
           }}
+          onOpenModsFolder={(id) => {
+            invoke("versions:openModsDir", id).catch(onActionError);
+          }}
           onDelete={(id) => {
             setDeleteWorlds(false);
             setActionError(undefined);
@@ -170,7 +236,13 @@ export function HomePage() {
         />
       )}
 
-      <PlayBar version={selected} />
+      <PlayBar
+        version={selected}
+        loaders={loaders.data ?? []}
+        loaderId={loaderId}
+        onLoaderChange={selectLoader}
+        installedLoaders={installedLoaders}
+      />
       <GameLog
         open={logOpen}
         onToggle={() => {
@@ -197,20 +269,38 @@ export function HomePage() {
             </Button>
             <Button
               variant="danger"
-              disabled={remove.isPending}
+              disabled={remove.isPending || dependents.isPending}
               onClick={() => {
                 if (deleting)
                   remove.mutate({
                     versionId: deleting,
                     deleteGameDir: deleteWorlds,
+                    deleteDependents: dependentIds.length > 0,
                   });
               }}
             >
-              {t("versions.deleteConfirm")}
+              {dependentIds.length > 0
+                ? t("versions.deleteAllConfirm")
+                : t("versions.deleteConfirm")}
             </Button>
           </>
         }
       >
+        {dependentIds.length > 0 && (
+          <div className="mb-3 flex flex-col gap-1 text-sm">
+            <p className="text-warning">
+              {t("versions.dependentsWarning", {
+                count: dependentIds.length,
+                id: deleting ?? "",
+              })}
+            </p>
+            <ul className="list-disc ps-5">
+              {dependentIds.map((id) => (
+                <li key={id}>{id}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         <Checkbox checked={deleteWorlds} onChange={setDeleteWorlds}>
           {t("versions.deleteWorlds")}
         </Checkbox>

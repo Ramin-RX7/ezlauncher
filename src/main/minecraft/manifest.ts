@@ -112,12 +112,34 @@ export async function listInstalledVersions(
         type: json?.type ?? "release",
         releaseTime: json?.releaseTime ?? marker.installedAt,
         installed: true,
+        ...(marker.loader && { loader: marker.loader }),
       });
     } catch {
       // unreadable version folder: not installed
     }
   }
-  return result;
+  // Loader installs sort and filter like the version they run on.
+  const byId = new Map(result.map((v) => [v.id, v]));
+  return result.map((v) => {
+    const parent = v.loader && byId.get(v.loader.gameVersion);
+    return parent
+      ? { ...v, type: parent.type, releaseTime: parent.releaseTime }
+      : v;
+  });
+}
+
+/** Newest first; a version comes before the loader installs built on it. */
+export function compareVersionSummaries(
+  a: VersionSummary,
+  b: VersionSummary,
+): number {
+  const byTime = Date.parse(b.releaseTime) - Date.parse(a.releaseTime);
+  if (byTime !== 0) return byTime;
+  const gameA = a.loader?.gameVersion ?? a.id;
+  const gameB = b.loader?.gameVersion ?? b.id;
+  if (gameA !== gameB) return gameA < gameB ? -1 : 1;
+  if (!a.loader !== !b.loader) return a.loader ? 1 : -1;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
 /** The list shown in the UI: the manifest plus installed versions (which appear even offline). */
@@ -140,11 +162,16 @@ export async function getVersionList(
       installed: installedIds.has(v.id),
     });
   }
-  for (const v of installed) if (!byId.has(v.id)) byId.set(v.id, v);
+  for (const v of installed) {
+    if (byId.has(v.id)) continue;
+    const parent = v.loader && byId.get(v.loader.gameVersion);
+    byId.set(
+      v.id,
+      parent ? { ...v, type: parent.type, releaseTime: parent.releaseTime } : v,
+    );
+  }
 
-  const versions = [...byId.values()].sort(
-    (a, b) => Date.parse(b.releaseTime) - Date.parse(a.releaseTime),
-  );
+  const versions = [...byId.values()].sort(compareVersionSummaries);
   return {
     versions,
     source,

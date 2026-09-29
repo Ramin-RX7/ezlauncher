@@ -7,7 +7,7 @@ import {
 } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { VersionSummary } from "@shared/launcher";
+import type { LoaderInfo, VersionSummary } from "@shared/launcher";
 import { createQueryClient } from "../../lib/queryClient";
 import { launcherStore } from "../../state/launcherStore";
 import { mockApi } from "../../test/mockApi";
@@ -21,10 +21,18 @@ const installed: VersionSummary = {
 };
 const fresh: VersionSummary = { ...installed, id: "26.3", installed: false };
 
-function renderBar(version: VersionSummary) {
+const loaders: LoaderInfo[] = [
+  { id: "fabric", displayName: "Fabric", gameVersions: ["26.3"] },
+  { id: "quilt", displayName: "Quilt", gameVersions: null },
+];
+
+function renderBar(
+  version: VersionSummary,
+  props: Partial<Parameters<typeof PlayBar>[0]> = {},
+) {
   render(
     <QueryClientProvider client={createQueryClient()}>
-      <PlayBar version={version} />
+      <PlayBar version={version} loaders={loaders} {...props} />
     </QueryClientProvider>,
   );
 }
@@ -82,7 +90,9 @@ describe("PlayBar", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Play" }));
     await waitFor(() => {
-      expect(api.invoke).toHaveBeenCalledWith("game:launch", "1.8.9");
+      expect(api.invoke).toHaveBeenCalledWith("game:launch", {
+        versionId: "1.8.9",
+      });
     });
     const calls = api.invoke.mock.calls.map((c) => c[0]);
     expect(calls.indexOf("account:setUsername")).toBeLessThan(
@@ -114,6 +124,66 @@ describe("PlayBar", () => {
     expect(screen.getByText("5 / 10 files · 1.0 / 2.0 MB")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(api.invoke).toHaveBeenCalledWith("versions:cancel", "26.3");
+  });
+
+  it("disables loaders that don't support the version", async () => {
+    mockApi({
+      "account:get": () => ({ id: "a", username: "Steve", uuid: "u" }),
+    });
+    renderBar(installed); // 1.8.9: Fabric lists only 26.3, Quilt's list is unknown
+    await screen.findByDisplayValue("Steve");
+    expect(screen.getByRole("option", { name: "Vanilla" })).toBeEnabled();
+    expect(
+      screen.getByRole("option", {
+        name: "Fabric (not available for this version)",
+      }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("option", {
+        name: "Quilt (not available for this version)",
+      }),
+    ).toBeDisabled();
+  });
+
+  it("installs a new loader by game version and loader", async () => {
+    const api = mockApi({
+      "account:get": () => ({ id: "a", username: "Steve", uuid: "u" }),
+      "game:launch": () => ({ launchId: "l", versionId: "x", pid: 1 }),
+    });
+    renderBar({ ...fresh, installed: true }, { loaderId: "fabric" });
+    await screen.findByDisplayValue("Steve");
+    fireEvent.click(screen.getByRole("button", { name: "Install & Play" }));
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("game:launch", {
+        gameVersion: "26.3",
+        loaderId: "fabric",
+      });
+    });
+  });
+
+  it("plays an installed loader install by its id, even offline", async () => {
+    const api = mockApi({
+      "account:get": () => ({ id: "a", username: "Steve", uuid: "u" }),
+      "game:launch": () => ({ launchId: "l", versionId: "x", pid: 1 }),
+    });
+    const fabricInstall: VersionSummary = {
+      ...installed,
+      id: "fabric-loader-0.19.5-1.8.9",
+      loader: { id: "fabric", loaderVersion: "0.19.5", gameVersion: "1.8.9" },
+    };
+    renderBar(installed, {
+      loaders: [{ id: "fabric", displayName: "Fabric", gameVersions: null }],
+      loaderId: "fabric",
+      installedLoaders: { fabric: fabricInstall },
+    });
+    await screen.findByDisplayValue("Steve");
+    expect(screen.getByRole("option", { name: "Fabric 0.19.5" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("game:launch", {
+        versionId: "fabric-loader-0.19.5-1.8.9",
+      });
+    });
   });
 
   it("shows a crash message", async () => {

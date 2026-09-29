@@ -181,9 +181,26 @@ export const runtimeMarkerSchema = z.object({
   installedAt: z.string(),
 });
 
+export const loaderMarkerSchema = z.object({
+  id: z.string(),
+  loaderVersion: z.string(),
+  gameVersion: z.string(),
+});
+
 export const installMarkerSchema = z.object({
   schema: z.literal(1),
   versionId: z.string(),
   installedAt: z.string(),
+  /** Set for mod loader installs; vanilla installs have none. */
+  loader: loaderMarkerSchema.optional(),
+  /** Libraries whose download couldn't be checked against a hash. */
+  unverified: z.array(z.string()).optional(),
 });
 export type InstallMarker = z.infer<typeof installMarkerSchema>;
+
+/** A loader's supported Minecraft versions, saved in `launcher/loaders/<id>.json`. */
+export const loaderGameVersionsCacheSchema = z.object({
+  schema: z.literal(1),
+  fetchedAt: z.string(),
+  versions: z.array(z.string()),
+});

@@ -16,6 +16,8 @@ export interface InstallEntry {
 
 export interface LauncherState {
   installs: Record<string, InstallEntry>;
+  /** The install that most recently started or was queued (a new loader install's id is only known then). */
+  latestInstallId?: string;
   running: RunningGame[];
   log: string[];
   lastExit?: GameExitEvent;
@@ -48,7 +50,12 @@ function createLauncherStore() {
           prev?.progress && { progress: prev.progress }),
         ...(e.error && { error: e.error }),
       };
-      set({ ...state, installs: { ...state.installs, [e.versionId]: entry } });
+      const started = e.status === "queued" || e.status === "running";
+      set({
+        ...state,
+        installs: { ...state.installs, [e.versionId]: entry },
+        ...(started && { latestInstallId: e.versionId }),
+      });
     },
     installProgress(p: InstallProgress) {
       const prev = state.installs[p.versionId];

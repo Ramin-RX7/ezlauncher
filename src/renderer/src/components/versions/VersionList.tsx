@@ -20,9 +20,12 @@ const OVERSCAN = 8;
 export interface VersionListProps {
   versions: VersionSummary[];
   selectedId: string | undefined;
+  /** Display names of mod loaders by id, for loader install badges. */
+  loaderNames?: Record<string, string>;
   onSelect: (id: string) => void;
   onRepair: (id: string) => void;
   onOpenFolder: (id: string) => void;
+  onOpenModsFolder: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
@@ -72,9 +75,11 @@ function useWindow(count: number) {
 export function VersionList({
   versions,
   selectedId,
+  loaderNames = {},
   onSelect,
   onRepair,
   onOpenFolder,
+  onOpenModsFolder,
   onDelete,
 }: VersionListProps) {
   const { t, i18n } = useTranslation();
@@ -84,7 +89,11 @@ export function VersionList({
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return versions.filter(
-      (v) => tabOf(v.type) === tab && (!q || v.id.toLowerCase().includes(q)),
+      (v) =>
+        tabOf(v.type) === tab &&
+        (!q ||
+          v.id.toLowerCase().includes(q) ||
+          (v.loader?.gameVersion.toLowerCase().includes(q) ?? false)),
     );
   }, [versions, tab, query]);
 
@@ -171,10 +180,22 @@ export function VersionList({
                       className={`size-2 shrink-0 rounded-full ${selected ? "bg-accent" : "bg-transparent"}`}
                       aria-hidden
                     />
-                    <span className="truncate font-medium">{v.id}</span>
-                    <span className="text-xs text-muted">
-                      {dateFormat.format(new Date(v.releaseTime))}
+                    <span className="truncate font-medium">
+                      {v.loader?.gameVersion ?? v.id}
                     </span>
+                    {v.loader && (
+                      <span className="shrink-0 rounded-ezl border border-border px-2 py-0.5 text-xs text-muted">
+                        {t("loaders.badge", {
+                          name: loaderNames[v.loader.id] ?? v.loader.id,
+                          version: v.loader.loaderVersion,
+                        })}
+                      </span>
+                    )}
+                    {!v.loader && (
+                      <span className="text-xs text-muted">
+                        {dateFormat.format(new Date(v.releaseTime))}
+                      </span>
+                    )}
                     {v.installed && (
                       <span className="ms-auto rounded-ezl bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">
                         {t("versions.installed")}
@@ -205,6 +226,16 @@ export function VersionList({
                             onOpenFolder(v.id);
                           },
                         },
+                        ...(v.loader
+                          ? [
+                              {
+                                label: t("versions.openModsFolder"),
+                                onSelect: () => {
+                                  onOpenModsFolder(v.id);
+                                },
+                              },
+                            ]
+                          : []),
                         {
                           label: t("versions.delete"),
                           danger: true,

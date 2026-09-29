@@ -1,4 +1,4 @@
-import { rm, stat } from "node:fs/promises";
+import { readdir, rm, stat } from "node:fs/promises";
 import type { InstallProgress, InstallStep } from "@shared/launcher";
 import { AppError } from "../core/errors";
 import { readJson, writeJsonAtomic } from "../core/fsAtomic";
@@ -18,10 +18,15 @@ import {
   installMarkerSchema,
   versionJsonSchema,
   type AssetIndex,
+  type InstallMarker,
   type VersionJson,
 } from "./schemas";
 import { checkFiles, isFileValid, type CheckMode } from "./verify";
-import { resolveVersion, type ResolvedVersion } from "./versionJson";
+import {
+  diskVersionLoader,
+  resolveVersion,
+  type ResolvedVersion,
+} from "./versionJson";
 
 export interface InstallDeps {
   paths: Paths;
@@ -41,7 +46,16 @@ export interface InstallOptions {
   mode: InstallMode;
   signal?: AbortSignal;
   onProgress?: (p: InstallProgress) => void;
+  /**
+   * Versions whose JSON the caller manages (mod loaders). They are read from disk
+   * and never looked up in Mojang's version list, even when repairing.
+   */
+  managedVersionIds?: readonly string[];
+  /** Write the install marker at the end (default). Callers with more steps write it themselves. */
+  writeMarker?: boolean;
 }
+
+export type InstallMarkerExtra = Pick<InstallMarker, "loader" | "unverified">;
 
 /** Everything a launch needs, as computed during install. */
 export interface InstalledVersion {
@@ -58,15 +72,36 @@ export function clientJarVersionId(version: ResolvedVersion): string {
   return version.chain[version.chain.length - 1] ?? version.id;
 }
 
-export async function isInstalled(paths: Paths, id: string): Promise<boolean> {
+/** The install marker, or undefined when the version isn't (fully) installed. */
+export async function readInstallMarker(
+  paths: Paths,
+  id: string,
+): Promise<InstallMarker | undefined> {
   try {
-    return (
-      (await readJson(paths.installMarker(id), installMarkerSchema)) !==
-      undefined
-    );
+    return await readJson(paths.installMarker(id), installMarkerSchema);
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+export async function isInstalled(paths: Paths, id: string): Promise<boolean> {
+  return (await readInstallMarker(paths, id)) !== undefined;
+}
+
+/** Written last, in one step: without it, the version counts as not installed. */
+export async function writeInstallMarker(
+  paths: Paths,
+  versionId: string,
+  extra: InstallMarkerExtra = {},
+): Promise<void> {
+  const marker: InstallMarker = {
+    schema: 1,
+    versionId,
+    installedAt: new Date().toISOString(),
+    ...(extra.loader && { loader: extra.loader }),
+    ...(extra.unverified?.length && { unverified: extra.unverified }),
+  };
+  await writeJsonAtomic(paths.installMarker(versionId), marker);
 }
 
 async function fileExists(path: string): Promise<boolean> {
@@ -80,7 +115,13 @@ async function fileExists(path: string): Promise<boolean> {
 export async function installVersion(
   deps: InstallDeps,
   versionId: string,
-  { mode, signal, onProgress }: InstallOptions,
+  {
+    mode,
+    signal,
+    onProgress,
+    managedVersionIds = [],
+    writeMarker = true,
+  }: InstallOptions,
 ): Promise<InstalledVersion> {
   const { paths, downloader, platform, logger } = deps;
   const checkMode: CheckMode = mode === "repair" ? "full" : "quick";
@@ -100,7 +141,8 @@ export async function installVersion(
   report("metadata");
   const loadOrDownload = async (id: string): Promise<VersionJson> => {
     const dest = paths.versionJson(id);
-    if (mode === "repair" || !(await fileExists(dest))) {
+    const managed = managedVersionIds.includes(id);
+    if (!managed && (mode === "repair" || !(await fileExists(dest)))) {
       const entry = await findManifestEntry({ paths, downloader }, id);
       const task: FileTask = {
         dest,
@@ -205,12 +247,11 @@ export async function installVersion(
   await applyLegacyAssets(assetIndex, indexId, paths, paths.gameDir(versionId));
 
   // 7. The marker comes last: without it, the version counts as not installed.
-  if (mode !== "quick" || !(await isInstalled(paths, versionId))) {
-    await writeJsonAtomic(paths.installMarker(versionId), {
-      schema: 1,
-      versionId,
-      installedAt: new Date().toISOString(),
-    });
+  if (
+    writeMarker &&
+    (mode !== "quick" || !(await isInstalled(paths, versionId)))
+  ) {
+    await writeInstallMarker(paths, versionId);
   }
 
   return {
@@ -229,6 +270,39 @@ async function dirExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Installed versions that inherit from `id`, at any depth (e.g. the loader
+ * installs built on a vanilla version). Read from disk only.
+ */
+export async function listDependents(
+  paths: Paths,
+  id: string,
+): Promise<string[]> {
+  let dirs: string[];
+  try {
+    dirs = await readdir(paths.versionsDir);
+  } catch {
+    return [];
+  }
+  const load = diskVersionLoader(paths);
+  const result: string[] = [];
+  for (const other of dirs) {
+    if (other === id || !(await isInstalled(paths, other))) continue;
+    try {
+      const { chain } = await resolveVersion(other, load);
+      if (chain.includes(id)) result.push(other);
+    } catch {
+      // a broken chain (e.g. parent already gone) still counts if it names `id`
+      const json = await readJson(
+        paths.versionJson(other),
+        versionJsonSchema,
+      ).catch(() => undefined);
+      if (json?.inheritsFrom === id) result.push(other);
+    }
+  }
+  return result.sort();
 }
 
 /** Remove a version's own folder. Shared libraries and assets stay. */
