@@ -41,7 +41,8 @@
       "snapshot": "Snapshot",
       "old_beta": "Beta",
       "old_alpha": "Alpha"
-    }
+    },
+    "refreshFailed": "Couldn't check for new versions right now. Still showing the saved list."
   },
   "loaders": {
     "label": "Mod loader",
@@ -70,7 +71,9 @@
     "crashed": "{{name}} crashed (exit code {{code}}). Check the game log.",
     "needProfile": "Pick a profile to play.",
     "needAccount": "Create or pick an account to play.",
-    "needBoth": "Pick a profile and an account to play."
+    "needBoth": "Pick a profile and an account to play.",
+    "playAnother": "Play another",
+    "runningHint": "Already running. Another copy uses the same profile folder: open a different world in each."
   },
   "log": {
     "title": "Game log",
@@ -302,7 +305,8 @@
     "versionOption": "{{version}}",
     "versionOptionEnabled": "{{version}} (enabled)",
     "versionOptionIncompatible": "{{version}} (doesn't fit)",
-    "alsoDisabled": "Also disabled, as nothing else needs them: {{names}}"
+    "alsoDisabled": "Also disabled, as nothing else needs them: {{names}}",
+    "openFolder": "Open mods folder"
   },
   "remote": {
     "title": "Add a mod to {{profile}}",
@@ -331,7 +335,8 @@
     "close": "Close",
     "pick": "Use",
     "picked": "Enabled",
-    "downloads": "{{formatted}} downloads"
+    "downloads": "{{formatted}} downloads",
+    "alsoReplaced": "Also replaced in this profile: {{names}}"
   },
   "validation": {
     "errors_one": "{{count}} error",
@@ -385,6 +390,8 @@
     "confirm": "Disable and play",
     "back": "Back",
     "warnings_one": "Started with {{count}} mod warning. See the Mods tab.",
-    "warnings_other": "Started with {{count}} mod warnings. See the Mods tab."
+    "warnings_other": "Started with {{count}} mod warnings. See the Mods tab.",
+    "fixed": "No errors left.",
+    "play": "Play"
   }
 }

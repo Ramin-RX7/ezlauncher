@@ -10,7 +10,9 @@ export function registerProfilesIpc(): void {
   handle("profiles:delete", (_e, { id, worlds }) =>
     getService().deleteProfile(id, worlds),
   );
-  handle("profiles:openFolder", (_e, id) => getService().openProfileFolder(id));
+  handle("profiles:openFolder", (_e, id, folder) =>
+    getService().openProfileFolder(id, folder === "mods" ? "mods" : "game"),
+  );
 
   handle("worlds:list", (_e, profileId) => getService().listWorlds(profileId));
   handle("worlds:move", (_e, { worldId, toProfileId }) =>

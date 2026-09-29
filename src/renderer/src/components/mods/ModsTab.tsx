@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   CircleCheck,
   CornerDownRight,
+  FolderOpen,
   Lock,
   Plus,
   Search,
@@ -130,6 +131,9 @@ export function ModsTab({ profile }: { profile: ProfileInfo }) {
       queryClient.setQueryData(["mods", "validate", profile.id], full);
     },
   });
+  const openFolder = useMutation({
+    mutationFn: () => invoke("profiles:openFolder", profile.id, "mods"),
+  });
   const redownload = useMutation({
     mutationFn: (sha1: string) => invoke("mods:redownload", sha1),
     onSettled: invalidate,
@@ -197,15 +201,26 @@ export function ModsTab({ profile }: { profile: ProfileInfo }) {
     <AddMods
       profileId={profile.id}
       actions={
-        <Button
-          variant="primary"
-          onClick={() => {
-            setAdding({});
-          }}
-        >
-          <Plus size={16} aria-hidden />
-          {t("mods.addMod")}
-        </Button>
+        <>
+          <Button
+            variant="primary"
+            onClick={() => {
+              setAdding({});
+            }}
+          >
+            <Plus size={16} aria-hidden />
+            {t("mods.addMod")}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              openFolder.mutate();
+            }}
+          >
+            <FolderOpen size={16} aria-hidden />
+            {t("mods.openFolder")}
+          </Button>
+        </>
       }
     >
       {adding && (
@@ -236,7 +251,7 @@ export function ModsTab({ profile }: { profile: ProfileInfo }) {
       {running && (
         <p className="text-sm text-muted">{t("worlds.runningBlocked")}</p>
       )}
-      {[toggle, redownload, checkAll].map(
+      {[toggle, redownload, checkAll, openFolder].map(
         (m, i) =>
           m.isError && (
             <p key={i} role="alert" className="text-sm text-danger">

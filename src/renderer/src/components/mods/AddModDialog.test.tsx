@@ -125,7 +125,7 @@ describe("AddModDialog", () => {
     const api = mockApi({
       "mods:library": () => [],
       "mods:findRemote": () => [sodiumCard],
-      "mods:installRemote": () => undefined,
+      "mods:installRemote": () => ({ replaced: [] }),
     });
     renderDialog();
     type("Sodium");

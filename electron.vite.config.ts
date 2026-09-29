@@ -17,7 +17,7 @@ function stripCspInDev(): Plugin {
     name: "ezlauncher:strip-csp-in-dev",
     apply: "serve",
     transformIndexHtml: (html) =>
-      html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>\s*/, ""),
+      html.replace(/<meta\s+http-equiv="Content-Security-Policy"[^>]*>\s*/, ""),
   };
 }
 

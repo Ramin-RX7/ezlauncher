@@ -116,6 +116,24 @@ describe("ModsTab", () => {
     });
   });
 
+  it("opens the profile's mods folder", async () => {
+    const api = mockApi({
+      "mods:library": () => [],
+      "profiles:openFolder": () => undefined,
+    });
+    renderTab();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open mods folder" }),
+    );
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith(
+        "profiles:openFolder",
+        "p1",
+        "mods",
+      );
+    });
+  });
+
   it("explains that vanilla profiles can't load mods", () => {
     mockApi({});
     renderTab(profile({ loader: null }));

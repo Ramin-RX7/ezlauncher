@@ -80,7 +80,11 @@ export interface IpcInvokeContract {
     args: [options: { id: string; worlds: DeleteWorldsChoice }];
     result: void;
   };
-  "profiles:openFolder": { args: [id: string]; result: void };
+  /** Opens the profile's game folder, or its `mods/` (created if missing). */
+  "profiles:openFolder": {
+    args: [id: string, folder?: "game" | "mods"];
+    result: void;
+  };
 
   "worlds:list": { args: [profileId: string]; result: WorldInfo[] };
   "worlds:move": {
@@ -138,7 +142,11 @@ export interface IpcInvokeContract {
     result: RemoteMatchCard[];
   };
   /** Downloads a card's mod and dependencies into the library and enables them. */
-  "mods:installRemote": { args: [planId: string]; result: void };
+  /** Resolves to other enabled mods that were replaced (same mod id) and not on the card. */
+  "mods:installRemote": {
+    args: [planId: string];
+    result: { replaced: string[] };
+  };
   "mods:cancelRemote": { args: [planId: string]; result: boolean };
   /** Checks the profile's enabled mods; `full` also hashes every file (Check mods). */
   "mods:validate": {

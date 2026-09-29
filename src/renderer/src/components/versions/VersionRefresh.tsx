@@ -27,7 +27,11 @@ export function VersionRefresh() {
       const before = new Set(list.data?.versions.map((v) => v.id));
       queryClient.setQueryData<VersionListResult>(keys.versions, result);
       if (result.refreshError) {
-        setNotice(t("versions.offlineRefresh"));
+        setNotice(
+          result.refreshError === "OFFLINE"
+            ? t("versions.offlineRefresh")
+            : t("versions.refreshFailed"),
+        );
         return;
       }
       const added =

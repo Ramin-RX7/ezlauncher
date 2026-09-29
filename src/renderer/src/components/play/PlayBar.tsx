@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Play, TriangleAlert, X } from "lucide-react";
+import { Play, TriangleAlert } from "lucide-react";
 import type {
   LaunchRequest,
   ProfileInfo,
@@ -13,10 +13,8 @@ import { launcherStore, useLauncherState } from "../../state/launcherStore";
 import { useAccounts, useLoaders, useSelection } from "../../state/queries";
 import { AccountPicker } from "../accounts/AccountPicker";
 import { Button } from "../ui/Button";
-import { Progress } from "../ui/Progress";
+import { InstallProgressRow } from "./InstallProgressRow";
 import { LaunchProblemsDialog } from "./LaunchProblemsDialog";
-
-const MB = 1024 * 1024;
 
 /** Account choice and Play for the selected profile, with install progress. */
 export function PlayBar({
@@ -79,20 +77,14 @@ export function PlayBar({
     : t("play.installAndPlay");
   if (installing) label = t("play.installing");
   else if (play.isPending) label = t("play.starting");
-  else if (running) label = t("play.running");
+  else if (running) label = t("play.playAnother");
 
   let hint: string | undefined;
   if (!profile && !account) hint = t("play.needBoth");
   else if (!profile) hint = t("play.needProfile");
   else if (!account) hint = t("play.needAccount");
+  else if (running) hint = t("play.runningHint");
 
-  const p = install?.progress;
-  const percent =
-    p && p.totalBytes > 0
-      ? (p.bytes / p.totalBytes) * 100
-      : p && p.totalFiles > 0
-        ? (p.files / p.totalFiles) * 100
-        : undefined;
   const loaderName = profile?.loader
     ? (loaders.data?.find((l) => l.id === profile.loader?.id)?.displayName ??
       profile.loader.id)
@@ -118,7 +110,7 @@ export function PlayBar({
         <Button
           variant="primary"
           className="h-11 min-w-44 text-base"
-          disabled={!profile || !account || busy || running}
+          disabled={!profile || !account || busy}
           aria-describedby={hint ? "play-hint" : undefined}
           onClick={() => {
             if (profile && account)
@@ -137,41 +129,15 @@ export function PlayBar({
       )}
 
       {installing && installKey && (
-        <div className="flex items-center gap-3">
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <div className="flex justify-between gap-2 text-xs text-muted">
-              <span>
-                {p ? t(`play.steps.${p.step}`) : t("play.installing")}
-              </span>
-              {p && p.totalFiles > 0 && (
-                <span>
-                  {t("play.progress", {
-                    files: p.files,
-                    totalFiles: p.totalFiles,
-                    mb: (p.bytes / MB).toFixed(1),
-                    totalMb: (p.totalBytes / MB).toFixed(1),
-                  })}
-                </span>
-              )}
-            </div>
-            <Progress value={percent} label={t("play.installing")} />
-          </div>
-          <Button
-            variant="ghost"
-            aria-label={t("play.cancel")}
-            onClick={() => {
-              void invoke("versions:cancel", installKey);
-            }}
-          >
-            <X size={16} aria-hidden />
-            {t("play.cancel")}
-          </Button>
-        </div>
+        <InstallProgressRow
+          versionId={installKey}
+          progress={install.progress}
+        />
       )}
 
-      {blocked && (
+      {blocked && profile && (
         <LaunchProblemsDialog
-          profileId={blocked.request.profileId}
+          profile={profile}
           report={blocked.report}
           onClose={() => {
             setBlocked(undefined);

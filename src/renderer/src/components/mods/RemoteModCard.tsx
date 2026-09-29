@@ -38,6 +38,9 @@ export function RemoteModCard({
     (download.error as { code?: string }).code === "CANCELLED";
 
   const { project, version } = card;
+  const alsoReplaced = (download.data?.replaced ?? []).filter(
+    (name) => !card.replaces.includes(name),
+  );
   const percent =
     progress && progress.totalBytes > 0
       ? (progress.bytes / progress.totalBytes) * 100
@@ -126,9 +129,16 @@ export function RemoteModCard({
         ))}
 
       {download.isSuccess ? (
-        <p className="text-sm text-success" aria-live="polite">
-          {t("remote.done", { name: project.name })}
-        </p>
+        <div className="flex flex-col gap-1" aria-live="polite">
+          <p className="text-sm text-success">
+            {t("remote.done", { name: project.name })}
+          </p>
+          {alsoReplaced.length > 0 && (
+            <p className="text-sm text-muted">
+              {t("remote.alsoReplaced", { names: alsoReplaced.join(", ") })}
+            </p>
+          )}
+        </div>
       ) : (
         card.planId && (
           <div className="flex items-center gap-3">

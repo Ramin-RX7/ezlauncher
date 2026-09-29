@@ -555,9 +555,14 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       changed();
     },
 
-    async openProfileFolder(id: string): Promise<void> {
+    async openProfileFolder(
+      id: string,
+      folder: "game" | "mods" = "game",
+    ): Promise<void> {
       await requireProfile(id);
-      await openFolder(paths.gameDir(id));
+      await openFolder(
+        folder === "mods" ? paths.modsDir(id) : paths.gameDir(id),
+      );
     },
 
     // ---- Worlds ----
@@ -696,6 +701,11 @@ export function createLauncherService(dataDir: string, logger: Logger) {
         if (Date.now() - entry.createdAt > PLAN_TTL_MS && !entry.controller)
           plans.delete(id);
 
+      // Hand-added jars count once a site knows them (for "replaces" and reuse): ask now.
+      await identifyPending().catch((err: unknown) => {
+        log.info("identifying mods before the search failed", err);
+      });
+
       const cards: RemoteMatchCard[] = [];
       for (const source of sources.sources) {
         for (const project of await source.findExact(text, target)) {
@@ -782,7 +792,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     },
 
     /** Download a confirmed card: the mod and its dependencies, enabled in the profile. */
-    async installRemoteMod(planId: string): Promise<void> {
+    async installRemoteMod(planId: string): Promise<{ replaced: string[] }> {
       const entry = plans.get(planId);
       if (!entry || entry.controller)
         throw new AppError(
@@ -794,7 +804,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       const controller = new AbortController();
       entry.controller = controller;
       try {
-        await serialFs(() =>
+        return await serialFs(() =>
           downloadPlan(
             {
               downloader,

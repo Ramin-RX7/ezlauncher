@@ -205,6 +205,117 @@ describe("PlayBar", () => {
     });
   });
 
+  it("fixes a problem from the dialog, checks again, then offers Play", async () => {
+    const damaged: ValidationReport = {
+      issues: [
+        {
+          severity: "error",
+          code: "damaged",
+          reason: "sha1",
+          modSha1: SODIUM,
+          fix: { kind: "redownload" },
+        },
+      ],
+      requiredBy: {},
+      errorCount: 1,
+      warningCount: 0,
+    };
+    let repaired = false;
+    const api = mockApi({
+      "account:list": () => [steve],
+      "settings:get": () => settings({ selectedAccountId: "a1" }),
+      "loaders:list": () => loaders,
+      "mods:library": () => library,
+      "mods:redownload": () => {
+        repaired = true;
+      },
+      "mods:validate": () =>
+        repaired ? { ...damaged, issues: [], errorCount: 0 } : damaged,
+      "game:launch": () =>
+        repaired
+          ? { status: "started", game, warnings: 0 }
+          : { status: "blocked", report: damaged },
+    });
+    renderBar(profile());
+    await clickPlay();
+    fireEvent.click(await screen.findByRole("button", { name: "Re-download" }));
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("mods:redownload", SODIUM);
+    });
+    expect(await screen.findByText("No errors left.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("game:launch", {
+        profileId: "p1",
+        accountId: "a1",
+        problems: "check",
+      });
+    });
+  });
+
+  it("searches for a missing mod from the dialog", async () => {
+    const missing: ValidationReport = {
+      issues: [
+        {
+          severity: "error",
+          code: "missingDep",
+          depId: "fabric-api",
+          range: "*",
+          name: "Fabric API",
+          modSha1: INDIUM,
+          fix: { kind: "download", query: "fabric-api" },
+        },
+      ],
+      requiredBy: {},
+      errorCount: 1,
+      warningCount: 0,
+    };
+    const api = mockApi({
+      "account:list": () => [steve],
+      "settings:get": () => settings({ selectedAccountId: "a1" }),
+      "loaders:list": () => loaders,
+      "mods:library": () => library,
+      "mods:findRemote": () => [],
+      "game:launch": () => ({ status: "blocked", report: missing }),
+    });
+    renderBar(profile());
+    await clickPlay();
+    expect(await screen.findByText("Needs Fabric API")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Download" }));
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("mods:findRemote", {
+        profileId: "p1",
+        query: "fabric-api",
+      });
+    });
+  });
+
+  it("can start another game of a profile that is already running", async () => {
+    const api = mockApi({
+      "account:list": () => [steve],
+      "settings:get": () => settings({ selectedAccountId: "a1" }),
+      "loaders:list": () => loaders,
+      "game:launch": () => ({ status: "started", game, warnings: 0 }),
+    });
+    renderBar(profile({ running: 1 }));
+    const again = await screen.findByRole("button", { name: "Play another" });
+    expect(
+      await screen.findByText(
+        /Already running\. Another copy uses the same profile folder/,
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(again).toBeEnabled();
+    });
+    fireEvent.click(again);
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("game:launch", {
+        profileId: "p1",
+        accountId: "a1",
+      });
+    });
+  });
+
   it("offers to create an account when there is none", async () => {
     const api = mockApi({
       "account:list": () => [],

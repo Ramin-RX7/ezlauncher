@@ -26,6 +26,7 @@ async function exists(path: string): Promise<boolean> {
 /**
  * Download a plan's files straight into the store (checked against their SHA1),
  * then add them to the library and enable everything in the profile.
+ * Resolves to the enabled mods that were replaced by another version of themselves.
  * A cancelled or failed batch leaves nothing half-added: files it stored are removed.
  */
 export async function downloadPlan(
@@ -36,7 +37,7 @@ export async function downloadPlan(
     signal,
     onProgress,
   }: { signal?: AbortSignal; onProgress?: (p: DownloadProgress) => void } = {},
-): Promise<void> {
+): Promise<{ replaced: string[] }> {
   if (plan.missing.length > 0) {
     throw new AppError(
       "MOD_DEPENDENCY_MISSING",
@@ -84,9 +85,11 @@ export async function downloadPlan(
     throw err;
   }
 
-  for (const item of plan.items) {
-    const sha1 =
-      item.action === "download" ? item.version.file.sha1 : item.sha1;
-    await library.enable(profileId, sha1);
-  }
+  const replaced = await library.enableAll(
+    profileId,
+    plan.items.map((item) =>
+      item.action === "download" ? item.version.file.sha1 : item.sha1,
+    ),
+  );
+  return { replaced: replaced.map((m) => m.name) };
 }

@@ -74,11 +74,13 @@ export function HomePage() {
             onEdit={(id) => {
               void navigate(`/profiles/${id}`);
             }}
-            onOpenFolder={(id) => {
+            onOpenFolder={(id, folder) => {
               setActionError(undefined);
-              invoke("profiles:openFolder", id).catch((err: unknown) => {
-                setActionError(errorMessage(t, err));
-              });
+              invoke("profiles:openFolder", id, folder).catch(
+                (err: unknown) => {
+                  setActionError(errorMessage(t, err));
+                },
+              );
             }}
             onDelete={setDeleting}
           />

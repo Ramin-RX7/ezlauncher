@@ -6,7 +6,7 @@ import type { InstalledVersionInfo } from "@shared/launcher";
 import { Button } from "../components/ui/Button";
 import { Dialog } from "../components/ui/Dialog";
 import { Menu } from "../components/ui/Menu";
-import { Progress } from "../components/ui/Progress";
+import { InstallProgressRow } from "../components/play/InstallProgressRow";
 import { invoke } from "../lib/api";
 import { errorMessage } from "../lib/errors";
 import { useLauncherState } from "../state/launcherStore";
@@ -66,7 +66,6 @@ export function VersionsPage() {
             const install = installs[v.id];
             const busy =
               install?.status === "queued" || install?.status === "running";
-            const p = install?.progress;
             return (
               <li
                 key={v.id}
@@ -129,13 +128,9 @@ export function VersionsPage() {
                   />
                 </div>
                 {busy && (
-                  <Progress
-                    value={
-                      p && p.totalBytes > 0
-                        ? (p.bytes / p.totalBytes) * 100
-                        : undefined
-                    }
-                    label={t("play.installing")}
+                  <InstallProgressRow
+                    versionId={v.id}
+                    progress={install.progress}
                   />
                 )}
               </li>

@@ -90,6 +90,20 @@ describe("downloadPlan", () => {
     ]);
   });
 
+  it("reports a hand-added version of the same mod that it replaced", async () => {
+    const { library, deps, planFor } = setup();
+    // An older Sodium jar added by hand, which no site knows.
+    const oldPath = join(dir, "old-sodium.jar");
+    await writeFile(oldPath, fabricMod("sodium", "0.3.4"));
+    const [old] = await library.add([oldPath]);
+    await library.enable("p", old!.sha1);
+
+    const result = await downloadPlan(deps, await planFor("s1"), "p");
+    expect(result).toEqual({ replaced: ["sodium mod"] });
+    const enabled = (await library.list(profile)).filter((m) => m.enabled);
+    expect(enabled.map((m) => m.version).sort()).toEqual(["0.4.1", "0.76.0"]);
+  });
+
   it("reuses a dependency that is already in the library", async () => {
     const { files, library, deps, planFor } = setup();
     await downloadPlan(deps, await planFor("f1"), "p");

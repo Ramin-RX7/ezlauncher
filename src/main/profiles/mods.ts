@@ -264,6 +264,8 @@ export function createModLibrary({
     data: ModsFile,
     profileId: string,
     sha1: string,
+    /** Collects the mods this one replaced (same mod id). */
+    replaced?: string[],
   ): Promise<"linked" | "copied"> {
     const meta = data.mods[sha1];
     const store = paths.modStoreFile(sha1);
@@ -286,6 +288,7 @@ export function createModLibrary({
         ) {
           await unlinkEntry(profileId, name, entry);
           Reflect.deleteProperty(links, name);
+          replaced?.push(entry.sha1);
         }
       }
     }
@@ -692,6 +695,29 @@ export function createModLibrary({
         meta.size = (await stat(store)).size;
         delete meta.verified;
         await save(data);
+      });
+    },
+
+    /**
+     * Enable several mods in one step. Resolves to the other mods that were replaced
+     * by them (one version per mod id), by name; the batch's own mods are left out.
+     */
+    enableAll(
+      profileId: string,
+      sha1s: readonly string[],
+    ): Promise<{ sha1: string; name: string }[]> {
+      return serial(async () => {
+        const data = await load();
+        const replaced: string[] = [];
+        try {
+          for (const sha1 of sha1s)
+            await enableIn(data, profileId, sha1, replaced);
+        } finally {
+          await save(data); // the links made so far are real files: record them
+        }
+        return [...new Set(replaced)]
+          .filter((sha1) => !sha1s.includes(sha1))
+          .map((sha1) => ({ sha1, name: data.mods[sha1]?.name ?? sha1 }));
       });
     },
 

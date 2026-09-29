@@ -11,7 +11,7 @@ export interface ProfileListProps {
   loaderNames: Record<string, string>;
   onSelect: (id: string) => void;
   onEdit: (id: string) => void;
-  onOpenFolder: (id: string) => void;
+  onOpenFolder: (id: string, folder: "game" | "mods") => void;
   onDelete: (id: string) => void;
 }
 
@@ -113,9 +113,19 @@ export function ProfileList({
                 {
                   label: t("profiles.openFolder"),
                   onSelect: () => {
-                    onOpenFolder(p.id);
+                    onOpenFolder(p.id, "game");
                   },
                 },
+                ...(p.loader
+                  ? [
+                      {
+                        label: t("mods.openFolder"),
+                        onSelect: () => {
+                          onOpenFolder(p.id, "mods");
+                        },
+                      },
+                    ]
+                  : []),
                 {
                   label: t("profiles.delete"),
                   danger: true,
