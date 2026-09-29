@@ -7,7 +7,7 @@ A desktop Minecraft: Java Edition launcher. **Offline mode only**: no Microsoft/
 All scopes are defined in [scopes.md](scopes.md), the single source of truth for what to build. Read the scope you are working on before starting, and don't build features from later scopes. New scopes are added to that file, not as separate documents.
 
 - Scope 00, Project setup: tooling, secure Electron window, typed IPC bridge, theming, i18n, packaging (done).
-- Scope 01, Core launcher: version list, multi-version install, offline launch, abstract auth.
+- Scope 01, Core launcher: version list, multi-version install, offline launch, abstract auth (done).
 - Scope 02, Mod loaders: Fabric and Quilt through a loader provider interface built to also fit Forge/NeoForge later.
 - Scope 03, Profiles and worlds: every launch uses a profile + account; per-profile settings; all worlds in one folder, linked into their profile; shared mod library with hard links into each profile.
 - Scope 04, Mod manager: exact-name Modrinth download with dependencies, identify hand-added jars by hash; all behind a `ModSource` adapter.
@@ -22,7 +22,7 @@ Out of scope until a scope covers it: Microsoft login, Forge/NeoForge, CurseForg
 - electron-vite 5 (build/dev) on Vite 7; React 19 (renderer UI)
 - Tailwind CSS 4 + Radix UI primitives (`radix-ui`), icons from `lucide-react`
 - i18next / react-i18next, TanStack Query (async IPC data), react-router (hash routing)
-- zod (validate every JSON read from disk or network)
+- zod (validate every JSON read from disk or network), fflate (unzip native and mod jars)
 - Vitest + Testing Library (tests), ESLint + Prettier, electron-builder (packaging)
 - npm, Node 22
 
@@ -35,7 +35,10 @@ Version pins: electron-vite 5 needs **Vite ≤ 7** (so `@vitejs/plugin-react` 5.
 - `src/main/`: Electron main process. Does all file system, network and process work.
   - `src/main/minecraft/`: core launcher logic (version list, installing, launching). Plain TypeScript with **no Electron imports**, so it can be tested on its own.
   - `src/main/core/`: helpers every scope uses: `fsAtomic.ts` (`writeJsonAtomic`, `readJson` with a zod schema), `logger.ts`, `errors.ts` (`AppError` with a `code`). No Electron imports.
-  - `src/main/ipc/`: one `register…Ipc()` file per feature, using `handle()` from `register.ts`.
+  - `src/main/auth/`: login providers behind `AuthProvider` (`providers/offline.ts`), and `accountStore.ts`. No Electron imports.
+  - `src/main/settings/`: `bootstrap.json` (where the data folder is, in Electron's userData) and `launcher/settings.json`.
+  - `src/main/services/`: `launcherService.ts` is the composition root that wires the core to Electron (`net.fetch`, windows, events); `current.ts` holds the service for the chosen data folder.
+  - `src/main/ipc/`: one `register…Ipc()` file per feature, using `handle()` and `broadcast()` from `register.ts`.
 - `src/preload/`: exposes a small typed API to the renderer via `contextBridge`.
 - `src/renderer/`: React UI only. No Node or file system access.
 - `src/shared/`: types and IPC channel names shared by the processes. No Node or DOM types here.
@@ -47,7 +50,8 @@ Security: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`. T
 - **IPC**: every channel is declared in `src/shared/ipc.ts` (the contract plus `INVOKE_CHANNELS` / `EVENT_CHANNELS`). Main registers it with `handle()`; the renderer calls `invoke()` from `src/renderer/src/lib/api.ts`. Handlers throw `AppError(code, message)`, and the renderer receives an `IpcCallError` with the same `code`.
 - **UI text** only through i18n keys in `src/renderer/src/i18n/locales/en.json` (`t('…')` is type-checked). No hard-coded user-facing strings.
 - **Styling**: use the theme tokens only (`bg-surface`, `text-muted`, `border-border`, `bg-accent`, `rounded-ezl`, …, defined in `src/renderer/src/styles/theme.css`). No raw colour values in components. Use logical properties (`ms-`, `pe-`, `start-`, `border-e`) so right-to-left works.
-- **Files on disk**: write JSON with `writeJsonAtomic`, read it with `readJson(path, schema)`.
+- **Files on disk**: write JSON with `writeJsonAtomic`, read it with `readJson(path, schema)`. Build every path under the data folder with `src/main/minecraft/paths.ts` (it validates ids so renderer input can't escape the folder; use `safeJoin` for relative paths from downloaded data).
+- **Core modules take their dependencies as arguments** (`paths`, `downloader`, `platform`, `fetch`), so tests use fakes (`src/main/minecraft/testing/fakeFetch.ts`) and never touch the network.
 - **Tests** sit next to the file: `foo.ts` → `foo.test.ts`. Node tests for `src/main` and `src/shared`, jsdom tests for `src/renderer`.
 - ESLint enforces the process boundaries: the renderer can't import Electron/Node/main code, and `core/` + `minecraft/` can't import Electron.
 
@@ -72,7 +76,7 @@ Security: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`. T
 
 ## Development environment
 
-Code is written in WSL2. The launcher UI runs in WSL through WSLg, but test the actual game on **native Windows**; OpenGL graphics support inside WSL is unreliable. `node_modules` in WSL holds the Linux Electron binary, so on Windows use a separate clone with its own `npm install`; never share `node_modules` between the two.
+Development happens on **native Windows** (the project lives in `C:\Users\Ramin\Desktop\pprojects\ezlauncher`; use PowerShell). The game must be tested on Windows: inside WSL it has no GPU (Mesa `llvmpipe` software rendering) and runs too slowly to judge. `node_modules` holds platform-specific binaries (Electron), so never share it between Windows and WSL; each checkout runs its own `npm install`.
 
 ## Commands
 
@@ -80,6 +84,7 @@ Code is written in WSL2. The launcher UI runs in WSL through WSLg, but test the 
 - `npm run build`: type check, then build into `out/`
 - `npm run typecheck` · `npm run lint` · `npm run format` (`format:check` in checks) · `npm test` (`test:watch`)
 - `npm run package` / `package:win` / `package:linux`: build installers into `release/`
+- `npm run mc -- <list|install|check|command|launch> [id] --data <dir>`: Node-only dev CLI for the launcher core (no Electron). Handy for testing installs against Mojang's real servers, e.g. `npm run mc -- install 1.8.9 --data /tmp/mc`.
 
 Before finishing any change: `npm run typecheck && npm run lint && npm run format:check && npm test`.
 

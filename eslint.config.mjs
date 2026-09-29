@@ -42,6 +42,12 @@ export default tseslint.config(
     ...tseslint.configs.disableTypeChecked,
   },
 
+  // Tests may assert on values they just checked.
+  {
+    files: ["**/*.test.ts", "**/*.test.tsx"],
+    rules: { "@typescript-eslint/no-non-null-assertion": "off" },
+  },
+
   // Main process, preload and shared code run in Node.
   {
     files: [
@@ -55,7 +61,11 @@ export default tseslint.config(
 
   // Core logic must stay testable without Electron.
   {
-    files: ["src/main/core/**/*.ts", "src/main/minecraft/**/*.ts"],
+    files: [
+      "src/main/core/**/*.ts",
+      "src/main/minecraft/**/*.ts",
+      "src/main/auth/**/*.ts",
+    ],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -63,7 +73,7 @@ export default tseslint.config(
           paths: [
             {
               name: "electron",
-              message: "core/ and minecraft/ must not import Electron.",
+              message: "core/, minecraft/ and auth/ must not import Electron.",
             },
           ],
         },

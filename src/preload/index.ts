@@ -34,7 +34,7 @@ const api: Api = {
     listener: (payload: EventPayload<C>) => void,
   ): () => void {
     if (!eventChannels.has(channel))
-      throw new Error(`Unknown IPC event: ${String(channel)}`);
+      throw new Error(`Unknown IPC event: ${channel}`);
     const wrapped = (
       _event: IpcRendererEvent,
       payload: EventPayload<C>,

@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from "electron";
 import { electronApp } from "@electron-toolkit/utils";
 import { registerIpc } from "./ipc";
+import { initFromBootstrap } from "./services/current";
 import { getLogger } from "./log";
 import { createMainWindow } from "./window";
 
@@ -16,13 +17,14 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.focus();
   });
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     const log = getLogger();
     log.info(
       `starting ezlauncher ${app.getVersion()} on ${process.platform}-${process.arch}`,
     );
 
     electronApp.setAppUserModelId("com.ezlauncher.app");
+    await initFromBootstrap();
     registerIpc();
 
     mainWindow = createMainWindow();

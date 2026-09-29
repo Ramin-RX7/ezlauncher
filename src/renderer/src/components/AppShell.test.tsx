@@ -1,48 +1,72 @@
 import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppInfo } from "@shared/ipc";
+import { beforeEach, describe, expect, it } from "vitest";
+import type { VersionListResult } from "@shared/launcher";
 import { App } from "../App";
 import { createQueryClient } from "../lib/queryClient";
+import { mockApi } from "../test/mockApi";
 
-const info: AppInfo = {
-  version: "0.1.0",
-  platform: "win32",
-  arch: "x64",
-  electron: "44.0.0",
-  node: "22.0.0",
+const list: VersionListResult = {
+  source: "cache",
+  fetchedAt: "2026-09-01T10:00:00.000Z",
+  latest: { release: "26.3", snapshot: "26.4-snapshot-1" },
+  versions: [
+    {
+      id: "26.4-snapshot-1",
+      type: "snapshot",
+      releaseTime: "2026-09-22T00:00:00Z",
+      installed: false,
+    },
+    {
+      id: "26.3",
+      type: "release",
+      releaseTime: "2026-09-01T00:00:00Z",
+      installed: true,
+    },
+    {
+      id: "1.8.9",
+      type: "release",
+      releaseTime: "2015-12-03T00:00:00Z",
+      installed: false,
+    },
+  ],
 };
-
-const invoke = vi.fn();
 
 beforeEach(() => {
   window.location.hash = "";
-  invoke.mockReset().mockResolvedValue({ ok: true, value: info });
-  window.api = { invoke, on: vi.fn(() => () => undefined) };
+  localStorage.clear();
 });
 
-describe("App shell", () => {
-  it("shows navigation and app info loaded over IPC", async () => {
+describe("App", () => {
+  it("shows the first-run setup when no data folder is chosen", async () => {
+    mockApi({
+      "setup:getState": () => ({
+        dataDir: null,
+        suggestedDir: "/home/me/ezlauncher",
+      }),
+    });
     render(<App queryClient={createQueryClient()} />);
-
-    expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
-    expect(await screen.findByTestId("app-version")).toHaveTextContent(
-      "0.1.0 · win32-x64",
-    );
-    expect(invoke).toHaveBeenCalledWith("app:getInfo");
+    expect(
+      await screen.findByText("Welcome to ezlauncher"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("/home/me/ezlauncher")).toBeInTheDocument();
   });
 
-  it("shows an error message when the IPC call fails", async () => {
-    invoke.mockResolvedValue({
-      ok: false,
-      error: { code: "INTERNAL", message: "nope" },
+  it("shows navigation, the version list and the play bar once set up", async () => {
+    mockApi({
+      "setup:getState": () => ({ dataDir: "/data", suggestedDir: "/data" }),
+      "versions:list": () => list,
+      "account:get": () => ({ id: "a", username: "Steve", uuid: "u" }),
+      "game:running": () => [],
     });
-    const queryClient = createQueryClient();
-    queryClient.setDefaultOptions({ queries: { retry: false } });
-    render(<App queryClient={queryClient} />);
+    render(<App queryClient={createQueryClient()} />);
 
     expect(
-      await screen.findByText("Could not load app info."),
+      await screen.findByRole("link", { name: "Home" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
+    // The latest release is selected by default and it's installed: the button says Play.
+    expect(await screen.findByRole("button", { name: "Play" })).toBeEnabled();
+    expect(screen.getByText("Installed")).toBeInTheDocument();
+    expect(screen.getByText(/Version list from/)).toBeInTheDocument();
   });
 });

@@ -49,6 +49,7 @@ Everything lives under the user-chosen data directory (`<data>`). Files that don
   launcher/version_manifest.json cached version list
 ```
 
+- **Suggested data folder** (first start): `%APPDATA%\.ezlauncher` on Windows, `~/.ezlauncher` on Linux, `~/Library/Application Support/ezlauncher-data` on macOS. It must not be Electron's own userData folder, which holds browser caches.
 - **Where the data directory itself is saved**: `<data>` is user-chosen, so its path can't be stored inside it. Store it in `bootstrap.json` in Electron's `app.getPath('userData')`. The first start with no `bootstrap.json` asks the user where to keep data.
 - **Game directory per version** (`games/<versionId>/`): each installed version has its own folder for worlds and settings, so a world from a newer version is never opened by an older one. Get this path only from `paths.gameDir(versionId)`, never build it anywhere else, so later scopes can change it in one place.
 - Very old versions whose assets are marked `map_to_resources` / `virtual` get their assets copied into `games/<versionId>/resources/` or `assets/virtual/legacy/` respectively.
@@ -66,8 +67,10 @@ Everything lives under the user-chosen data directory (`<data>`). Files that don
 
 ### Version list
 
-- Fetch `version_manifest_v2.json` and cache it in `launcher/version_manifest.json`.
-- No internet: use the cached list, and show installed versions from `versions/*/install.json` in any case.
+- Fetch `version_manifest_v2.json` from Mojang **only when there's no saved copy yet**, and save it in `launcher/version_manifest.json` with the time it was fetched.
+- After that, always use the saved list (no network request on start). A **Check for new versions** button refreshes it on demand and reports how many new versions appeared; the list shows "Version list from <date>".
+- A refresh that fails keeps the saved list and says there's no internet connection. With no saved list and no internet, show an empty state with **Try again**.
+- Installed versions (from `versions/*/install.json`) always appear, even with no saved list.
 - Sort by `releaseTime`, newest first.
 
 ### Java
@@ -75,6 +78,8 @@ Everything lives under the user-chosen data directory (`<data>`). Files that don
 - Use `javaVersion.component` from the version JSON (e.g. `java-runtime-epsilon`). If it's missing (old versions), use `jre-legacy`.
 - Download the runtime from Mojang's Java runtime manifest into `runtimes/<component>/`. It's shared by every version that needs it.
 - Linux ARM has no Mojang runtime: show a clear error for now.
+- Windows ARM and Apple Silicon have no Mojang Java 8 (`jre-legacy`): fall back to the x64 runtime, which runs under emulation. This also makes old x64-only native libraries work.
+- Runtime files are downloaded uncompressed (`raw`). Using the `lzma` downloads would cut Java's download to about a third; a possible later improvement.
 
 ### Authentication (abstract)
 
@@ -122,7 +127,8 @@ interface AuthProvider {
 3. Build the classpath (libraries plus the client jar) using the OS path separator.
 4. Fill in the `${...}` placeholders in the JVM and game arguments. Support both `arguments` (new) and `minecraftArguments` (old).
 5. `spawn(javaPath, args, { cwd: paths.gameDir(versionId), detached: true })`, then apply the launcher setting (keep open / minimise / close).
-6. While the launcher is open: stream the game log to a log view and report the exit code or crash.
+   - The game's output goes to a **file** (`<gameDir>/logs/ezlauncher-output.log`), not a pipe, so the game keeps running if the launcher closes.
+6. While the launcher is open: follow that file for the log view and report the exit code or crash. The game prints log4j XML (from Mojang's log config); the launcher turns it into readable lines.
 7. Settings in this scope: RAM (`-Xmx`), data directory, launcher behaviour on game start.
 
 ### Code modules (`src/main/minecraft/`)
@@ -131,13 +137,13 @@ interface AuthProvider {
 
 ### Done when
 
-- [ ] Version list loads online, and from cache when offline.
-- [ ] Install and launch the latest release, then an old version (e.g. 1.8.9), then a snapshot.
-- [ ] Relaunching an installed version makes **zero** network requests (checked with the network off).
-- [ ] Installing a second version reuses the shared libraries and assets already on disk.
-- [ ] Cancelling an install halfway, then retrying, finishes correctly with no corrupt files.
-- [ ] Deleting a file inside an installed version: the quick check notices it and downloads only that file.
-- [ ] Unit tests for `rules.ts`, `arguments.ts`, the offline UUID, and the "is installed" logic.
+- [x] Version list loads online on first start, then from the saved list with no request; manual refresh; offline refresh keeps the saved list.
+- [ ] Install and launch the latest release, then an old version (e.g. 1.8.9), then a snapshot. *Verified in WSL: 1.21.4, 1.8.9 and b1.7.3 install and start. Still to check: the latest release (26.x) and a snapshot, and everything on native Windows.*
+- [x] Relaunching an installed version makes **zero** network requests (dev CLI: 0 requests; unit test with the network switched off).
+- [x] Installing a second version reuses the shared libraries and assets already on disk (b1.7.3 after 1.8.9 downloaded 51 of 479 files, reusing Java 8).
+- [x] Cancelling an install halfway, then retrying, finishes correctly with no corrupt files (no `.part` files left; interrupted installs resumed where they stopped).
+- [x] Deleting a file inside an installed version: the quick check notices it and downloads only that file (unit test).
+- [x] Unit tests for `rules.ts`, `arguments.ts`, the offline UUID, and the "is installed" logic.
 
 ## Scope 02: Mod loaders (Fabric and Quilt)
 

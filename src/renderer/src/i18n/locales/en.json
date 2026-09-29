@@ -6,29 +6,121 @@
     "home": "Home",
     "settings": "Settings"
   },
-  "home": {
-    "title": "Welcome",
-    "subtitle": "Offline Minecraft launcher",
-    "about": "About",
-    "loading": "Loading…",
-    "error": "Could not load app info."
+  "setup": {
+    "title": "Welcome to ezlauncher",
+    "subtitle": "Choose where the launcher keeps game files, versions and worlds.",
+    "folderLabel": "Data folder",
+    "choose": "Choose folder…",
+    "continue": "Continue",
+    "hint": "You can change this later in Settings."
   },
-  "about": {
-    "title": "About ezlauncher",
-    "version": "Version",
-    "platform": "Platform",
-    "electron": "Electron",
-    "node": "Node.js",
-    "close": "Close"
+  "versions": {
+    "tabs": {
+      "release": "Releases",
+      "snapshot": "Snapshots",
+      "old_beta": "Old beta",
+      "old_alpha": "Old alpha"
+    },
+    "search": "Search versions",
+    "installed": "Installed",
+    "empty": "No versions match.",
+    "listFrom": "Version list from {{date}}",
+    "check": "Check for new versions",
+    "checking": "Checking…",
+    "newFound_one": "{{count}} new version found.",
+    "newFound_other": "{{count}} new versions found.",
+    "upToDate": "No new versions.",
+    "offlineRefresh": "No internet connection. Still showing the saved list.",
+    "noList": "The version list hasn't been downloaded yet, and there's no internet connection.",
+    "tryAgain": "Try again",
+    "loading": "Loading versions…",
+    "menu": "More actions for {{id}}",
+    "repair": "Repair",
+    "openFolder": "Open game folder",
+    "delete": "Delete…",
+    "deleteTitle": "Delete {{id}}?",
+    "deleteBody": "This removes the version's files. Shared files used by other versions are kept.",
+    "deleteWorlds": "Also delete this version's worlds and settings",
+    "deleteConfirm": "Delete",
+    "cancel": "Cancel",
+    "types": {
+      "release": "Release",
+      "snapshot": "Snapshot",
+      "old_beta": "Beta",
+      "old_alpha": "Alpha"
+    }
+  },
+  "play": {
+    "username": "Username",
+    "usernamePlaceholder": "Steve",
+    "usernameRule": "3–16 characters: letters, numbers and _",
+    "play": "Play",
+    "installAndPlay": "Install & Play",
+    "installing": "Installing…",
+    "starting": "Starting…",
+    "running": "Running",
+    "cancel": "Cancel",
+    "noVersion": "Pick a version",
+    "steps": {
+      "metadata": "Getting version info",
+      "checking": "Checking files",
+      "downloading": "Downloading game files",
+      "java": "Preparing Java",
+      "natives": "Unpacking native libraries",
+      "assets": "Preparing assets"
+    },
+    "progress": "{{files}} / {{totalFiles}} files · {{mb}} / {{totalMb}} MB",
+    "crashed": "{{id}} crashed (exit code {{code}}). Check the game log.",
+    "exited": "{{id}} closed."
+  },
+  "log": {
+    "title": "Game log",
+    "empty": "The game's output appears here while it runs.",
+    "clear": "Clear"
   },
   "settings": {
     "title": "Settings",
+    "game": "Game",
+    "memory": {
+      "label": "Maximum memory",
+      "hint": "How much RAM the game may use. 2048–4096 MB suits most vanilla versions."
+    },
+    "onGameStart": {
+      "label": "When the game starts",
+      "keep": "Keep the launcher open",
+      "minimize": "Minimise the launcher",
+      "close": "Close the launcher"
+    },
+    "launcher": "Launcher",
+    "dataDir": {
+      "label": "Data folder",
+      "change": "Change…",
+      "hint": "Changing it restarts the launcher. Files are not moved."
+    },
     "theme": {
       "label": "Theme",
       "system": "System",
       "light": "Light",
       "dark": "Dark"
-    }
+    },
+    "saved": "Saved",
+    "about": "About",
+    "version": "Version",
+    "platform": "Platform"
+  },
+  "errors": {
+    "OFFLINE": "Can't reach Mojang's servers. Check your internet connection and try again.",
+    "DOWNLOAD_FAILED": "A download failed. Try again; finished files are kept.",
+    "HASH_MISMATCH": "A downloaded file was damaged. Try again.",
+    "JAVA_UNAVAILABLE": "Mojang doesn't provide Java for this computer's system.",
+    "NO_ACCOUNT": "Enter a username first.",
+    "INVALID_USERNAME": "Usernames are 3–16 characters: letters, numbers and _ only.",
+    "LAUNCH_FAILED": "The game couldn't be started.",
+    "VERSION_UNKNOWN": "This version wasn't found. Check for new versions and try again.",
+    "GAME_RUNNING": "Close the game first.",
+    "BUSY": "Wait for the install to finish, or cancel it first.",
+    "MISSING_FILE": "A required file is missing and can't be downloaded. Try Repair.",
+    "generic": "Something went wrong. See the launcher log for details."
   },
   "error": {
     "title": "Something went wrong",

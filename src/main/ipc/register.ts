@@ -1,11 +1,13 @@
-import { ipcMain, type IpcMainInvokeEvent } from "electron";
+import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import type {
+  EventChannel,
+  EventPayload,
   InvokeArgs,
   InvokeChannel,
   InvokeResult,
   IpcResponse,
 } from "@shared/ipc";
-import { toIpcError } from "../core/errors";
+import { AppError, toIpcError } from "../core/errors";
 import { getLogger } from "../log";
 
 type Handler<C extends InvokeChannel> = (
@@ -33,9 +35,23 @@ export function handle<C extends InvokeChannel>(
         const value = await handler(event, ...(args as InvokeArgs<C>));
         return { ok: true, value };
       } catch (err) {
-        log.error(`${channel} failed`, err);
+        if (err instanceof AppError && err.code === "CANCELLED") {
+          log.info(`${channel} cancelled`);
+        } else {
+          log.error(`${channel} failed`, err);
+        }
         return { ok: false, error: toIpcError(err) };
       }
     },
   );
+}
+
+/** Send a typed event from the IPC contract to every open window. */
+export function broadcast<C extends EventChannel>(
+  channel: C,
+  payload: EventPayload<C>,
+): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send(channel, payload);
+  }
 }

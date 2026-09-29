@@ -30,7 +30,7 @@ export async function writeFileAtomic(
 }
 
 /** On Windows, antivirus or indexers can briefly lock the target; retry a few times. */
-async function renameWithRetry(from: string, to: string): Promise<void> {
+export async function renameWithRetry(from: string, to: string): Promise<void> {
   for (let attempt = 0; ; attempt++) {
     try {
       await rename(from, to);
