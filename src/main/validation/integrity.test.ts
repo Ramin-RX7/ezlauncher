@@ -63,12 +63,15 @@ describe("checkIntegrity", () => {
 
   it("hashes every file on Check mods, even unchanged ones", async () => {
     const jar = await storeJar();
+    // A whole second: fractional seconds can come back a nanosecond off on
+    // file systems with nanosecond times (Linux), changing the floored ms.
+    const same = Math.floor(Date.now() / 1000) - 60;
+    await utimes(jar.path, same, same);
     const [verified] = (await checkIntegrity([jar])).verified;
     const bytes = await readFile(jar.path);
     bytes[40] = (bytes[40] ?? 0) ^ 0xff;
     await writeFile(jar.path, bytes);
-    const same = verified!.mtimeMs / 1000; // same time, as if nothing happened
-    await utimes(jar.path, same, same);
+    await utimes(jar.path, same, same); // same time, as if nothing happened
     const quick = await checkIntegrity([{ ...jar, verified: verified! }]);
     expect([...quick.damaged.values()]).toEqual([]);
     const full = await checkIntegrity([{ ...jar, verified: verified! }], {
