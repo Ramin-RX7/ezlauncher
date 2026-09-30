@@ -95,4 +95,10 @@ Development happens on **native Windows** (the project lives in `C:\Users\Ramin\
 
 Before finishing any change: `npm run typecheck && npm run lint && npm run format:check && npm test`.
 
+## Changelog and releases
+
+- Every user-facing change adds a line under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) (`### Added` / `Changed` / `Fixed` / …), written for users. Internal refactors and tests don't need one.
+- Releases are made only with `npm version <patch|minor|major|x.y.z>` + `git push --follow-tags`; never edit the version or the released changelog sections by hand. The tag triggers `.github/workflows/release.yml`, which builds and drafts the GitHub release. Full steps in [RELEASING.md](RELEASING.md).
+- Don't change `appId`/`productName` (electron-builder.yml) or `name` (package.json): installs and the settings folder depend on them.
+
 If Electron starts as plain Node (`Cannot read properties of undefined (reading 'isPackaged')`), the shell has `ELECTRON_RUN_AS_NODE=1` (VS Code's extension host sets it). Run with `env -u ELECTRON_RUN_AS_NODE npm run dev`.

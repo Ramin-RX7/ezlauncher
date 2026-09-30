@@ -1,3 +1,6 @@
+# Packaging config. Releases are built by .github/workflows/release.yml; see
+# RELEASING.md. Don't change appId or productName after the first release:
+# the installer uses them to find an existing install to upgrade.
 appId: com.ezlauncher.app
 productName: EZLauncher
 directories:
@@ -7,16 +10,31 @@ files:
   - out/**
   - package.json
 asar: true
+
 win:
   target:
     - target: nsis
-      arch: [x64, arm64]
+      arch: [x64]
+    - target: portable
+      arch: [x64]
 nsis:
+  artifactName: ${productName}-${version}-${arch}-setup.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
+  # Never delete settings on uninstall. (The data folder with worlds, backups
+  # and mods is chosen by the user and never touched by the installer.)
+  deleteAppDataOnUninstall: false
+# No install needed; settings still live in the user's AppData like the
+# installed app, so both share the same data folder.
+portable:
+  artifactName: ${productName}-${version}-${arch}-portable.${ext}
+
 linux:
-  target: [AppImage]
+  target:
+    - target: AppImage
+      arch: [x64]
   category: Game
-mac:
-  target: [dmg]
-  category: public.app-category.games
+appImage:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+# macOS is left out until the app can be signed and notarised: without that,
+# macOS refuses to open it.

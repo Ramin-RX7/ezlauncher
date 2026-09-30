@@ -5,6 +5,7 @@
   "private": true,
   "license": "MIT",
   "author": "ezlauncher contributors",
+  "repository": "github:Ramin-RX7/ezlauncher",
   "desktopName": "ezlauncher.desktop",
   "main": "out/main/index.js",
   "engines": {
@@ -21,9 +22,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "mc": "tsx --tsconfig tsconfig.node.json scripts/mc.mts",
-    "package": "npm run build && electron-builder",
-    "package:win": "npm run build && electron-builder --win",
-    "package:linux": "npm run build && electron-builder --linux"
+    "changelog": "tsx --tsconfig tsconfig.node.json scripts/changelog.mts",
+    "preversion": "npm run changelog -- check && npm run typecheck && npm run lint && npm run format:check && npm test",
+    "version": "npm run changelog -- release && prettier --write CHANGELOG.md && git add CHANGELOG.md",
+    "package": "npm run build && electron-builder --publish never",
+    "package:win": "npm run build && electron-builder --win --publish never",
+    "package:linux": "npm run build && electron-builder --linux --publish never"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",

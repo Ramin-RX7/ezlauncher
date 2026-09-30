@@ -1,0 +1,149 @@
+# Builds the app and drafts a GitHub release. See RELEASING.md.
+#
+# - Pushing a tag `v<version>` (made by `npm version`): runs the checks, builds
+#   the Windows installer + portable exe and the Linux AppImage, and creates a
+#   draft release with those files, SHA256SUMS.txt and that version's
+#   CHANGELOG.md section as the description. Publish the draft by hand.
+# - Run manually (Actions → Release → Run workflow): builds only. The files are
+#   attached to the workflow run, for testing a build without releasing.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+
+      - name: Check the tag matches package.json
+        id: meta
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version (expected v$version). Make releases with 'npm version'."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # A version like 1.2.0-beta.1 becomes a GitHub pre-release.
+          if [[ "$version" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write release notes
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          npm run --silent changelog -- notes "${{ steps.meta.outputs.version }}" > release-notes.md
+          printf '\n' >> release-notes.md
+          cat .github/release-footer.md >> release-notes.md
+
+      - if: github.ref_type == 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          retention-days: 7
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: [checks, prepare]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # The checks job already type checked, so skip `npm run build`'s typecheck.
+      - run: npx electron-vite build
+      - run: npx electron-builder --${{ matrix.platform }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.platform }}
+          path: |
+            release/*.exe
+            release/*.AppImage
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Draft GitHub release
+    if: github.ref_type == 'tag'
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: build-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@v5
+        with:
+          name: release-notes
+
+      - name: Write checksums
+        working-directory: dist
+        run: sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Create or update the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            # A re-run: replace the files and notes of the existing release.
+            gh release upload "$tag" dist/* --clobber
+            gh release edit "$tag" --notes-file release-notes.md
+          else
+            flags=()
+            if [[ "$PRERELEASE" == "true" ]]; then flags+=(--prerelease); fi
+            gh release create "$tag" dist/* \
+              --draft \
+              --verify-tag \
+              --title "EZLauncher $VERSION" \
+              --notes-file release-notes.md \
+              "${flags[@]}"
+          fi
