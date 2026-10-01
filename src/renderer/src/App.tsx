@@ -12,7 +12,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { TooltipProvider } from "./components/ui/Tooltip";
 import { invoke } from "./lib/api";
 import { HomePage } from "./pages/HomePage";
-import { ModLibraryPage } from "./pages/ModLibraryPage";
+import { LibraryPage } from "./pages/LibraryPage";
 import { NewProfilePage } from "./pages/NewProfilePage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -53,7 +53,7 @@ function Root() {
             <Route index element={<HomePage />} />
             <Route path="profiles/new" element={<NewProfilePage />} />
             <Route path="profiles/:id" element={<ProfilePage />} />
-            <Route path="mods" element={<ModLibraryPage />} />
+            <Route path="mods" element={<LibraryPage />} />
             <Route path="versions" element={<VersionsPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>

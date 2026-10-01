@@ -181,6 +181,92 @@ describe("mod library", () => {
     expect(await readdir(paths.modsStoreDir)).toEqual([`${sha1(jar)}.jar`]);
   });
 
+  it("turns a hand-dropped copy of a stored jar into a link to the stored one", async () => {
+    const lib = createModLibrary({ paths });
+    const jar = fabricMod("known", "1");
+    await lib.add([await download("known.jar", jar)]);
+    await mkdir(paths.modsDir(A), { recursive: true });
+    const dropped = join(paths.modsDir(A), "my-copy.jar");
+    await writeFile(dropped, jar);
+
+    await syncAll(lib);
+    const store = paths.modStoreFile(sha1(jar));
+    expect(await sameFile(dropped, store)).toBe(true);
+    expect((await stat(store)).nlink).toBe(2);
+    expect(await readdir(paths.modsStoreDir)).toEqual([`${sha1(jar)}.jar`]);
+    expect((await lib.list())[0]?.usedBy).toEqual([A]);
+  });
+
+  it("treats a linked file replaced by another jar under the same name as a new mod", async () => {
+    const lib = createModLibrary({ paths });
+    const [old] = await lib.add([
+      await download("swap.jar", fabricMod("old", "1")),
+    ]);
+    await lib.enable(A, old!.sha1);
+    const path = join(paths.modsDir(A), "swap.jar");
+    await rm(path);
+    const replacement = fabricMod("new", "1");
+    await writeFile(path, replacement);
+
+    await syncAll(lib);
+    const byId = async (id: string) =>
+      (await lib.list()).find((m) => m.modId === id);
+    expect((await byId("old"))?.usedBy).toEqual([]);
+    expect((await byId("new"))?.usedBy).toEqual([A]);
+    expect(await sameFile(path, paths.modStoreFile(sha1(replacement)))).toBe(
+      true,
+    );
+  });
+
+  it("gives a mod a different file name when its name is taken in the profile", async () => {
+    const lib = createModLibrary({ paths });
+    const [first] = await lib.add([
+      await download("same.jar", fabricMod("first", "1")),
+    ]);
+    await rm(join(dir, "downloads"), { recursive: true });
+    const [second] = await lib.add([
+      await download("same.jar", fabricMod("second", "1")),
+    ]);
+    await lib.enable(A, first!.sha1);
+    await lib.enable(A, second!.sha1);
+    expect(await modsOf(A)).toEqual(
+      [`same-${second!.sha1.slice(0, 8)}.jar`, "same.jar"].sort(),
+    );
+  });
+
+  it("links a mod again when its file was deleted by hand before a sync", async () => {
+    const lib = createModLibrary({ paths });
+    const [mod] = await lib.add([await download("v.jar", fabricMod("v", "1"))]);
+    await lib.enable(A, mod!.sha1);
+    await rm(join(paths.modsDir(A), "v.jar"));
+    expect(await lib.enable(A, mod!.sha1)).toBe("linked");
+    expect(await modsOf(A)).toEqual(["v.jar"]);
+  });
+
+  it("never deletes a user's file that replaced a mod's link under the same name", async () => {
+    const lib = createModLibrary({ paths });
+    const [mod] = await lib.add([await download("u.jar", fabricMod("u", "1"))]);
+    await lib.enable(A, mod!.sha1);
+    const path = join(paths.modsDir(A), "u.jar");
+    await rm(path);
+    await writeFile(path, "the user's own file");
+    await lib.remove(mod!.sha1);
+    expect(await readFile(path, "utf8")).toBe("the user's own file");
+  });
+
+  it("keeps what enableAll linked before one of the mods failed", async () => {
+    const lib = createModLibrary({ paths });
+    const [good] = await lib.add([
+      await download("good.jar", fabricMod("good", "1")),
+    ]);
+    await expect(
+      lib.enableAll(A, [good!.sha1, "0".repeat(40)]),
+    ).rejects.toMatchObject({ code: "MOD_NOT_FOUND" });
+    const reloaded = createModLibrary({ paths });
+    expect((await reloaded.list())[0]?.usedBy).toEqual([A]);
+    expect(await modsOf(A)).toEqual(["good.jar"]);
+  });
+
   it("counts usage by file identity, so a renamed link still counts", async () => {
     const lib = createModLibrary({ paths });
     const [mod] = await lib.add([await download("x.jar", fabricMod("x", "1"))]);

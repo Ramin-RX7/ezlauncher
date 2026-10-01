@@ -33,10 +33,16 @@ const searchSchema = z.looseObject({
       slug: z.string(),
       title: z.string(),
       author: z.string().optional(),
+      description: z.string().optional(),
+      project_type: z.string().optional(),
       icon_url: z.string().nullable().optional(),
       downloads: z.number().optional(),
     }),
   ),
+  total_hits: z.number().optional(),
+});
+const dependenciesSchema = z.looseObject({
+  projects: z.array(projectSchema),
 });
 const membersSchema = z.array(
   z.looseObject({
@@ -115,8 +121,18 @@ export function createModrinthSource({
 }: ModrinthOptions): ModSource {
   /** When the rate limit window resets (ms since 1970); 0 = no need to wait. */
   let blockedUntil = 0;
-  const pageUrl = (idOrSlug: string) =>
-    `${MODRINTH_SITE}/mod/${encodeURIComponent(idOrSlug)}`;
+  const pageUrl = (idOrSlug: string, projectType = "mod") =>
+    `${MODRINTH_SITE}/${/^[a-z]+$/.test(projectType) ? projectType : "mod"}/${encodeURIComponent(idOrSlug)}`;
+  const toProject = (p: z.infer<typeof projectSchema>): RemoteProject => ({
+    sourceId: SOURCE_ID,
+    projectId: p.id,
+    slug: p.slug,
+    name: p.title,
+    author: "",
+    ...(p.icon_url && { iconUrl: p.icon_url }),
+    ...(p.project_type && { projectType: p.project_type }),
+    pageUrl: pageUrl(p.slug, p.project_type),
+  });
 
   function noteLimits(res: Response): number {
     const reset = Number(res.headers.get("x-ratelimit-reset") ?? "");
@@ -247,9 +263,12 @@ export function createModrinthSource({
           )
         : undefined;
       // 2. A search, keeping only exact name or slug matches.
+      const type = target.projectType ?? "mod";
       const facets = [
-        ["project_type:mod"],
-        target.loaders.map((l) => `categories:${l}`),
+        [`project_type:${type}`],
+        ...(type === "mod"
+          ? [target.loaders.map((l) => `categories:${l}`)]
+          : []),
         [`versions:${target.gameVersion}`],
       ];
       const search = await call(
@@ -269,12 +288,13 @@ export function createModrinthSource({
           author: hit.author ?? "",
           ...(hit.icon_url && { iconUrl: hit.icon_url }),
           ...(hit.downloads !== undefined && { downloads: hit.downloads }),
-          pageUrl: pageUrl(hit.slug),
+          projectType: type,
+          pageUrl: pageUrl(hit.slug, type),
         });
       }
       if (
         direct &&
-        (direct.project_type ?? "mod") === "mod" &&
+        (direct.project_type ?? "mod") === type &&
         !found.has(direct.id)
       ) {
         found.set(direct.id, {
@@ -287,15 +307,53 @@ export function createModrinthSource({
           ...(direct.downloads !== undefined && {
             downloads: direct.downloads,
           }),
-          pageUrl: pageUrl(direct.slug),
+          projectType: type,
+          pageUrl: pageUrl(direct.slug, type),
         });
       }
       return [...found.values()];
     },
 
+    async search(query, { projectType, gameVersion, offset, limit }, signal) {
+      const facets = [
+        [`project_type:${projectType}`],
+        ...(gameVersion ? [[`versions:${gameVersion}`]] : []),
+      ];
+      const result = await call(
+        `/search?query=${encodeURIComponent(query.trim())}&facets=${q(facets)}&offset=${Math.max(0, Math.floor(offset))}&limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`,
+        searchSchema,
+        signal ? { signal } : {},
+      );
+      const hits = (result?.hits ?? []).map((hit): RemoteProject => ({
+        sourceId: SOURCE_ID,
+        projectId: hit.project_id,
+        slug: hit.slug,
+        name: hit.title,
+        author: hit.author ?? "",
+        ...(hit.description && { description: hit.description }),
+        ...(hit.icon_url && { iconUrl: hit.icon_url }),
+        ...(hit.downloads !== undefined && { downloads: hit.downloads }),
+        projectType: hit.project_type ?? projectType,
+        pageUrl: pageUrl(hit.slug, hit.project_type ?? projectType),
+      }));
+      return { hits, total: result?.total_hits ?? hits.length };
+    },
+
+    async projectDependencies(projectId, signal) {
+      const result = await call(
+        `/project/${encodeURIComponent(projectId)}/dependencies`,
+        dependenciesSchema,
+        signal ? { signal } : {},
+      );
+      return (result?.projects ?? []).map(toProject);
+    },
+
     async getCompatibleVersion(projectId, target: ModTarget, signal) {
+      const versions = target.gameVersion
+        ? `&game_versions=${q([target.gameVersion])}`
+        : "";
       const list = await call(
-        `/project/${encodeURIComponent(projectId)}/version?loaders=${q(target.loaders)}&game_versions=${q([target.gameVersion])}`,
+        `/project/${encodeURIComponent(projectId)}/version?loaders=${q(target.loaders)}${versions}`,
         z.array(versionSchema),
         signal ? { signal } : {},
       );
@@ -327,15 +385,7 @@ export function createModrinthSource({
           ...(signal && { signal }),
         },
       );
-      return (list ?? []).map((p) => ({
-        sourceId: SOURCE_ID,
-        projectId: p.id,
-        slug: p.slug,
-        name: p.title,
-        author: "",
-        ...(p.icon_url && { iconUrl: p.icon_url }),
-        pageUrl: pageUrl(p.slug),
-      }));
+      return (list ?? []).map(toProject);
     },
 
     async identifyFiles(sha1s, signal) {

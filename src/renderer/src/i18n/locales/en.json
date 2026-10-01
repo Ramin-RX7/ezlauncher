@@ -7,7 +7,7 @@
     "home": "Home",
     "versions": "Versions",
     "settings": "Settings",
-    "mods": "Mod library"
+    "mods": "Library"
   },
   "setup": {
     "title": "Welcome to {{name}}",
@@ -251,7 +251,15 @@
     "INVALID_TARGET": "Choose a version and a loader.",
     "BACKUP_NOT_FOUND": "This backup no longer exists.",
     "BACKUP_DAMAGED": "This backup is damaged and can't be restored.",
-    "BACKUP_FAILED": "The backup failed."
+    "BACKUP_FAILED": "The backup failed.",
+    "NOT_A_PACK": "Only resource pack .zip files can be added.",
+    "PACK_NESTED": "The pack is one folder down inside the zip. Use the folder inside it instead.",
+    "PACK_NOT_FOUND": "This resource pack isn't in the library.",
+    "PACK_IN_USE": "Profiles still have this pack.",
+    "PACKS_VERSION_UNKNOWN": "Launch this profile once first, so the launcher knows which packs fit it.",
+    "PACKS_UNSUPPORTED": "This Minecraft version uses texture packs, which the launcher doesn't manage.",
+    "OPTIONS_UNWRITABLE": "The game's options.txt couldn't be saved.",
+    "PACK_NO_VERSION": "This pack has no version to download."
   },
   "error": {
     "title": "Something went wrong",
@@ -286,7 +294,8 @@
     "tabs": {
       "settings": "Settings",
       "worlds": "Worlds",
-      "mods": "Mods"
+      "mods": "Mods",
+      "resourcePacks": "Resource packs"
     },
     "notFound": "This profile doesn't exist any more.",
     "editor": {
@@ -611,6 +620,99 @@
       "deleteConfirm": "Delete",
       "cancel": "Cancel",
       "close": "Close"
+    }
+  },
+  "library": {
+    "label": "Library",
+    "tabs": {
+      "mods": "Mods",
+      "resourcePacks": "Resource packs"
+    }
+  },
+  "resourcePacks": {
+    "title": "Resource pack library",
+    "libraryHint": "Every pack is stored once here. Turn packs on in a profile's Resource packs tab.",
+    "empty": "No resource packs yet. Add zip files, or drop them here.",
+    "add": "Add zip files",
+    "drop": "Drop .zip files here to add them",
+    "added": "Added {{added}}, already in the library {{existing}}.",
+    "notAdded": "Not added or not turned on: {{files}}",
+    "openFolder": "Open resourcepacks folder",
+    "active": "Active",
+    "activeHint": "Packs higher in the list win.",
+    "noActive": "No packs are on. Turn one on below.",
+    "available": "Available",
+    "noAvailable": "Nothing else to turn on. Add zip files, or put pack folders into the resourcepacks folder.",
+    "turnOn": "Turn on",
+    "turnOnLabel": "Turn on {{name}}",
+    "turnOff": "Turn off {{name}}",
+    "moveUp": "Move {{name}} up",
+    "moveDown": "Move {{name}} down",
+    "drag": "Drag {{name}} to change its place",
+    "moved": "{{name}} is now at place {{position}} of {{count}}.",
+    "dnd": {
+      "instructions": "To move a pack, press Space to pick it up, the arrow keys to move it, and Space again to drop it. Escape cancels.",
+      "pickedUp": "Picked up {{name}}.",
+      "over": "{{name}} is at place {{position}} of {{count}}.",
+      "dropped": "Dropped {{name}} at place {{position}} of {{count}}.",
+      "cancelled": "{{name}} wasn't moved."
+    },
+    "folder": "Folder",
+    "folderHint": "An unzipped pack in this profile only",
+    "builtinBadge": "Built-in",
+    "builtin": {
+      "vanilla": "Default",
+      "programmer_art": "Programmer Art",
+      "high_contrast": "High Contrast",
+      "fabric": "Fabric mods"
+    },
+    "compat": {
+      "compatible": "Compatible",
+      "tooOld": "Made for an older version",
+      "tooNew": "Made for a newer version",
+      "unknown": "Compatibility unknown"
+    },
+    "notPacksTitle": "Not resource packs",
+    "notPack": {
+      "invalid": "{{name}}: no pack.mcmeta, so the game can't use it.",
+      "nested": "{{name}}: the pack is inside the folder \"{{folder}}\". Use that folder (or zip its contents) instead.",
+      "unreadable": "{{name}}: couldn't be read. It may be damaged."
+    },
+    "versionUnknown": "Launch this profile once (or install its version) so the launcher knows which packs fit it.",
+    "unsupported": "Minecraft versions before 1.6 use texture packs, which the launcher doesn't manage.",
+    "usedBy": "In {{names}}",
+    "unused": "Unused",
+    "notChecked": "Not checked with Modrinth yet",
+    "remove": "Remove…",
+    "removeTitle": "Remove {{name}}?",
+    "removeBody": "The pack is deleted from the library.",
+    "removeUsed": "It is removed from these profiles too: {{names}}",
+    "removeConfirm": "Remove",
+    "removeUnused": "Remove unused",
+    "removeUnusedTitle_one": "Remove {{count}} unused pack?",
+    "removeUnusedTitle_other": "Remove {{count}} unused packs?",
+    "removeUnusedBody": "Packs that no profile has are deleted from the library. You can add them again later.",
+    "removedUnused_one": "Removed {{count}} pack.",
+    "removedUnused_other": "Removed {{count}} packs.",
+    "cancel": "Cancel",
+    "find": {
+      "open": "Find on Modrinth",
+      "title": "Find resource packs",
+      "search": "Search resource packs",
+      "forVersion": "Packs for Minecraft {{version}}.",
+      "anyVersion": "Packs for every Minecraft version.",
+      "noResults": "No packs found.",
+      "loadMore": "Load more",
+      "download": "Download",
+      "downloadLabel": "Download {{name}}",
+      "downloading": "Downloading",
+      "cancel": "Cancel the download",
+      "added": "Added {{name}} ({{version}}) to the library.",
+      "activated": "It is on in this profile.",
+      "otherVersion": "There is no version for this Minecraft version, so the newest one was downloaded.",
+      "needs": "It needs:",
+      "getMod": "Get {{name}}",
+      "findPack": "Find {{name}}"
     }
   }
 }

@@ -53,4 +53,21 @@ describe("mod library without hard links", () => {
     await lib.disable("p", mod!.sha1);
     await expect(stat(copy)).rejects.toThrow();
   });
+
+  it("treats a copy that changed size as a new mod", async () => {
+    const lib = createModLibrary({ paths });
+    const source = join(dir, "c.jar");
+    await writeFile(source, fabricMod("c", "1"));
+    const [mod] = await lib.add([source]);
+    await lib.enable("p", mod!.sha1);
+    const copy = join(paths.modsDir("p"), "c.jar");
+    await writeFile(copy, fabricMod("changed", "2.0.0-longer"));
+
+    await lib.sync({ profileIds: ["p"], isRunning: () => false });
+    const list = await lib.list();
+    expect(list.find((m) => m.sha1 === mod!.sha1)?.usedBy).toEqual([]);
+    expect(list.find((m) => m.modId === "changed")).toMatchObject({
+      usedBy: ["p"],
+    });
+  });
 });

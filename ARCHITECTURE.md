@@ -41,7 +41,7 @@ A map of the codebase for AI agents (and people) doing a task here. Read this **
 - **Main pushes** with `broadcast(channel, payload)` to all windows.
 - **Renderer calls** `invoke(channel, ...args)` from `lib/api.ts`, which unwraps `{ ok }` and throws `IpcCallError` (carrying `code`) on failure. `lib/errors.ts` maps a `code` to a localized `errors.*` string (add new codes to its `KNOWN` list **and** to `en.json`).
 - **Renderer subscribes** with `useIpcEvent(channel, handler)` or, for store wiring, in `state/LauncherEvents.tsx`.
-- Handlers delegate to `getService()` (the per-data-folder `LauncherService`). File dialogs run main-side (in `ipc/mods.ts`, `ipc/setup.ts`) so paths never originate in the renderer.
+- Handlers delegate to `getService()` (the per-data-folder `LauncherService`). File dialogs run main-side (in `ipc/mods.ts`, `ipc/resourcePacks.ts`, `ipc/setup.ts`) so paths never originate in the renderer.
 
 ---
 
@@ -57,15 +57,18 @@ Everything is built through `src/main/minecraft/paths.ts` (`createPaths(dataDir)
   runtimes/<component>/      downloaded Java, manifest.json, .installed.json
   mods-store/<sha1>.jar      the shared mod library (one copy per unique jar)
   mods-store/icons/<sha1>.png
-  profiles/<profileId>/      a profile's game folder: mods/ (hard links into mods-store), saves/, config, options.txt, logs/
+  resourcepacks-store/<sha1>.zip   the shared resource pack library (+ icons/<sha1>.png)
+  profiles/<profileId>/      a profile's game folder: mods/ and resourcepacks/ (hard links into the stores), saves/, config, options.txt (+ options.txt.ezl-bak), logs/
   worlds/<worldId>/          every world, whichever profile owns it (ezlauncher-world.json owner flag inside)
   backups/<key>/             world backups: <id>.zip each + index.json (key = world id, or <profileId>~<folder> for an unlinked world)
-  launcher/                  profiles.json, accounts.json, settings.json, mods.json, loaders/<id>.json (cache), version_manifest cache
+  launcher/                  profiles.json, accounts.json, settings.json, mods.json, resourcepacks.json, running.json, loaders/<id>.json (cache), version_manifest cache
   games/<versionId>/         legacy Scope 01–02 folders, only read to migrate into profiles
 ```
 
 - **Worlds** live once in `worlds/` and are **directory-linked** into each profile's `saves/` (junctions on Windows, symlinks elsewhere). `links.ts` is the only place that knows link types.
-- **Mods** live once in `mods-store/<sha1>.jar` and are **hard-linked** into each profile's `mods/` (a copy where hard links fail, e.g. across drives).
+- **Mods** live once in `mods-store/<sha1>.jar` and are **hard-linked** into each profile's `mods/` (a copy where hard links fail, e.g. across drives). **Resource packs** work the same way (`resourcepacks-store/` → `resourcepacks/`); both use `profiles/linkedStore.ts`. Unzipped (folder) packs stay in their profile.
+- **Active resource packs and their order live only in the profile's `options.txt`** (`resourcePacks`, lowest priority first). The launcher changes only those two lines, never while a game of the profile runs or starts.
+- **Running games** are saved in `launcher/running.json` (pid, profile, start time), so a restarted launcher still treats their profiles as playing.
 - **Markers** (`install.json`, loader marker) are written **last**, so a half-finished install reads as "not installed".
 
 ---
@@ -92,6 +95,10 @@ Everything is built through `src/main/minecraft/paths.ts` (`createPaths(dataDir)
 
 **World backups** — `profiles/backups.ts` (no Electron): `createBackup` streams a world into a zip (fflate `ZipDeflate`, `.part` then rename; `session.lock` and the owner flag left out) unless its fingerprint (names + sizes + mtimes, no file reads) equals the newest backup's; `restoreBackup` unpacks into a temp folder (every entry through `safeJoin`) and moves it into `worlds/` as a new world owned by the profile, then a sync links it; `pruneBackups` keeps at most N and none older than D days, never the newest; `backupDue` decides automatic backups. The service runs one backup job at a time (`backup:progress` / `backup:state` events → the navbar `BackupIndicator`); automatic ones run before the start (inside `launch`, Skip continues) or after the last game of a profile closes (after its sync), per settings. Manual backups are refused while the profile plays. Retention is applied after each backup, at start, and when its settings change.
 
+**Resource packs (Scope 08)** — `profiles/packs/library.ts:createPackLibrary` is the store (adds only zips with a root `pack.mcmeta`, read through `core/zipEntries.ts` without reading the whole zip; a zip edited in place through a link is stored again under its new SHA1). `packs/profilePacks.ts` is one profile's view: `view` reads the order from `options.txt` (`gameOptions.ts`), lists library + folder packs with their compatibility (`packMeta.ts:packCompat` against the version's format from its client jar, `packFormat.ts:readGameFormat`); `setActive` links/unlinks library packs and writes both pack lines (incompatible packs also go into `incompatibleResourcePacks`, unknown ones never), backing the file up once; `followSync` fixes entries after hand renames (from `linkedStore` `reconcile`'s diff); `copyActive` (duplicate) and `translate` (version change across 1.13) keep the lists right. Sync runs inside the service's `sync()` after mod sync. Modrinth: `modrinth.ts:search` (paged, `project_type:resourcepack`) → `modsources/downloadPack.ts:downloadPack` (version for the game version, else the newest; primary `.zip`; required projects reported as `needs`) → `activatePacks` turns it on at the top. Hand-added packs are identified by hash like mods.
+
+**Running games** — `minecraft/runningGames.ts`: `launch` saves every started game (pid, profile, start time) and `gameExited` removes it; at startup `restore()` brings back games whose process is alive and started after the last boot, and `watchRestored` polls them until they exit (then the normal exit handling: sync + backup). `assertNotRunning` also refuses while a game of the profile is still starting.
+
 **World sync** — `worlds.ts:syncWorlds`: adopt saves created in-game into `worlds/`, drop worlds deleted in-game, relink each profile's `saves/` from owner flags, report orphans. Runs after the **last** game of a profile exits. `removeTree` never follows links, so deleting a profile can't touch a linked world.
 
 **Move the data folder** — `moveData.ts:moveDataDir`: same drive = `rename`; other drive = copy the tree preserving hard links (so `mods-store` stays shared), re-point world links into the new folder, delete the old one; cancellable, progress via `setup:moveProgress`, then relaunch. Orchestrated in `ipc/setup.ts`; refused while games run or installs are busy.
@@ -102,14 +109,15 @@ Everything is built through `src/main/minecraft/paths.ts` (`createPaths(dataDir)
 
 ## 4. Feature → where it lives
 
-| Feature                                    | Main                                         | Renderer                                                                                                         |
-| ------------------------------------------ | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Version list / install / launch (Scope 01) | `minecraft/*`, `services/launcherService.ts` | `pages/VersionsPage`, `components/versions/*`, `components/play/*`                                               |
-| Mod loaders Fabric/Quilt (02)              | `minecraft/loaders/*`                        | loader dropdown in `components/profiles/ProfileEditor`                                                           |
-| Profiles & worlds, mod library (03)        | `profiles/*`                                 | `pages/{ProfilePage,NewProfilePage}`, `components/profiles/*`, `components/mods/ModsTab`, `pages/ModLibraryPage` |
-| Modrinth download / identify (04)          | `modsources/*`                               | `components/mods/{AddModDialog,RemoteModCard,SourceBadge}`                                                       |
-| Mod validation (05)                        | `validation/*`                               | `components/mods/{IssueList,issueText}`, `components/play/LaunchProblemsDialog`                                  |
-| Accounts & settings, data move (06)        | `auth/*`, `settings/*`                       | `components/accounts/*`, `pages/SettingsPage`, `components/settings/*`                                           |
+| Feature                                    | Main                                                                        | Renderer                                                                                                         |
+| ------------------------------------------ | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Version list / install / launch (Scope 01) | `minecraft/*`, `services/launcherService.ts`                                | `pages/VersionsPage`, `components/versions/*`, `components/play/*`                                               |
+| Mod loaders Fabric/Quilt (02)              | `minecraft/loaders/*`                                                       | loader dropdown in `components/profiles/ProfileEditor`                                                           |
+| Profiles & worlds, mod library (03)        | `profiles/*`                                                                | `pages/{ProfilePage,NewProfilePage}`, `components/profiles/*`, `components/mods/ModsTab`, `pages/ModLibraryPage` |
+| Modrinth download / identify (04)          | `modsources/*`                                                              | `components/mods/{AddModDialog,RemoteModCard,SourceBadge}`                                                       |
+| Mod validation (05)                        | `validation/*`                                                              | `components/mods/{IssueList,issueText}`, `components/play/LaunchProblemsDialog`                                  |
+| Accounts & settings, data move (06)        | `auth/*`, `settings/*`                                                      | `components/accounts/*`, `pages/SettingsPage`, `components/settings/*`                                           |
+| Resource packs (08)                        | `profiles/packs/*`, `profiles/gameOptions.ts`, `modsources/downloadPack.ts` | `pages/LibraryPage` (Resource packs tab), `components/resourcepacks/*`, `components/remote/RemoteSearchDialog`   |
 
 ---
 
@@ -135,32 +143,34 @@ Tests (`*.test.ts[x]`) and `testing/` fake helpers are omitted. One line each: p
 
 ### src/main (entry & glue)
 
-| File                          | Purpose / key exports                                                                         |
-| ----------------------------- | --------------------------------------------------------------------------------------------- |
-| `index.ts`                    | Electron entry: single-instance lock, boot sequence, lifecycle + crash handlers               |
-| `window.ts`                   | `createMainWindow()`: sandboxed window, external-link handling, dev/prod URL                  |
-| `log.ts`                      | `getLogger()`: lazy app-wide `Logger` into Electron's logs dir                                |
-| `ipc/index.ts`                | `registerIpc()` calls each feature's register fn                                              |
-| `ipc/register.ts`             | `handle<C>()` (typed handler, errors→`{ok:false}`), `broadcast<C>()`                          |
-| `ipc/app.ts`                  | `app:getInfo` (version, platform, total memory)                                               |
-| `ipc/launcher.ts`             | versions/loaders/accounts/settings/game channels → `getService()`                             |
-| `ipc/profiles.ts`             | profiles CRUD/openFolder, worlds list/move/orphans/openFolder                                 |
-| `ipc/mods.ts`                 | mod library/icon/add/enable/remove/remote-search/validate/redownload (dialogs main-side)      |
-| `ipc/backups.ts`              | `backups:create/cancel/list/restore/delete/reveal/summary/deleteOrphans/openFolder` → service |
-| `ipc/java.ts`                 | `java:list/install/cancel/remove` → service; progress on `java:progress`                      |
-| `ipc/setup.ts`                | data-folder state/pick/set/move/cancel; move → `moveDataDir` + relaunch                       |
-| `services/current.ts`         | service singleton: `initFromBootstrap`, `startService`, `hasService`, `getService`            |
-| `services/launcherService.ts` | **composition root** `createLauncherService(dataDir, logger)`; ~40 methods (see below)        |
+| File                          | Purpose / key exports                                                                               |
+| ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| `index.ts`                    | Electron entry: single-instance lock, boot sequence, lifecycle + crash handlers                     |
+| `window.ts`                   | `createMainWindow()`: sandboxed window, external-link handling, dev/prod URL                        |
+| `log.ts`                      | `getLogger()`: lazy app-wide `Logger` into Electron's logs dir                                      |
+| `ipc/index.ts`                | `registerIpc()` calls each feature's register fn                                                    |
+| `ipc/register.ts`             | `handle<C>()` (typed handler, errors→`{ok:false}`), `broadcast<C>()`                                |
+| `ipc/app.ts`                  | `app:getInfo` (version, platform, total memory)                                                     |
+| `ipc/launcher.ts`             | versions/loaders/accounts/settings/game channels → `getService()`                                   |
+| `ipc/profiles.ts`             | profiles CRUD/openFolder, worlds list/move/orphans/openFolder                                       |
+| `ipc/mods.ts`                 | mod library/icon/add/enable/remove/remote-search/validate/redownload (dialogs main-side)            |
+| `ipc/resourcePacks.ts`        | `resourcePacks:*` library/icons/profile view/setActive/add/remove/search/install (dialog main-side) |
+| `ipc/backups.ts`              | `backups:create/cancel/list/restore/delete/reveal/summary/deleteOrphans/openFolder` → service       |
+| `ipc/java.ts`                 | `java:list/install/cancel/remove` → service; progress on `java:progress`                            |
+| `ipc/setup.ts`                | data-folder state/pick/set/move/cancel; move → `moveDataDir` + relaunch                             |
+| `services/current.ts`         | service singleton: `initFromBootstrap`, `startService`, `hasService`, `getService`                  |
+| `services/launcherService.ts` | **composition root** `createLauncherService(dataDir, logger)`; ~40 methods (see below)              |
 
-`launcherService` methods by area: **versions** `listVersions, installedVersions, installVersion, repairVersion, listLoaders, cancelInstall, deleteVersion`; **profiles** `listProfiles, createProfile, duplicateProfile, updateProfile, deleteProfile, openProfileFolder`; **worlds** `listWorlds, moveWorld, listOrphanWorlds, openWorldFolder`; **mods** `modLibrary, modIcon, addMods, setModEnabled, validateMods, disablePlan, redownloadMod, removeMod, removeUnusedMods`; **remote mods** `findRemoteMods, installRemoteMod, cancelRemoteMod`; **bulk mods** `downloadLibraryMods` (whole library for a version+loader), `applyProfileMods` (re-fetch a profile's mods after a version change; keeps-but-disables no-compat ones), `cancelBulkDownload`; **accounts** `listAccounts, addAccount, renameAccount, removeAccount`; **settings** `getSettings, updateSettings`; **games** `runningGames, launch`; **backups** `backupWorlds, cancelBackup, listWorldBackups, restoreWorldBackup, deleteWorldBackup, revealWorldBackup, backupSummary, deleteOrphanBackups, openBackupsFolder` (`listWorlds` adds `lastBackupAt`/`backupCount`); **java** `listJava, installJava, cancelJavaInstall, removeJava` (version installs wait for a Java install; Java installs are refused while versions install); **data move** `prepareToMove, resumeAfterMove`; plus `paths`.
+`launcherService` methods by area: **versions** `listVersions, installedVersions, installVersion, repairVersion, listLoaders, cancelInstall, deleteVersion`; **profiles** `listProfiles, createProfile, duplicateProfile, updateProfile, deleteProfile, openProfileFolder`; **worlds** `listWorlds, moveWorld, listOrphanWorlds, openWorldFolder`; **mods** `modLibrary, modIcon, addMods, setModEnabled, validateMods, disablePlan, redownloadMod, removeMod, removeUnusedMods`; **remote mods** `findRemoteMods, installRemoteMod, cancelRemoteMod`; **resource packs** `packLibrary, packIcon, packFolderIcon, profilePacks, setActivePacks, addPacks, removePack, removeUnusedPacks, searchPacks, installPack, cancelPackInstall`; **bulk mods** `downloadLibraryMods` (whole library for a version+loader), `applyProfileMods` (re-fetch a profile's mods after a version change; keeps-but-disables no-compat ones), `cancelBulkDownload`; **accounts** `listAccounts, addAccount, renameAccount, removeAccount`; **settings** `getSettings, updateSettings`; **games** `runningGames, launch`; **backups** `backupWorlds, cancelBackup, listWorldBackups, restoreWorldBackup, deleteWorldBackup, revealWorldBackup, backupSummary, deleteOrphanBackups, openBackupsFolder` (`listWorlds` adds `lastBackupAt`/`backupCount`); **java** `listJava, installJava, cancelJavaInstall, removeJava` (version installs wait for a Java install; Java installs are refused while versions install); **data move** `prepareToMove, resumeAfterMove`; plus `paths`.
 
 ### src/main/core
 
-| File          | Purpose / key exports                                                                                             |
-| ------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `errors.ts`   | `AppError` (coded), `toIpcError()`                                                                                |
-| `fsAtomic.ts` | `writeFileAtomic`, `writeJsonAtomic`, `readJson` (Zod), `renameWithRetry` (temp-write→rename, Windows lock retry) |
-| `logger.ts`   | `createLogger`, `Logger`/`LogLevel`, `LOG_FILE_NAME` (leveled, size-rotating, scoped)                             |
+| File            | Purpose / key exports                                                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `errors.ts`     | `AppError` (coded), `toIpcError()`                                                                                                                            |
+| `fsAtomic.ts`   | `writeFileAtomic`, `writeJsonAtomic`, `readJson` (Zod), `renameWithRetry` (temp-write→rename, Windows lock retry)                                             |
+| `zipEntries.ts` | `readZipEntries` — read a zip's index and a few small entries without reading the whole file (stored/deflate, data descriptors; zip64/encrypted = unreadable) |
+| `logger.ts`     | `createLogger`, `Logger`/`LogLevel`, `LOG_FILE_NAME` (leveled, size-rotating, scoped)                                                                         |
 
 ### src/main/minecraft (pure launcher core, no Electron)
 
@@ -187,6 +197,7 @@ Tests (`*.test.ts[x]`) and `testing/` fake helpers are omitted. One line each: p
 | `installer.ts`             | `installVersion`, `readInstallMarker`, `isInstalled`, `writeInstallMarker`, `listDependents`, `deleteVersion`, `clientJarVersionId`, `InstalledVersion`, `InstallMode` |
 | `installQueue.ts`          | `InstallQueue` (serialize jobs, cancel, `isBusy`/`isAnyBusy`)                                                                                                          |
 | `gameProcess.ts`           | `launchGame`, `GameHandle`/`GameExit`                                                                                                                                  |
+| `runningGames.ts`          | `createRunningGamesFile` (`launcher/running.json`: save, `restore` alive games started after the last boot), `processAlive`                                            |
 | `gameLog.ts`               | `createGameLogParser`                                                                                                                                                  |
 | `loaders/types.ts`         | `LoaderProvider`, `LoaderInstallContext`                                                                                                                               |
 | `loaders/registry.ts`      | `createLoaderRegistry`, `getSupportedGameVersions`, `LoaderRegistry`                                                                                                   |
@@ -208,18 +219,24 @@ Tests (`*.test.ts[x]`) and `testing/` fake helpers are omitted. One line each: p
 
 ### src/main/profiles
 
-| File             | Purpose / key exports                                                                                                                                                   |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `profiles.ts`    | `createProfileStore(file)`, `sameLoader`; `profiles.json` CRUD; version/loader change clears `installedVersionId`                                                       |
-| `links.ts`       | `createDirLink`, `isLink`, `linkTarget`, `removeLink`, `removeTree`, `createHardLink`, `sameFile` — only module that knows link types                                   |
-| `worlds.ts`      | `syncWorlds`, `listWorlds`, `listOrphans`, `moveWorld`, `deleteWorld`, `worldsOwnedBy`, `readWorldOwner`, `rescueUnlinkedWorlds`, `uniqueWorldId`, `WORLD_FLAG`         |
-| `migrate.ts`     | `migrateLegacyGames`, `MIGRATION_MARKER`                                                                                                                                |
-| `nbt.ts`         | `readLevelInfo`, `LevelInfo` (minimal `level.dat` reader)                                                                                                               |
-| `backups.ts`     | `createBackup`, `restoreBackup`, `listBackups`, `listBackupFolders`, `deleteBackup`, `deleteBackupFolder`, `pruneBackups`, `backupDue`, `backupKey`, `worldFingerprint` |
-| `libraryDeps.ts` | `libraryNeededBy` (which library mods depend on which, via mod id / provides / nested jars), `isDependencyOnly` (recorded `addedAs`, else inferred)                     |
-| `modInfo.ts`     | `readModInfo`, `readModInfoFromJar`, `ModInfo`/`ModDep`/`NestedMod`, `UNREADABLE_RANGE` (fabric/quilt/forge + nested jars; never throws)                                |
-| `compat.ts`      | `checkCompat`, `acceptedLoaders`, `rangeText` (jar metadata first)                                                                                                      |
-| `mods.ts`        | `createModLibrary`, `ModMeta`/`ModSourceRef`/`ModLibrary`, `INFO_VERSION`, `RECHECK_AFTER_MS` (store + hard links + `mods.json`)                                        |
+| File                    | Purpose / key exports                                                                                                                                                                                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `profiles.ts`           | `createProfileStore(file)`, `sameLoader`; `profiles.json` CRUD; version/loader change clears `installedVersionId`                                                                                                                                                              |
+| `links.ts`              | `createDirLink`, `isLink`, `linkTarget`, `removeLink`, `removeTree`, `createHardLink`, `sameFile` — only module that knows link types                                                                                                                                          |
+| `worlds.ts`             | `syncWorlds`, `listWorlds`, `listOrphans`, `moveWorld`, `deleteWorld`, `worldsOwnedBy`, `readWorldOwner`, `rescueUnlinkedWorlds`, `uniqueWorldId`, `WORLD_FLAG`                                                                                                                |
+| `migrate.ts`            | `migrateLegacyGames`, `MIGRATION_MARKER`                                                                                                                                                                                                                                       |
+| `nbt.ts`                | `readLevelInfo`, `LevelInfo` (minimal `level.dat` reader)                                                                                                                                                                                                                      |
+| `backups.ts`            | `createBackup`, `restoreBackup`, `listBackups`, `listBackupFolders`, `deleteBackup`, `deleteBackupFolder`, `pruneBackups`, `backupDue`, `backupKey`, `worldFingerprint`                                                                                                        |
+| `libraryDeps.ts`        | `libraryNeededBy` (which library mods depend on which, via mod id / provides / nested jars), `isDependencyOnly` (recorded `addedAs`, else inferred)                                                                                                                            |
+| `modInfo.ts`            | `readModInfo`, `readModInfoFromJar`, `ModInfo`/`ModDep`/`NestedMod`, `UNREADABLE_RANGE` (fabric/quilt/forge + nested jars; never throws)                                                                                                                                       |
+| `compat.ts`             | `checkCompat`, `acceptedLoaders`, `rangeText` (jar metadata first)                                                                                                                                                                                                             |
+| `mods.ts`               | `createModLibrary`, `ModMeta`/`ModSourceRef`/`ModLibrary`, `INFO_VERSION`, `RECHECK_AFTER_MS` (`mods.json`; storage through `linkedStore`)                                                                                                                                     |
+| `linkedStore.ts`        | `createLinkedStore` (store by SHA1 + hard links into a profile folder: `storeCopy` hashes while copying, `linkInto`, `unlinkIfOurs`, `reconcile` → `{removed, renamed, adopted}`, `relinkAll`, `usage`, `removeEverywhere`), `linkSchema`, `exists` — shared by mods and packs |
+| `gameOptions.ts`        | `options.txt` pack lines: `readPackLists`, `writePackLists` (everything else byte for byte), `newOptionsText`, `packEntry`/`entryName` (`file/` since 1.13), `mergePacks`, `mergeIncompatible`                                                                                 |
+| `packs/packFormat.ts`   | `readGameFormat` (client jar `version.json`, 3 shapes; table for 1.6–1.13.2), `formatFromVersionJson`, `legacyFormat`, `predatesResourcePacks`, `optionsDialect`, `compareFormats`                                                                                             |
+| `packs/packMeta.ts`     | `parsePackMcmeta` (lenient; `pack_format`/`supported_formats`/`min_format`+`max_format`; description flattened), `packCompat`, `readPackZip`, `readPackFolder` (`ok`/`nested`/`invalid`/`unreadable`)                                                                          |
+| `packs/library.ts`      | `createPackLibrary` (`resourcepacks.json`; sync with edited-in-place re-keying, add/addStored, link/unlink, remove, identification), `PackSourceRef`                                                                                                                           |
+| `packs/profilePacks.ts` | `createProfilePacks` (`view`, `setActive`, `followSync`, `copyActive`, `translate`, `folderIcon`, `dialectOf`), `activePacksSchema`                                                                                                                                            |
 
 ### src/main/modsources
 
@@ -230,6 +247,7 @@ Tests (`*.test.ts[x]`) and `testing/` fake helpers are omitted. One line each: p
 | `modrinth.ts`            | `createModrinthSource`, `pickVersion`, `MODRINTH_API`/`MODRINTH_SITE`/`HASH_BATCH` (rate-limit-aware `call`, findExact/getCompatibleVersion/getVersion/getProjects/identifyFiles/pageUrl) |
 | `resolveDependencies.ts` | `resolveInstall`, `InstallPlan`/`PlanItem`/`LibraryView`                                                                                                                                  |
 | `downloadMods.ts`        | `downloadPlan`, `storeVersions` (download into store + `addStored`, shared by bulk), `DownloadModsDeps`                                                                                   |
+| `downloadPack.ts`        | `downloadPack` — a resource pack into the pack library: version for the game version (else newest), primary `.zip`, rollback on failure, `needs` from required/project dependencies       |
 | `bulkFetch.ts`           | `resolveBulk` — compatible version of each known project for a target (no dep recursion); backs "download library for a version" and "apply mods after a version change"                  |
 
 ### src/main/validation
@@ -259,15 +277,17 @@ Tests (`*.test.ts[x]`) and `testing/` fake helpers are omitted. One line each: p
 | Area                         | Files (key export)                                                                                                                                                                                                                                                                                      |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | entry/shell                  | `main.tsx`, `App.tsx` (`App`/`Root`, routes), `components/AppShell.tsx` (top tab navbar with the account picker + `<Outlet>`), `components/ErrorBoundary.tsx`                                                                                                                                           |
-| pages                        | `SetupPage`, `HomePage`, `VersionsPage`, `NewProfilePage`, `ProfilePage`, `ModLibraryPage`, `SettingsPage`                                                                                                                                                                                              |
+| pages                        | `SetupPage`, `HomePage`, `VersionsPage`, `NewProfilePage`, `ProfilePage`, `LibraryPage` (Mods / Resource packs tabs, `?tab=`), `ModLibraryPage`, `SettingsPage`                                                                                                                                         |
 | play                         | `PlayBar` (also runs a profile row's Play via its `request` prop, so progress and the mod-problems dialog stay in one place), `InstallProgressRow`, `LaunchProblemsDialog`, `GameLog` (one tab per game)                                                                                                |
 | accounts                     | `AccountPicker`, `AccountsDialog` (+ `NameForm`)                                                                                                                                                                                                                                                        |
 | profiles                     | `ProfileList`, `ProfileEditor` (icon picker + post-version-change "apply mods" prompt), `IconPicker` (dropdown grid), `ProfileIcon` + `profileIcons.ts` (bundled `assets/profile-icons/*.svg`), `WorldsTab` (+ `MoveWorldDialog`), `OrphanWorlds`, `DeleteProfileDialog`, `moveRisk.ts` (`isRiskyMove`) |
 | mods                         | `ModsTab` (dependency tree), `AddMods` (drop/pick), `AddModDialog`, `DownloadForVersionDialog` (bulk library download), `RemoteModCard`, `IssueList`, `ModIcon`, `SourceBadge`, `VersionPicker`, `modGroups.ts` (`groupMods`), `compatText.ts`, `issueText.ts`                                          |
 | versions                     | `VersionList` (virtualized, tabs, `toolbar` slot, changelog button per row), `ChangelogDialog` + `patchNotesHtml.tsx` (safe HTML → React), `VersionRefresh`, `versionTypes.ts` (`visibleTypes`)                                                                                                         |
+| resource packs               | `ResourcePacksTab` (profile: active order + available + non-packs), `ActivePackList` (dnd-kit sortable + arrow buttons), `PackLibraryTab`, `AddPacks`, `PackIcon`, `FindPacksDialog` (Modrinth search, download, needs), `packText.ts`                                                                  |
+| remote                       | `RemoteSearchDialog` (paged search list, reusable for other content)                                                                                                                                                                                                                                    |
 | backups                      | `BackupIndicator` (navbar), `BackupsDialog` (restore / show / delete)                                                                                                                                                                                                                                   |
 | settings UI                  | `ArgsField`, `DataDirChange`, `BackupSettings`, `JavaSettings` (Settings → Java)                                                                                                                                                                                                                        |
-| ui (Radix/Tailwind wrappers) | `Button`, `Checkbox`, `Dialog`, `Input`, `Menu` (+ `ContextMenuArea`: the same items on right-click), `Progress`, `RadioGroup`, `Select`, `Tabs` (`TabBar`), `Tooltip`                                                                                                                                  |
+| ui (Radix/Tailwind wrappers) | `Button`, `Checkbox`, `Dialog`, `FileDropZone`, `StoreIcon`, `Input`, `Menu` (+ `ContextMenuArea`: the same items on right-click), `Progress`, `RadioGroup`, `Select`, `Tabs` (`TabBar`), `Tooltip`                                                                                                     |
 | state                        | `launcherStore.ts` (`launcherStore`, `useLauncherState`; `{installs, running, games, lastExit}` via `useSyncExternalStore`), `LauncherEvents.tsx` (event→store bridge + query invalidation), `queries.ts` (`keys`, `useProfiles/useLoaders/useVersionList/useAccounts/useSettings/useSelection`)        |
 | lib                          | `api.ts` (`invoke`, `IpcCallError`, `pathForFile`), `errors.ts` (`errorMessage`, `KNOWN`), `queryClient.ts`, `useIpcEvent.ts`                                                                                                                                                                           |
 | theme                        | `ThemeProvider.tsx`, `theme.ts` (`applyThemeMode`, localStorage), `useTheme.ts`                                                                                                                                                                                                                         |
@@ -297,7 +317,8 @@ Tests (`*.test.ts[x]`) and `testing/` fake helpers are omitted. One line each: p
 - **A new mod loader** (Forge/NeoForge) → implement `LoaderProvider` in `minecraft/loaders/<loader>.ts`, register in `loaders/registry.ts`; extend `acceptedLoaders` in `profiles/compat.ts` if it loads others' mods.
 - **A new setting** → add the field to `LauncherSettings` (`shared/launcher.ts`), the file+patch schema and `DEFAULT_SETTINGS` (`settings/settings.ts`), and UI in `pages/SettingsPage.tsx`. A per-profile override also goes through `resolveLaunchSettings` and the profile schema.
 - **A new validation check** → add it in `validation/validate.ts` (pure), a `ValidationProblem` variant in `shared/launcher.ts`, wording in `components/mods/issueText.ts` + `en.json`.
-- **A new i18n string** → add it under the right top-level key in `en.json` (`app, nav, setup, versions, loaders, play, log, settings, errors, profiles, worlds, accounts, versionsPage, mods, remote, validation, launchProblems`).
+- **A new pack kind** (e.g. shaders) → a `createPackLibrary`-style library on `linkedStore.ts` with its own store/profile folder, plus its own activation (packs: `options.txt` via `profilePacks.ts`). The Modrinth adapter takes a `projectType`; `RemoteSearchDialog` gives the search UI.
+- **A new i18n string** → add it under the right top-level key in `en.json` (`app, nav, setup, versions, loaders, play, log, settings, errors, profiles, worlds, accounts, versionsPage, mods, remote, validation, launchProblems, library, resourcePacks`).
 
 ---
 

@@ -4,11 +4,17 @@
  * another site means writing one new adapter.
  */
 
+/** The kinds of projects the launcher gets from a site. */
+export type ProjectType = "mod" | "resourcepack";
+
 /** What a profile can run: its Minecraft version and the loaders it loads mods for. */
 export interface ModTarget {
+  /** `""` = any version (only for picking a version). */
   gameVersion: string;
-  /** A Quilt profile → `["quilt", "fabric"]`. */
+  /** A Quilt profile → `["quilt", "fabric"]`; resource packs → `["minecraft"]`. */
   loaders: string[];
+  /** Missing = `mod`. */
+  projectType?: ProjectType;
 }
 
 export interface RemoteProject {
@@ -22,6 +28,10 @@ export interface RemoteProject {
   pageUrl: string;
   /** How often it was downloaded, when the site says. */
   downloads?: number;
+  /** The site's kind of project (e.g. `mod`, `resourcepack`), when it says. */
+  projectType?: string;
+  /** A one-line summary, when the site gives one. */
+  description?: string;
 }
 
 export interface RemoteFile {
@@ -79,6 +89,23 @@ export interface ModSource {
     sha1s: string[],
     signal?: AbortSignal,
   ): Promise<Map<string, RemoteVersion>>;
-  /** The page of a project, from its id. */
-  pageUrl(projectId: string): string;
+  /** A page of projects matching `query` (best matches first), of one kind. */
+  search(
+    query: string,
+    options: {
+      projectType: ProjectType;
+      /** Only projects with a version for this Minecraft version. */
+      gameVersion?: string;
+      offset: number;
+      limit: number;
+    },
+    signal?: AbortSignal,
+  ): Promise<{ hits: RemoteProject[]; total: number }>;
+  /** The projects a project says it needs (any of its versions), with their kind. */
+  projectDependencies(
+    projectId: string,
+    signal?: AbortSignal,
+  ): Promise<RemoteProject[]>;
+  /** The page of a project, from its id or slug (and its kind: default `mod`). */
+  pageUrl(projectId: string, projectType?: string): string;
 }

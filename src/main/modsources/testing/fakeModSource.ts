@@ -22,17 +22,27 @@ export interface FakeVersionInput {
 
 /** Test helper: an in-memory mod site. Versions are listed newest first. */
 export function createFakeModSource(
-  projects: { projectId: string; slug?: string; name: string }[],
+  projects: {
+    projectId: string;
+    slug?: string;
+    name: string;
+    /** Default `mod`. */
+    projectType?: string;
+    /** Project ids it says it needs. */
+    needs?: string[];
+  }[],
   versions: FakeVersionInput[],
 ): ModSource & { calls: string[] } {
   const calls: string[] = [];
+  const typeOf = (p: (typeof projects)[number]) => p.projectType ?? "mod";
   const project = (p: (typeof projects)[number]): RemoteProject => ({
     sourceId: "fake",
     projectId: p.projectId,
     slug: p.slug ?? p.projectId,
     name: p.name,
     author: "someone",
-    pageUrl: `https://fake/mod/${p.projectId}`,
+    projectType: typeOf(p),
+    pageUrl: `https://fake/${typeOf(p)}/${p.projectId}`,
   });
   const version = (v: FakeVersionInput): RemoteVersion => ({
     sourceId: "fake",
@@ -53,24 +63,52 @@ export function createFakeModSource(
   });
   const fits = (v: FakeVersionInput, t: ModTarget) =>
     (v.loaders ?? ["fabric"]).some((l) => t.loaders.includes(l)) &&
-    (v.gameVersions ?? ["1.18.2"]).includes(t.gameVersion);
+    (t.gameVersion === "" ||
+      (v.gameVersions ?? ["1.18.2"]).includes(t.gameVersion));
 
   return {
     id: "fake",
     displayName: "Fake",
     calls,
-    pageUrl: (id) => `https://fake/mod/${id}`,
-    findExact(query) {
+    pageUrl: (id, type = "mod") => `https://fake/${type}/${id}`,
+    findExact(query, target) {
       calls.push(`findExact ${query}`);
       const q = query.trim().toLowerCase();
       return Promise.resolve(
         projects
           .filter(
             (p) =>
-              p.name.toLowerCase() === q ||
-              (p.slug ?? p.projectId).toLowerCase() === q,
+              typeOf(p) === (target.projectType ?? "mod") &&
+              (p.name.toLowerCase() === q ||
+                (p.slug ?? p.projectId).toLowerCase() === q),
           )
           .map(project),
+      );
+    },
+    search(query, { projectType, gameVersion, offset, limit }) {
+      calls.push(`search ${query} ${projectType} ${offset}`);
+      const q = query.trim().toLowerCase();
+      const all = projects.filter(
+        (p) =>
+          typeOf(p) === projectType &&
+          p.name.toLowerCase().includes(q) &&
+          (!gameVersion ||
+            versions.some(
+              (v) =>
+                v.projectId === p.projectId &&
+                (v.gameVersions ?? ["1.18.2"]).includes(gameVersion),
+            )),
+      );
+      return Promise.resolve({
+        hits: all.slice(offset, offset + limit).map(project),
+        total: all.length,
+      });
+    },
+    projectDependencies(projectId) {
+      const needs =
+        projects.find((p) => p.projectId === projectId)?.needs ?? [];
+      return Promise.resolve(
+        projects.filter((p) => needs.includes(p.projectId)).map(project),
       );
     },
     getCompatibleVersion(projectId, target) {

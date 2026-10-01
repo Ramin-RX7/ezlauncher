@@ -304,6 +304,119 @@ export interface AddModsResult {
   failed: { fileName: string; code: string }[];
 }
 
+// ---- Resource packs (Scope 08) ----
+
+/** Can a pack be used with a profile's Minecraft version? */
+export type PackCompat = "compatible" | "tooOld" | "tooNew" | "unknown";
+
+export interface PackSourceInfo {
+  sourceId: string;
+  projectId: string;
+  pageUrl: string;
+}
+
+/** A resource pack in the library: stored once, shared by the profiles that use it. */
+export interface LibraryPack {
+  sha1: string;
+  fileName: string;
+  /** The file name without `.zip`. */
+  name: string;
+  /** From `pack.mcmeta`, as plain text. */
+  description: string;
+  hasIcon: boolean;
+  size: number;
+  addedAt: string;
+  /** Profiles it's in (active, or turned off in game). */
+  usedBy: string[];
+  source?: PackSourceInfo;
+  /** The mod sources were asked about it (or it came from one). */
+  checked: boolean;
+}
+
+/** A pack as a profile sees it: from the library, or a folder in its `resourcepacks/`. */
+export type PackRef =
+  { kind: "library"; sha1: string } | { kind: "folder"; name: string };
+
+export interface ProfilePack {
+  ref: PackRef;
+  name: string;
+  description: string;
+  hasIcon: boolean;
+  compat: PackCompat;
+  source?: PackSourceInfo;
+}
+
+/** One row of a profile's active packs; built-in packs (e.g. Programmer Art) can't be dragged in. */
+export type ActivePack =
+  { kind: "pack"; pack: ProfilePack } | { kind: "builtin"; id: string };
+
+/** The active packs to save, highest priority first. */
+export type ActivePackRef = PackRef | { kind: "builtin"; id: string };
+
+export interface ProfilePacks {
+  /** Highest priority first, as the game's own pack screen shows them. */
+  active: ActivePack[];
+  /** Library packs and folder packs that aren't active. */
+  available: ProfilePack[];
+  /** Files in `resourcepacks/` the game can't use. */
+  notPacks: {
+    name: string;
+    reason: "invalid" | "nested" | "unreadable";
+    /** For `nested`: the folder `pack.mcmeta` is in. */
+    folder?: string;
+  }[];
+  /** Why the active packs can't be changed right now. */
+  locked?: "running" | "versionUnknown" | "unsupported";
+}
+
+export type AddPacksResult = AddModsResult;
+
+/** A resource pack found on a site (Modrinth). */
+export interface RemotePack {
+  sourceId: string;
+  projectId: string;
+  slug: string;
+  name: string;
+  author: string;
+  description?: string;
+  iconUrl?: string;
+  downloads?: number;
+  pageUrl: string;
+}
+
+export interface PackSearchResult {
+  hits: RemotePack[];
+  /** How many match in all (for "Load more"). */
+  total: number;
+}
+
+/** Something a downloaded pack needs (a mod, or another pack). */
+export interface PackNeed {
+  name: string;
+  slug: string;
+  /** The site's kind: `mod`, `resourcepack`, … */
+  projectType: string;
+  pageUrl: string;
+}
+
+export interface PackInstallResult {
+  sha1: string;
+  name: string;
+  versionNumber: string;
+  compat: PackCompat;
+  /** No version for the profile's Minecraft version: the newest one was taken. */
+  otherVersion: boolean;
+  /** Turned on in the profile (false without one, or while it plays). */
+  activated: boolean;
+  needs: PackNeed[];
+}
+
+export interface PackDownloadProgress {
+  projectId: string;
+  bytes: number;
+  totalBytes: number;
+}
+
 /** What to do with a deleted profile's worlds. */
 export type DeleteWorldsChoice = "delete" | { moveTo: string };
 

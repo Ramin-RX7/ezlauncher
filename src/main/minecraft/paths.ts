@@ -63,6 +63,7 @@ export function createPaths(dataDir: string) {
   const profiles = join(dataDir, "profiles");
   const worlds = join(dataDir, "worlds");
   const modsStore = join(dataDir, "mods-store");
+  const packsStore = join(dataDir, "resourcepacks-store");
   const backups = join(dataDir, "backups");
 
   return {
@@ -102,6 +103,17 @@ export function createPaths(dataDir: string) {
     gameDir: (profileId: string) => join(profiles, safeId(profileId)),
     modsDir: (profileId: string) => join(profiles, safeId(profileId), "mods"),
     savesDir: (profileId: string) => join(profiles, safeId(profileId), "saves"),
+    resourcePacksDir: (profileId: string) =>
+      join(profiles, safeId(profileId), "resourcepacks"),
+    /** An unzipped pack folder in a profile's `resourcepacks/`. */
+    folderPackDir: (profileId: string, name: string) =>
+      join(profiles, safeId(profileId), "resourcepacks", safeFolderName(name)),
+    /** The game's own settings file (only its resource pack lines are ever changed). */
+    optionsFile: (profileId: string) =>
+      join(profiles, safeId(profileId), "options.txt"),
+    /** A copy of `options.txt` from before the launcher first changed it. */
+    optionsBackup: (profileId: string) =>
+      join(profiles, safeId(profileId), "options.txt.ezl-bak"),
     /** A world's link inside a profile's `saves/`. */
     saveLink: (profileId: string, worldId: string) =>
       join(profiles, safeId(profileId), "saves", safeFolderName(worldId)),
@@ -121,6 +133,12 @@ export function createPaths(dataDir: string) {
     modStoreFile: (sha1: string) => join(modsStore, `${sha1Name(sha1)}.jar`),
     modIcon: (sha1: string) =>
       join(modsStore, "icons", `${sha1Name(sha1)}.png`),
+
+    resourcePacksStoreDir: packsStore,
+    resourcePackStoreFile: (sha1: string) =>
+      join(packsStore, `${sha1Name(sha1)}.zip`),
+    resourcePackIcon: (sha1: string) =>
+      join(packsStore, "icons", `${sha1Name(sha1)}.png`),
 
     /** Scope 01–02 game folders (`games/<versionId>`); only read to migrate them into profiles. */
     legacyGamesDir: join(dataDir, "games"),

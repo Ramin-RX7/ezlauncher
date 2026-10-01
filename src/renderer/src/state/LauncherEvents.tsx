@@ -49,6 +49,7 @@ export function LauncherEvents() {
     void queryClient.invalidateQueries({ queryKey: ["backups"] });
     void queryClient.invalidateQueries({ queryKey: ["versions"] });
     void queryClient.invalidateQueries({ queryKey: ["mods"] });
+    void queryClient.invalidateQueries({ queryKey: ["resourcePacks"] });
   });
   return null;
 }

@@ -5,6 +5,13 @@
 
 import type {
   AccountInfo,
+  ActivePackRef,
+  AddPacksResult,
+  LibraryPack,
+  PackDownloadProgress,
+  PackInstallResult,
+  PackSearchResult,
+  ProfilePacks,
   ApplyModsResult,
   BackupProgress,
   BackupResult,
@@ -114,7 +121,7 @@ export interface IpcInvokeContract {
   };
   /** Opens the profile's game folder, or its `mods/` (created if missing). */
   "profiles:openFolder": {
-    args: [id: string, folder?: "game" | "mods"];
+    args: [id: string, folder?: "game" | "mods" | "resourcepacks"];
     result: void;
   };
 
@@ -202,6 +209,53 @@ export interface IpcInvokeContract {
   /** Cancels an in-flight bulk download. */
   "mods:cancelBulk": { args: []; result: void };
 
+  /** Every library resource pack (runs pack sync first). */
+  "resourcePacks:library": { args: []; result: LibraryPack[] };
+  /** A library pack's icon as a `data:` URL, or null. */
+  "resourcePacks:icon": { args: [sha1: string]; result: string | null };
+  /** A folder pack's icon (in a profile's `resourcepacks/`), or null. */
+  "resourcePacks:folderIcon": {
+    args: [profileId: string, name: string];
+    result: string | null;
+  };
+  /** A profile's active packs (in order), the others it could use, and non-pack files. */
+  "resourcePacks:profile": { args: [profileId: string]; result: ProfilePacks };
+  /** Saves a profile's active packs, highest priority first. Fails with `GAME_RUNNING` while it plays. */
+  "resourcePacks:setActive": {
+    args: [options: { profileId: string; active: ActivePackRef[] }];
+    result: void;
+  };
+  /** Opens a file picker; the chosen zips are added (and turned on in the profile, if given). */
+  "resourcePacks:addFromPicker": {
+    args: [options: { profileId?: string }];
+    result: AddPacksResult;
+  };
+  /** Adds dropped zips by path (and turns them on in the profile, if given). */
+  "resourcePacks:addFiles": {
+    args: [options: { paths: string[]; profileId?: string }];
+    result: AddPacksResult;
+  };
+  /** Removes a pack from the library. Fails with `PACK_IN_USE` when profiles have it, unless `force`. */
+  "resourcePacks:remove": {
+    args: [options: { sha1: string; force: boolean }];
+    result: void;
+  };
+  /** Removes every pack no profile has. Resolves to how many. */
+  "resourcePacks:removeUnused": { args: []; result: number };
+  /** Searches the site for packs (for the profile's Minecraft version, if given), 20 at a time. */
+  "resourcePacks:search": {
+    args: [options: { query: string; profileId?: string; offset: number }];
+    result: PackSearchResult;
+  };
+  /** Downloads a pack into the library (and turns it on in the profile, if given). */
+  "resourcePacks:install": {
+    args: [
+      options: { sourceId: string; projectId: string; profileId?: string },
+    ];
+    result: PackInstallResult;
+  };
+  "resourcePacks:cancelInstall": { args: [projectId: string]; result: boolean };
+
   /** Mojang Java runtimes (installed and offered) and Java found on the computer. */
   "java:list": { args: []; result: JavaListResult };
   /** Downloads a Mojang Java runtime; progress on `java:progress`. */
@@ -279,6 +333,7 @@ export interface IpcEventContract {
   "profiles:changed": Record<string, never>;
   "mods:download": ModDownloadProgress;
   "mods:bulkProgress": ModBulkProgress;
+  "resourcePacks:download": PackDownloadProgress;
   "java:progress": JavaInstallProgress;
   "backup:progress": BackupProgress;
   "backup:state": BackupStateEvent;
@@ -335,6 +390,18 @@ export const INVOKE_CHANNELS = [
   "mods:downloadForVersion",
   "mods:applyForProfile",
   "mods:cancelBulk",
+  "resourcePacks:library",
+  "resourcePacks:icon",
+  "resourcePacks:folderIcon",
+  "resourcePacks:profile",
+  "resourcePacks:setActive",
+  "resourcePacks:addFromPicker",
+  "resourcePacks:addFiles",
+  "resourcePacks:remove",
+  "resourcePacks:removeUnused",
+  "resourcePacks:search",
+  "resourcePacks:install",
+  "resourcePacks:cancelInstall",
   "java:list",
   "backups:create",
   "backups:cancel",
@@ -366,6 +433,7 @@ export const EVENT_CHANNELS = [
   "profiles:changed",
   "mods:download",
   "mods:bulkProgress",
+  "resourcePacks:download",
   "java:progress",
   "backup:progress",
   "backup:state",

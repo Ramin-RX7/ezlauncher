@@ -2,3 +2,5 @@
 *.png binary
 *.ico binary
 *.icns binary
+# Game-written fixtures keep their exact bytes (CRLF included).
+src/main/profiles/testing/options-*.txt -text

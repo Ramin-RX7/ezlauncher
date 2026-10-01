@@ -8,12 +8,13 @@ import { DuplicateProfileDialog } from "../components/profiles/DuplicateProfileD
 import { ProfileEditor } from "../components/profiles/ProfileEditor";
 import { ProfileIcon } from "../components/profiles/ProfileIcon";
 import { WorldsTab } from "../components/profiles/WorldsTab";
+import { ResourcePacksTab } from "../components/resourcepacks/ResourcePacksTab";
 import { Button } from "../components/ui/Button";
 import { TabBar } from "../components/ui/Tabs";
 import { useProfiles } from "../state/queries";
 
-type Tab = "settings" | "worlds" | "mods";
-const TABS: readonly Tab[] = ["settings", "worlds", "mods"];
+type Tab = "settings" | "worlds" | "mods" | "resourcePacks";
+const TABS: readonly Tab[] = ["settings", "worlds", "mods", "resourcePacks"];
 
 export function ProfilePage() {
   const { t } = useTranslation();
@@ -86,6 +87,7 @@ export function ProfilePage() {
           )}
           {tab === "worlds" && <WorldsTab profile={profile} />}
           {tab === "mods" && <ModsTab profile={profile} />}
+          {tab === "resourcePacks" && <ResourcePacksTab profile={profile} />}
           {duplicating && (
             <DuplicateProfileDialog
               profile={profile}

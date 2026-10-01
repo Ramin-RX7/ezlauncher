@@ -1,17 +1,4 @@
-import { randomBytes } from "node:crypto";
-import {
-  copyFile,
-  link,
-  lstat,
-  mkdir,
-  readdir,
-  readFile,
-  rename,
-  rm,
-  stat,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { z } from "zod";
 import type { LibraryMod, Profile } from "@shared/launcher";
@@ -22,7 +9,7 @@ import type { Paths } from "../minecraft/paths";
 import { sha1File } from "../minecraft/verify";
 import { checkCompat, rangeText } from "./compat";
 import { isDependencyOnly, libraryNeededBy } from "./libraryDeps";
-import { createHardLink, sameFile } from "./links";
+import { createLinkedStore, exists, linkSchema } from "./linkedStore";
 import { readModInfo } from "./modInfo";
 
 /*
@@ -97,12 +84,6 @@ export type ModSourceRef = NonNullable<ModMeta["source"]>;
 /** Hand-added mods no source knows are asked about again after this long. */
 export const RECHECK_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
-const linkSchema = z.object({
-  sha1: z.string(),
-  /** A copy, because hard links didn't work on this drive. */
-  copied: z.boolean().optional(),
-});
-
 const fileSchema = z.object({
   schema: z.literal(1),
   mods: z.record(z.string(), metaSchema),
@@ -117,46 +98,6 @@ export interface ModSyncOptions {
   isRunning: (profileId: string) => boolean;
 }
 
-async function exists(path: string): Promise<boolean> {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function identity(path: string): Promise<string | undefined> {
-  try {
-    const s = await stat(path, { bigint: true });
-    return `${s.dev}:${s.ino}`;
-  } catch {
-    return undefined;
-  }
-}
-
-async function jarFiles(dir: string): Promise<string[]> {
-  let names: string[];
-  try {
-    names = await readdir(dir);
-  } catch {
-    return [];
-  }
-  const jars: string[] = [];
-  for (const name of names) {
-    if (!/\.jar$/i.test(name)) continue;
-    try {
-      if ((await lstat(join(dir, name))).isFile()) jars.push(name);
-    } catch {
-      // gone meanwhile
-    }
-  }
-  return jars;
-}
-
-const tmpName = (path: string) =>
-  `${path}.${randomBytes(4).toString("hex")}.part`;
-
 export function createModLibrary({
   paths,
   logger,
@@ -167,6 +108,14 @@ export function createModLibrary({
   now?: () => Date;
 }) {
   const file = paths.launcherFile("mods.json");
+  const store = createLinkedStore({
+    storeDir: paths.modsStoreDir,
+    storeFile: paths.modStoreFile,
+    profileDir: paths.modsDir,
+    ext: ".jar",
+    label: "mod",
+    ...(logger && { logger }),
+  });
 
   let queue: Promise<unknown> = Promise.resolve();
   const serial = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -186,9 +135,9 @@ export function createModLibrary({
 
   /** Metadata (and icon) for a store file. */
   async function describe(sha1: string, fileName: string): Promise<ModMeta> {
-    const store = paths.modStoreFile(sha1);
-    const info = await readModInfo(store);
-    const size = (await stat(store)).size;
+    const stored = paths.modStoreFile(sha1);
+    const info = await readModInfo(stored);
+    const size = (await stat(stored)).size;
     let iconPath: string | undefined;
     if (info.icon) {
       await mkdir(join(paths.modsStoreDir, "icons"), { recursive: true });
@@ -215,29 +164,6 @@ export function createModLibrary({
     };
   }
 
-  /** Put a jar into the store (copied, then checked), unless it's already there. */
-  async function storeCopy(
-    source: string,
-  ): Promise<{ sha1: string; added: boolean }> {
-    const sha1 = await sha1File(source);
-    const dest = paths.modStoreFile(sha1);
-    if (await exists(dest)) return { sha1, added: false };
-    await mkdir(paths.modsStoreDir, { recursive: true });
-    const tmp = tmpName(dest);
-    try {
-      await copyFile(source, tmp);
-      if ((await sha1File(tmp)) !== sha1)
-        throw new AppError(
-          "FILE_CHANGED",
-          `${basename(source)} changed while copying.`,
-        );
-      await rename(tmp, dest);
-    } finally {
-      await rm(tmp, { force: true });
-    }
-    return { sha1, added: true };
-  }
-
   async function ensureMeta(data: ModsFile, sha1: string, fileName: string) {
     data.mods[sha1] ??= await describe(sha1, fileName);
   }
@@ -248,30 +174,6 @@ export function createModLibrary({
     if (meta) meta.addedAs = "user";
   }
 
-  /** A free file name in a profile's mods folder for this mod. */
-  async function freeName(profileId: string, meta: ModMeta, sha1: string) {
-    const dir = paths.modsDir(profileId);
-    const safe = basename(meta.fileName).replace(/[<>:"/\\|?*]/g, "_");
-    const wanted = /\.jar$/i.test(safe) ? safe : `${safe}.jar`;
-    if (!(await exists(join(dir, wanted)))) return wanted;
-    return wanted.replace(/\.jar$/i, `-${sha1.slice(0, 8)}.jar`);
-  }
-
-  /** Remove a profile's file for a mod: only if it's still that mod (never a user's other file). */
-  async function unlinkEntry(
-    profileId: string,
-    fileName: string,
-    entry: z.infer<typeof linkSchema>,
-  ): Promise<void> {
-    const path = join(paths.modsDir(profileId), fileName);
-    if (!(await exists(path))) return;
-    const store = paths.modStoreFile(entry.sha1);
-    const ours =
-      (await sameFile(path, store)) ||
-      (entry.copied === true && (await sha1File(path)) === entry.sha1);
-    if (ours) await unlink(path);
-  }
-
   async function enableIn(
     data: ModsFile,
     profileId: string,
@@ -280,8 +182,7 @@ export function createModLibrary({
     replaced?: string[],
   ): Promise<"linked" | "copied"> {
     const meta = data.mods[sha1];
-    const store = paths.modStoreFile(sha1);
-    if (!meta || !(await exists(store)))
+    if (!meta || !(await exists(paths.modStoreFile(sha1))))
       throw new AppError("MOD_NOT_FOUND", "This mod isn't in the library.");
     const links = (data.links[profileId] ??= {});
     const current = Object.entries(links).find(([, e]) => e.sha1 === sha1);
@@ -298,102 +199,33 @@ export function createModLibrary({
           entry.sha1 !== sha1 &&
           data.mods[entry.sha1]?.modId === meta.modId
         ) {
-          await unlinkEntry(profileId, name, entry);
+          await store.unlinkIfOurs(profileId, name, entry);
           Reflect.deleteProperty(links, name);
           replaced?.push(entry.sha1);
         }
       }
     }
 
-    await mkdir(paths.modsDir(profileId), { recursive: true });
-    const name = await freeName(profileId, meta, sha1);
-    const mode = await createHardLink(
-      store,
-      join(paths.modsDir(profileId), name),
+    const { mode } = await store.linkInto(
+      links,
+      profileId,
+      sha1,
+      meta.fileName,
     );
-    links[name] = { sha1, ...(mode === "copied" && { copied: true }) };
     return mode;
   }
 
-  /** A real jar someone put into `mods/` by hand: store it and keep it enabled. */
-  async function adopt(data: ModsFile, profileId: string, fileName: string) {
-    const path = join(paths.modsDir(profileId), fileName);
-    const sha1 = await sha1File(path);
-    const store = paths.modStoreFile(sha1);
-    let copied = false;
-    if (!(await exists(store))) {
-      await mkdir(paths.modsStoreDir, { recursive: true });
-      try {
-        await link(path, store); // the store and the profile share this very file
-      } catch {
-        await storeCopy(path);
-        copied = true;
-      }
-    } else {
-      // Already stored: make the profile's file a link to the stored one.
-      const tmp = tmpName(path);
-      const mode = await createHardLink(store, tmp);
-      await rename(tmp, path);
-      copied = mode === "copied";
-    }
-    await ensureMeta(data, sha1, fileName);
-    markUser(data, sha1);
-    (data.links[profileId] ??= {})[fileName] = {
-      sha1,
-      ...(copied && { copied: true }),
-    };
-    logger?.info(`adopted ${fileName} into the mod library`);
-  }
-
+  /** Jars put into `mods/` by hand are adopted into the library and stay enabled. */
   async function syncProfile(data: ModsFile, profileId: string) {
-    const dir = paths.modsDir(profileId);
-    const links = (data.links[profileId] ??= {});
-    const files = await jarFiles(dir);
-    const present = new Set(files);
-
-    // A file removed by hand means the mod was disabled.
-    for (const name of Object.keys(links))
-      if (!present.has(name)) Reflect.deleteProperty(links, name);
-
-    const storeIds = new Map<string, string>();
-    for (const sha1 of Object.keys(data.mods)) {
-      const id = await identity(paths.modStoreFile(sha1));
-      if (id) storeIds.set(id, sha1);
-    }
-
-    for (const name of files) {
-      const path = join(dir, name);
-      try {
-        const entry = links[name];
-        if (entry) {
-          const store = paths.modStoreFile(entry.sha1);
-          if (!(await exists(store))) {
-            // The stored mod is gone: remove its link (if it's still that mod).
-            if ((await sha1File(path)) === entry.sha1) {
-              await unlink(path);
-              Reflect.deleteProperty(links, name);
-              continue;
-            }
-          } else if (await sameFile(path, store)) {
-            continue;
-          } else if (
-            entry.copied &&
-            (await stat(path)).size === (await stat(store)).size
-          ) {
-            continue;
-          }
-          Reflect.deleteProperty(links, name); // replaced by another file: treat it as new
-        }
-        const known = storeIds.get((await identity(path)) ?? "");
-        if (known) {
-          links[name] = { sha1: known };
-          continue;
-        }
-        await adopt(data, profileId, name);
-      } catch (err) {
-        logger?.warn(`mod sync: ${name} in ${profileId} failed`, err);
-      }
-    }
+    await store.reconcile(
+      (data.links[profileId] ??= {}),
+      profileId,
+      Object.keys(data.mods),
+      async (sha1, fileName) => {
+        await ensureMeta(data, sha1, fileName);
+        markUser(data, sha1);
+      },
+    );
   }
 
   /** Read jars again whose metadata an older launcher wrote; where they came from stays. */
@@ -416,27 +248,10 @@ export function createModLibrary({
     }
   }
 
-  function usage(data: ModsFile): Map<string, string[]> {
-    const users = new Map<string, string[]>();
-    for (const [profileId, links] of Object.entries(data.links)) {
-      for (const { sha1 } of Object.values(links)) {
-        const list = users.get(sha1) ?? [];
-        if (!list.includes(profileId)) list.push(profileId);
-        users.set(sha1, list);
-      }
-    }
-    return users;
-  }
+  const usage = (data: ModsFile) => store.usage(data.links);
 
   async function removeFromStore(data: ModsFile, sha1: string) {
-    for (const [profileId, links] of Object.entries(data.links)) {
-      for (const [name, entry] of Object.entries(links)) {
-        if (entry.sha1 !== sha1) continue;
-        await unlinkEntry(profileId, name, entry);
-        Reflect.deleteProperty(links, name);
-      }
-    }
-    await rm(paths.modStoreFile(sha1), { force: true });
+    await store.removeEverywhere(data.links, sha1);
     await rm(paths.modIcon(sha1), { force: true });
     Reflect.deleteProperty(data.mods, sha1);
   }
@@ -528,7 +343,7 @@ export function createModLibrary({
         const data = await load();
         const results = [];
         for (const path of files) {
-          const { sha1, added } = await storeCopy(path);
+          const { sha1, added } = await store.storeCopy(path);
           await ensureMeta(data, sha1, basename(path));
           markUser(data, sha1);
           results.push({ sha1, added, fileName: basename(path) });
@@ -702,20 +517,11 @@ export function createModLibrary({
           throw new AppError("MOD_NOT_FOUND", "This mod isn't in the library.");
         if ((await sha1File(tmpPath)) !== sha1)
           throw new AppError("FILE_CHANGED", `${meta.fileName} didn't match.`);
-        const store = paths.modStoreFile(sha1);
+        const stored = paths.modStoreFile(sha1);
         await mkdir(paths.modsStoreDir, { recursive: true });
-        await rename(tmpPath, store);
-        for (const [profileId, links] of Object.entries(data.links)) {
-          for (const [name, entry] of Object.entries(links)) {
-            if (entry.sha1 !== sha1) continue;
-            const path = join(paths.modsDir(profileId), name);
-            const tmp = tmpName(path);
-            const mode = await createHardLink(store, tmp);
-            await rename(tmp, path);
-            links[name] = { sha1, ...(mode === "copied" && { copied: true }) };
-          }
-        }
-        meta.size = (await stat(store)).size;
+        await rename(tmpPath, stored);
+        await store.relinkAll(data.links, sha1);
+        meta.size = (await stat(stored)).size;
         delete meta.verified;
         await save(data);
       });
@@ -760,7 +566,7 @@ export function createModLibrary({
         const links = data.links[profileId] ?? {};
         for (const [name, entry] of Object.entries(links)) {
           if (entry.sha1 !== sha1) continue;
-          await unlinkEntry(profileId, name, entry);
+          await store.unlinkIfOurs(profileId, name, entry);
           Reflect.deleteProperty(links, name);
         }
         await save(data);

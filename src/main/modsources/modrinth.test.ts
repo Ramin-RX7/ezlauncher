@@ -192,6 +192,122 @@ describe("findExact", () => {
   });
 });
 
+const facetsOf = (url: string): unknown =>
+  JSON.parse(decodeURIComponent(new URL(url).searchParams.get("facets") ?? ""));
+
+describe("resource packs", () => {
+  it("searches one kind of project for a version, a page at a time", async () => {
+    const { source, seen } = fakeModrinth({
+      "/search": {
+        json: {
+          hits: [
+            {
+              project_id: "F1",
+              slug: "faithful-32x",
+              title: "Faithful 32x",
+              author: "Faithful",
+              description: "32x textures",
+              project_type: "resourcepack",
+              downloads: 4_900_000,
+            },
+          ],
+          total_hits: 41,
+        },
+      },
+    });
+    const page = await source.search("faithful", {
+      projectType: "resourcepack",
+      gameVersion: "1.20.1",
+      offset: 20,
+      limit: 20,
+    });
+    expect(page.total).toBe(41);
+    expect(page.hits[0]).toMatchObject({
+      name: "Faithful 32x",
+      description: "32x textures",
+      projectType: "resourcepack",
+      pageUrl: "https://modrinth.com/resourcepack/faithful-32x",
+    });
+    const url = new URL(seen[0]!.url);
+    expect(facetsOf(seen[0]!.url)).toEqual([
+      ["project_type:resourcepack"],
+      ["versions:1.20.1"],
+    ]);
+    expect(url.searchParams.get("offset")).toBe("20");
+    expect(url.searchParams.get("limit")).toBe("20");
+  });
+
+  it("finds packs by exact name without a loader filter", async () => {
+    const { source, seen } = fakeModrinth({
+      "/project/faithful-32x": {
+        json: {
+          id: "F1",
+          slug: "faithful-32x",
+          title: "Faithful 32x",
+          project_type: "resourcepack",
+        },
+      },
+      "/project/F1/members": { json: [] },
+      "/search": { json: { hits: [] } },
+    });
+    const found = await source.findExact("faithful-32x", {
+      gameVersion: "1.20.1",
+      loaders: ["minecraft"],
+      projectType: "resourcepack",
+    });
+    expect(found.map((p) => p.pageUrl)).toEqual([
+      "https://modrinth.com/resourcepack/faithful-32x",
+    ]);
+    const search = seen.find((s) => s.url.includes("/search?"));
+    expect(facetsOf(search!.url)).toEqual([
+      ["project_type:resourcepack"],
+      ["versions:1.20.1"],
+    ]);
+  });
+
+  it("asks for any Minecraft version when none is given", async () => {
+    const { source, seen } = fakeModrinth({
+      "/project/F1/version": {
+        json: [
+          version("1", "release", "2024-01-01", { loaders: ["minecraft"] }),
+        ],
+      },
+    });
+    expect(
+      await source.getCompatibleVersion("F1", {
+        gameVersion: "",
+        loaders: ["minecraft"],
+      }),
+    ).toMatchObject({ versionId: "1" });
+    expect(seen[0]!.url).not.toContain("game_versions");
+  });
+
+  it("lists the projects a project needs, with their kind", async () => {
+    const { source } = fakeModrinth({
+      "/project/fresh-animations/dependencies": {
+        json: {
+          projects: [
+            {
+              id: "E1",
+              slug: "entity-model-features",
+              title: "Entity Model Features",
+              project_type: "mod",
+            },
+          ],
+          versions: [],
+        },
+      },
+    });
+    expect(await source.projectDependencies("fresh-animations")).toEqual([
+      expect.objectContaining({
+        name: "Entity Model Features",
+        projectType: "mod",
+        pageUrl: "https://modrinth.com/mod/entity-model-features",
+      }),
+    ]);
+  });
+});
+
 describe("versions", () => {
   it("picks the newest release before any beta or alpha, and the primary file", async () => {
     const { source, seen } = fakeModrinth({

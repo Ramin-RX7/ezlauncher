@@ -4,7 +4,13 @@ import { basename, isAbsolute, join } from "node:path";
 import { app, BrowserWindow, net, shell } from "electron";
 import type {
   AccountInfo,
+  ActivePackRef,
   AddModsResult,
+  AddPacksResult,
+  LibraryPack,
+  PackInstallResult,
+  PackSearchResult,
+  ProfilePacks,
   BackupResult,
   BackupSummary,
   WorldBackup,
@@ -68,6 +74,10 @@ import {
 } from "../minecraft/manifest";
 import { createPaths } from "../minecraft/paths";
 import { detectPlatform } from "../minecraft/platform";
+import {
+  createRunningGamesFile,
+  processAlive,
+} from "../minecraft/runningGames";
 import { ensureJava } from "../minecraft/java";
 import {
   isJavaComponent,
@@ -90,6 +100,8 @@ import {
   type BackupMoment,
 } from "../profiles/backups";
 import { downloadPlan, storeVersions } from "../modsources/downloadMods";
+import { downloadPack } from "../modsources/downloadPack";
+import { packCompat } from "../profiles/packs/packMeta";
 import { resolveBulk } from "../modsources/bulkFetch";
 import { createModSourceRegistry } from "../modsources/registry";
 import {
@@ -97,8 +109,17 @@ import {
   type InstallPlan,
 } from "../modsources/resolveDependencies";
 import { acceptedLoaders, checkCompat } from "../profiles/compat";
-import { removeTree } from "../profiles/links";
+import { isLink, removeTree } from "../profiles/links";
 import { createModLibrary, type ModSourceRef } from "../profiles/mods";
+import {
+  createPackLibrary,
+  type PackSourceRef,
+} from "../profiles/packs/library";
+import { readGameFormat, type GameFormat } from "../profiles/packs/packFormat";
+import {
+  activePacksSchema,
+  createProfilePacks,
+} from "../profiles/packs/profilePacks";
 import { migrateLegacyGames } from "../profiles/migrate";
 import { createProfileStore } from "../profiles/profiles";
 import {
@@ -152,6 +173,29 @@ export function createLauncherService(dataDir: string, logger: Logger) {
   let moving = false;
   const profiles = createProfileStore(paths.launcherFile("profiles.json"));
   const mods = createModLibrary({ paths, logger: log });
+  const packs = createPackLibrary({ paths, logger: log });
+  /** Resource formats of installed Minecraft versions, read once from their jars. */
+  const formats = new Map<string, GameFormat>();
+  async function gameFormat(profile: {
+    gameVersion: string;
+  }): Promise<GameFormat | undefined> {
+    const id = profile.gameVersion;
+    const known = formats.get(id);
+    if (known) return known;
+    try {
+      const found = await readGameFormat(paths.clientJar(id), id);
+      if (found) formats.set(id, found);
+      return found;
+    } catch {
+      return undefined; // not a version id this launcher can install
+    }
+  }
+  const profilePacks = createProfilePacks({
+    paths,
+    library: packs,
+    gameFormat,
+    logger: log,
+  });
   const patchNotes = createPatchNotes({ paths, downloader });
   const sources = createModSourceRegistry({
     fetch: (url, init) => net.fetch(url, init),
@@ -172,6 +216,8 @@ export function createLauncherService(dataDir: string, logger: Logger) {
   const PLAN_TTL_MS = 15 * 60 * 1000;
   /** The bulk download in progress (library-wide or per-profile re-apply). */
   let bulk: AbortController | undefined;
+  /** Resource pack downloads in progress, by project id. */
+  const packDownloads = new Map<string, AbortController>();
   const EMPTY_INPUT: ValidationInput = {
     gameVersion: "",
     loader: null,
@@ -181,6 +227,21 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     broadcast("install:state", event);
   });
   const running = new Map<string, RunningGame>();
+  /** When each running game started (epoch ms); saved with it. */
+  const startedAt = new Map<string, number>();
+  /** Running games survive a launcher restart through this file. */
+  const runningFile = createRunningGamesFile(
+    paths.launcherFile("running.json"),
+  );
+  function saveRunning(): void {
+    const games = [...running.values()].map((g) => ({
+      ...g,
+      startedAt: startedAt.get(g.launchId) ?? Date.now(),
+    }));
+    void runningFile.save(games).catch((err: unknown) => {
+      log.warn("saving the running games failed", err);
+    });
+  }
 
   const onProgress = (p: InstallProgress): void => {
     broadcast("install:progress", p);
@@ -208,7 +269,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     };
   }
 
-  /** World and mod sync for some (default: all) profiles; running ones are skipped. */
+  /** World, mod and pack sync for some (default: all) profiles; running ones are skipped. */
   function sync(only?: string[]): Promise<void> {
     return serialFs(async () => {
       const options = { ...(await worldOptions()), ...(only && { only }) };
@@ -216,7 +277,32 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       for (const u of result.unlinked)
         log.warn(`world ${u.worldId} of ${u.profileId} isn't linked`);
       if ((await mods.sync(options)) > 0) scheduleIdentify();
+      await syncPacks(options);
     });
+  }
+
+  /** Pack sync; an options.txt follows files renamed by hand. */
+  async function syncPacks(options: {
+    profileIds: string[];
+    only?: string[];
+    isRunning: (id: string) => boolean;
+  }): Promise<void> {
+    // A resourcepacks/ folder that is itself a link (shared with something else) is left alone.
+    const shared = new Set<string>();
+    for (const id of options.only ?? options.profileIds)
+      if (await isLink(paths.resourcePacksDir(id))) shared.add(id);
+    const { adopted, diffs } = await packs.sync({
+      ...options,
+      isRunning: (id) => options.isRunning(id) || shared.has(id),
+    });
+    for (const [id, diff] of diffs) {
+      const profile = await profiles.get(id);
+      if (!profile) continue;
+      await profilePacks.followSync(profile, diff).catch((err: unknown) => {
+        log.warn(`updating ${id}'s resource packs after sync failed`, err);
+      });
+    }
+    if (adopted > 0) scheduleIdentify();
   }
 
   // ---- Identifying mods by hash (Modrinth badge for hand-added jars) ----
@@ -255,9 +341,16 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     };
   }
 
+  /** Ask the mod sources about hand-added mods and resource packs. */
   async function identifyPending(): Promise<void> {
+    const modsAsked = await identifyPendingMods();
+    const packsAsked = await identifyPendingPacks();
+    if (modsAsked || packsAsked) changed();
+  }
+
+  async function identifyPendingMods(): Promise<boolean> {
     const pending = await mods.pendingIdentification();
-    if (pending.length === 0) return;
+    if (pending.length === 0) return false;
     const matches = new Map<string, ModSourceRef>();
     for (const source of sources.sources) {
       const left = pending.filter((sha1) => !matches.has(sha1));
@@ -276,7 +369,28 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     }
     const found = await mods.recordIdentification(pending, matches);
     log.info(`identified ${found} of ${pending.length} mods`);
-    changed();
+    return true;
+  }
+
+  /** The same for resource packs added by hand (Modrinth badge and page link). */
+  async function identifyPendingPacks(): Promise<boolean> {
+    const pending = await packs.pendingIdentification();
+    if (pending.length === 0) return false;
+    const matches = new Map<string, PackSourceRef>();
+    for (const source of sources.sources) {
+      const left = pending.filter((sha1) => !matches.has(sha1));
+      if (left.length === 0) break;
+      for (const [sha1, v] of await source.identifyFiles(left))
+        matches.set(sha1, {
+          sourceId: v.sourceId,
+          projectId: v.projectId,
+          versionId: v.versionId,
+          pageUrl: source.pageUrl(v.projectId, "resourcepack"),
+        });
+    }
+    const found = await packs.recordIdentification(pending, matches);
+    log.info(`identified ${found} of ${pending.length} resource packs`);
+    return true;
   }
 
   // ---- Mod validation (Scope 05) ----
@@ -501,6 +615,16 @@ export function createLauncherService(dataDir: string, logger: Logger) {
   // Old per-version game folders become profiles, then every profile's worlds are synced.
   const ready: Promise<void> = (async () => {
     try {
+      // Games still running from before a restart: their profiles stay untouched.
+      for (const { startedAt: at, ...game } of await runningFile.restore()) {
+        running.set(game.launchId, game);
+        startedAt.set(game.launchId, at);
+        watchRestored(game);
+        log.info(
+          `profile ${game.profileId} is still playing (pid ${game.pid})`,
+        );
+      }
+      saveRunning(); // forget the ones that ended meanwhile
       const created = await serialFs(() =>
         migrateLegacyGames({ paths, profiles, logger: log }),
       );
@@ -524,8 +648,14 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     return profile;
   }
 
+  /** A game of this profile is running, or one is being started. */
+  const isBusy = (profileId: string): boolean =>
+    isRunning(profileId) ||
+    [...starting].some((key) => key.startsWith(`${profileId}:`));
+
+  /** Refuse changing a profile's files while a game of it runs or is starting. */
   function assertNotRunning(profileId: string): void {
-    if (isRunning(profileId))
+    if (isBusy(profileId))
       throw new AppError("GAME_RUNNING", "Close the game first.");
   }
 
@@ -647,6 +777,79 @@ export function createLauncherService(dataDir: string, logger: Logger) {
         "ACCOUNT_PLAYING",
         `${account.username} is already playing this profile.`,
       );
+  }
+
+  /** A game closed: forget it, and once a profile's last game is gone, sync and back up. */
+  function gameExited(
+    game: RunningGame,
+    code: number | null,
+    crashed: boolean,
+  ): void {
+    running.delete(game.launchId);
+    startedAt.delete(game.launchId);
+    saveRunning();
+    log.info(
+      `${game.versionId} exited with code ${String(code)}${crashed ? " (crashed)" : ""}`,
+    );
+    broadcast("game:exit", {
+      launchId: game.launchId,
+      profileId: game.profileId,
+      versionId: game.versionId,
+      code,
+      crashed,
+    });
+    // The last game of this profile closed: pick up worlds created or deleted in game.
+    if (!isRunning(game.profileId)) {
+      void sync([game.profileId])
+        .catch((err: unknown) => {
+          log.error("world sync after exit failed", err);
+        })
+        .then(() => autoBackup(game.profileId, "afterExit"))
+        .catch((err: unknown) => {
+          log.error("backup after the game closed failed", err);
+        })
+        .finally(changed);
+    }
+  }
+
+  /** A game from before a launcher restart sends no exit event: poll its process. */
+  function watchRestored(game: RunningGame): void {
+    const timer = setInterval(() => {
+      if (processAlive(game.pid)) return;
+      clearInterval(timer);
+      gameExited(game, null, false);
+    }, 2000);
+    timer.unref();
+  }
+
+  /** Turn library packs on in a profile, at the top (highest priority). */
+  async function activatePacks(
+    profile: Profile,
+    sha1s: readonly string[],
+  ): Promise<void> {
+    const view = await profilePacks.view(profile, { running: false });
+    if (view.locked === "unsupported")
+      throw new AppError(
+        "PACKS_UNSUPPORTED",
+        "This version uses texture packs.",
+      );
+    if (view.locked)
+      throw new AppError(
+        "PACKS_VERSION_UNKNOWN",
+        "Install or launch this profile once first.",
+      );
+    const current: ActivePackRef[] = view.active.map((row) =>
+      row.kind === "builtin" ? row : row.pack.ref,
+    );
+    const fresh = sha1s.filter(
+      (sha1) => !current.some((r) => r.kind === "library" && r.sha1 === sha1),
+    );
+    await serialFs(() =>
+      profilePacks.setActive(profile, [
+        ...fresh.map((sha1) => ({ kind: "library" as const, sha1 })),
+        ...current,
+      ]),
+    );
   }
 
   /** Profiles that play each installed version, directly or through a loader install on it. */
@@ -830,6 +1033,12 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       const sha1s = (await mods.enabledMods(id)).map((m) => m.sha1);
       if (sha1s.length > 0)
         await serialFs(() => mods.enableAll(profile.id, sha1s));
+      // The same active resource packs, in the same order (only those lines of options.txt).
+      await serialFs(() => profilePacks.copyActive(src, profile)).catch(
+        (err: unknown) => {
+          log.warn(`copying the resource packs of ${id} failed`, err);
+        },
+      );
       if (copyWorlds) {
         try {
           const count = await serialFs(() =>
@@ -840,6 +1049,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
           // Nothing half-made: the new profile goes again, the originals were only read.
           await serialFs(async () => {
             await mods.forgetProfile(profile.id);
+            await packs.forgetProfile(profile.id);
             await removeTree(paths.gameDir(profile.id)).catch(() => undefined);
             await profiles.remove(profile.id);
           });
@@ -853,10 +1063,23 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     },
 
     async updateProfile(id: string, patch: unknown): Promise<Profile> {
-      await requireProfile(id);
+      const before = await requireProfile(id);
       assertNotRunning(id);
       validateLoader((patch as { loader?: unknown } | null)?.loader);
       const profile = await profiles.update(id, patch);
+      if (profile.gameVersion !== before.gameVersion) {
+        // Across 1.13 the game names resource packs differently in options.txt.
+        const [from, to] = await Promise.all([
+          profilePacks.dialectOf(before),
+          profilePacks.dialectOf(profile),
+        ]);
+        if (from && to && from !== to)
+          await serialFs(() => profilePacks.translate(profile, from, to)).catch(
+            (err: unknown) => {
+              log.warn(`updating ${id}'s resource packs failed`, err);
+            },
+          );
+      }
       changed();
       return profile;
     },
@@ -895,6 +1118,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
         // Its mods are hard links: the library keeps them.
         await removeTree(paths.gameDir(id));
         await mods.forgetProfile(id);
+        await packs.forgetProfile(id);
       });
       if (moveTo) await sync([moveTo]);
       const current = await settings.load();
@@ -905,11 +1129,15 @@ export function createLauncherService(dataDir: string, logger: Logger) {
 
     async openProfileFolder(
       id: string,
-      folder: "game" | "mods" = "game",
+      folder: "game" | "mods" | "resourcepacks" = "game",
     ): Promise<void> {
       await requireProfile(id);
       await openFolder(
-        folder === "mods" ? paths.modsDir(id) : paths.gameDir(id),
+        folder === "mods"
+          ? paths.modsDir(id)
+          : folder === "resourcepacks"
+            ? paths.resourcePacksDir(id)
+            : paths.gameDir(id),
       );
     },
 
@@ -1131,6 +1359,220 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       if (result.added > 0) scheduleIdentify();
       changed();
       return result;
+    },
+
+    // ---- Resource packs (Scope 08) ----
+
+    async packLibrary(): Promise<LibraryPack[]> {
+      await ready;
+      await sync();
+      return packs.list();
+    },
+
+    packIcon: (sha1: string) => packs.icon(sha1),
+
+    async packFolderIcon(
+      profileId: string,
+      name: string,
+    ): Promise<string | null> {
+      await requireProfile(profileId);
+      if (typeof name !== "string") return null;
+      return profilePacks.folderIcon(profileId, name).catch(() => null);
+    },
+
+    /** A profile's Resource packs tab: active packs in order, the rest, and non-packs. */
+    async profilePacks(profileId: string): Promise<ProfilePacks> {
+      const profile = await requireProfile(profileId);
+      const busy = isBusy(profileId);
+      if (!busy) await sync([profileId]);
+      return profilePacks.view(profile, { running: busy });
+    },
+
+    /**
+     * Save a profile's active packs (highest priority first) to its options.txt.
+     * Never while a game of it runs or starts: the game would overwrite it.
+     */
+    async setActivePacks(profileId: string, order: unknown): Promise<void> {
+      const profile = await requireProfile(profileId);
+      assertNotRunning(profileId);
+      const parsed = activePacksSchema.safeParse(order);
+      if (!parsed.success)
+        throw new AppError("PACK_NOT_FOUND", "That pack list isn't valid.");
+      await serialFs(() => profilePacks.setActive(profile, parsed.data));
+      changed();
+    },
+
+    /**
+     * Add pack zips to the library; with a profile, also turn them on there (at the
+     * top). Paths come from a file picker or drag and drop: only existing `.zip` files.
+     */
+    async addPacks(
+      files: readonly unknown[],
+      profileId?: string,
+    ): Promise<AddPacksResult> {
+      await ready;
+      const profile = profileId ? await requireProfile(profileId) : undefined;
+      const result: AddPacksResult = { added: 0, existing: 0, failed: [] };
+      const valid: string[] = [];
+      for (const path of files) {
+        const fileName = typeof path === "string" ? basename(path) : "?";
+        try {
+          if (
+            typeof path !== "string" ||
+            !isAbsolute(path) ||
+            !/\.zip$/i.test(path) ||
+            !(await stat(path)).isFile()
+          )
+            throw new AppError("NOT_A_PACK", "Not a pack zip.");
+          valid.push(path);
+        } catch {
+          result.failed.push({ fileName, code: "NOT_A_PACK" });
+        }
+      }
+      const added = await serialFs(() => packs.add(valid));
+      const stored: string[] = [];
+      for (const item of added) {
+        if (!item.ok) {
+          result.failed.push({ fileName: item.fileName, code: item.code });
+          continue;
+        }
+        if (item.added) result.added++;
+        else result.existing++;
+        stored.push(item.sha1);
+      }
+      if (profile && stored.length > 0) {
+        if (isBusy(profile.id)) {
+          for (const item of added)
+            if (item.ok)
+              result.failed.push({
+                fileName: item.fileName,
+                code: "GAME_RUNNING",
+              });
+        } else {
+          try {
+            await activatePacks(profile, stored);
+          } catch (err) {
+            const code = err instanceof AppError ? err.code : "INTERNAL";
+            for (const item of added)
+              if (item.ok)
+                result.failed.push({ fileName: item.fileName, code });
+          }
+        }
+      }
+      changed();
+      return result;
+    },
+
+    /** Delete a pack from the library and every profile (`force` when profiles have it). */
+    async removePack(sha1: string, force: boolean): Promise<void> {
+      await ready;
+      const users = await packs.usedBy(sha1);
+      if (users.length > 0 && !force)
+        throw new AppError("PACK_IN_USE", "Profiles still use this pack.");
+      // A running game keeps its active packs open (locked on Windows).
+      for (const id of users) assertNotRunning(id);
+      await serialFs(() => packs.remove(sha1));
+      changed();
+    },
+
+    async removeUnusedPacks(): Promise<number> {
+      await ready;
+      await sync();
+      const count = await serialFs(() => packs.removeUnused());
+      changed();
+      return count;
+    },
+
+    /** Packs on the mod sites matching `query`, for the profile's Minecraft version if given. */
+    async searchPacks(
+      query: string,
+      profileId: string | undefined,
+      offset: number,
+    ): Promise<PackSearchResult> {
+      const profile = profileId ? await requireProfile(profileId) : undefined;
+      const source = sources.sources[0];
+      if (!source) return { hits: [], total: 0 };
+      const page = await source.search(typeof query === "string" ? query : "", {
+        projectType: "resourcepack",
+        ...(profile && { gameVersion: profile.gameVersion }),
+        offset: Number.isFinite(offset) ? offset : 0,
+        limit: 20,
+      });
+      return {
+        total: page.total,
+        hits: page.hits.map((p) => ({
+          sourceId: p.sourceId,
+          projectId: p.projectId,
+          slug: p.slug,
+          name: p.name,
+          author: p.author,
+          pageUrl: p.pageUrl,
+          ...(p.description && { description: p.description }),
+          ...(p.iconUrl && { iconUrl: p.iconUrl }),
+          ...(p.downloads !== undefined && { downloads: p.downloads }),
+        })),
+      };
+    },
+
+    /** Download a pack into the library; with a profile, turn it on there (at the top). */
+    async installPack(
+      sourceId: string,
+      projectId: string,
+      profileId?: string,
+    ): Promise<PackInstallResult> {
+      await ready;
+      const profile = profileId ? await requireProfile(profileId) : undefined;
+      if (packDownloads.has(projectId))
+        throw new AppError("BUSY", "This pack is already downloading.");
+      const controller = new AbortController();
+      packDownloads.set(projectId, controller);
+      try {
+        const result = await downloadPack(
+          { downloader, paths, library: packs, source: sources.get(sourceId) },
+          projectId,
+          {
+            ...(profile && { gameVersion: profile.gameVersion }),
+            signal: controller.signal,
+            onProgress: (p) => {
+              broadcast("resourcePacks:download", {
+                projectId,
+                bytes: p.bytes,
+                totalBytes: p.totalBytes,
+              });
+            },
+          },
+        );
+        let activated = false;
+        if (profile && !isBusy(profile.id)) {
+          activated = await activatePacks(profile, [result.sha1]).then(
+            () => true,
+            () => false,
+          );
+        }
+        const meta = await packs.meta(result.sha1);
+        const format = profile ? await gameFormat(profile) : undefined;
+        changed();
+        return {
+          sha1: result.sha1,
+          name: (meta?.fileName ?? result.version.file.fileName).replace(
+            /\.zip$/i,
+            "",
+          ),
+          versionNumber: result.version.versionNumber,
+          compat: packCompat(meta?.range, format?.resource),
+          otherVersion: result.otherVersion,
+          activated,
+          needs: result.needs,
+        };
+      } finally {
+        packDownloads.delete(projectId);
+      }
+    },
+
+    cancelPackInstall(projectId: string): boolean {
+      const controller = packDownloads.get(projectId);
+      controller?.abort();
+      return controller !== undefined;
     },
 
     /**
@@ -1708,6 +2150,8 @@ export function createLauncherService(dataDir: string, logger: Logger) {
           pid: handle.pid,
         };
         running.set(game.launchId, game);
+        startedAt.set(game.launchId, Date.now());
+        saveRunning();
         handle.onLog((lines) => {
           broadcast("game:log", {
             launchId: game.launchId,
@@ -1716,29 +2160,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
           });
         });
         handle.onExit(({ code, crashed }) => {
-          running.delete(game.launchId);
-          log.info(
-            `${versionId} exited with code ${String(code)}${crashed ? " (crashed)" : ""}`,
-          );
-          broadcast("game:exit", {
-            launchId: game.launchId,
-            profileId: profile.id,
-            versionId,
-            code,
-            crashed,
-          });
-          // The last game of this profile closed: pick up worlds created or deleted in game.
-          if (!isRunning(profile.id)) {
-            void sync([profile.id])
-              .catch((err: unknown) => {
-                log.error("world sync after exit failed", err);
-              })
-              .then(() => autoBackup(profile.id, "afterExit"))
-              .catch((err: unknown) => {
-                log.error("backup after the game closed failed", err);
-              })
-              .finally(changed);
-          }
+          gameExited(game, code, crashed);
         });
         broadcast("game:started", game);
         await profiles.touchLastPlayed(profile.id);

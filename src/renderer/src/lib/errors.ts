@@ -44,6 +44,14 @@ const KNOWN = [
   "BACKUP_NOT_FOUND",
   "BACKUP_DAMAGED",
   "BACKUP_FAILED",
+  "NOT_A_PACK",
+  "PACK_NESTED",
+  "PACK_NOT_FOUND",
+  "PACK_IN_USE",
+  "PACKS_VERSION_UNKNOWN",
+  "PACKS_UNSUPPORTED",
+  "OPTIONS_UNWRITABLE",
+  "PACK_NO_VERSION",
 ] as const;
 
 /** A user-facing message for an error code from the main process. */
