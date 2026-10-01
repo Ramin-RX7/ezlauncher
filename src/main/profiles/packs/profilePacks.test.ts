@@ -105,7 +105,9 @@ describe("pack library", () => {
   it("adopts pack zips dropped into resourcepacks/, but no other zips", async () => {
     await mkdir(paths.resourcePacksDir("p"), { recursive: true });
     const dropped = join(paths.resourcePacksDir("p"), "Dropped.zip");
-    await writeFile(dropped, packZip("dropped"));
+    // Built once: a zip holds the time it was made, so a second build can differ.
+    const bytes = packZip("dropped");
+    await writeFile(dropped, bytes);
     await writeFile(
       join(paths.resourcePacksDir("p"), "Photos.zip"),
       zipSync({ "a.png": strToU8("x") }),
@@ -113,10 +115,7 @@ describe("pack library", () => {
     const { adopted } = await syncAll();
     expect(adopted).toBe(1);
     expect(
-      await sameFile(
-        dropped,
-        paths.resourcePackStoreFile(sha1(packZip("dropped"))),
-      ),
+      await sameFile(dropped, paths.resourcePackStoreFile(sha1(bytes))),
     ).toBe(true);
     expect((await packs().view(P, { running: false })).notPacks).toEqual([
       { name: "Photos.zip", reason: "invalid" },

@@ -64,6 +64,7 @@ export function createPaths(dataDir: string) {
   const worlds = join(dataDir, "worlds");
   const modsStore = join(dataDir, "mods-store");
   const packsStore = join(dataDir, "resourcepacks-store");
+  const shadersStore = join(dataDir, "shaderpacks-store");
   const backups = join(dataDir, "backups");
 
   return {
@@ -114,6 +115,25 @@ export function createPaths(dataDir: string) {
     /** A copy of `options.txt` from before the launcher first changed it. */
     optionsBackup: (profileId: string) =>
       join(profiles, safeId(profileId), "options.txt.ezl-bak"),
+    shaderPacksDir: (profileId: string) =>
+      join(profiles, safeId(profileId), "shaderpacks"),
+    /** An unzipped shader pack folder in a profile's `shaderpacks/`. */
+    folderShaderDir: (profileId: string, name: string) =>
+      join(profiles, safeId(profileId), "shaderpacks", safeFolderName(name)),
+    /** Iris's options for one shader pack: `shaderpacks/<entry>.txt` (`Foo.zip.txt`). */
+    shaderOptionsFile: (profileId: string, entry: string) =>
+      join(
+        profiles,
+        safeId(profileId),
+        "shaderpacks",
+        safeFolderName(`${entry}.txt`),
+      ),
+    /** Iris's settings (only the active shader lines are ever changed). */
+    irisConfigFile: (profileId: string) =>
+      join(profiles, safeId(profileId), "config", "iris.properties"),
+    /** A copy of `iris.properties` from before the launcher first changed it. */
+    irisConfigBackup: (profileId: string) =>
+      join(profiles, safeId(profileId), "config", "iris.properties.ezl-bak"),
     /** A world's link inside a profile's `saves/`. */
     saveLink: (profileId: string, worldId: string) =>
       join(profiles, safeId(profileId), "saves", safeFolderName(worldId)),
@@ -139,6 +159,12 @@ export function createPaths(dataDir: string) {
       join(packsStore, `${sha1Name(sha1)}.zip`),
     resourcePackIcon: (sha1: string) =>
       join(packsStore, "icons", `${sha1Name(sha1)}.png`),
+
+    shaderPacksStoreDir: shadersStore,
+    shaderPackStoreFile: (sha1: string) =>
+      join(shadersStore, `${sha1Name(sha1)}.zip`),
+    shaderPackIcon: (sha1: string) =>
+      join(shadersStore, "icons", `${sha1Name(sha1)}.png`),
 
     /** Scope 01–02 game folders (`games/<versionId>`); only read to migrate them into profiles. */
     legacyGamesDir: join(dataDir, "games"),

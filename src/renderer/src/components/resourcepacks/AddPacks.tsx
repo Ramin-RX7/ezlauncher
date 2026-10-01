@@ -6,15 +6,35 @@ import { invoke } from "../../lib/api";
 import { errorMessage } from "../../lib/errors";
 import { FileDropZone } from "../ui/FileDropZone";
 
+/** Which pack library: resource packs or shader packs. */
+export type PackKind = "resourcePacks" | "shaders";
+
+function addZips(
+  kind: PackKind,
+  paths: string[] | "picker",
+  target: { profileId?: string },
+): Promise<AddPacksResult> {
+  if (kind === "shaders")
+    return paths === "picker"
+      ? invoke("shaders:addFromPicker", target)
+      : invoke("shaders:addFiles", { paths, ...target });
+  return paths === "picker"
+    ? invoke("resourcePacks:addFromPicker", target)
+    : invoke("resourcePacks:addFiles", { paths, ...target });
+}
+
 /**
- * An area that takes dropped resource pack `.zip` files, with an add button (file
- * picker). With a profile, added packs are also turned on there, at the top.
+ * An area that takes dropped pack `.zip` files, with an add button (file picker).
+ * With a profile, added resource packs are also turned on there, at the top, and
+ * added shaders are put in it.
  */
 export function AddPacks({
+  kind = "resourcePacks",
   profileId,
   actions,
   children,
 }: {
+  kind?: PackKind;
   profileId?: string;
   actions?: ReactNode;
   children: ReactNode;
@@ -24,12 +44,9 @@ export function AddPacks({
   const target = profileId ? { profileId } : {};
 
   const add = useMutation({
-    mutationFn: (paths: string[] | "picker"): Promise<AddPacksResult> =>
-      paths === "picker"
-        ? invoke("resourcePacks:addFromPicker", target)
-        : invoke("resourcePacks:addFiles", { paths, ...target }),
+    mutationFn: (paths: string[] | "picker") => addZips(kind, paths, target),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["resourcePacks"] });
+      void queryClient.invalidateQueries({ queryKey: [kind] });
     },
   });
   const result = add.data;
@@ -43,19 +60,19 @@ export function AddPacks({
         add.mutate(paths);
       }}
       pending={add.isPending}
-      addLabel={t("resourcePacks.add")}
-      dropHint={t("resourcePacks.drop")}
+      addLabel={t(`${kind}.add`)}
+      dropHint={t(`${kind}.drop`)}
       actions={actions}
       status={
         <>
           {result && !nothing && (
             <p className="text-sm text-muted" aria-live="polite">
-              {t("resourcePacks.added", {
+              {t(`${kind}.added`, {
                 added: result.added,
                 existing: result.existing,
               })}
               {result.failed.length > 0 &&
-                ` ${t("resourcePacks.notAdded", {
+                ` ${t(`${kind}.notAdded`, {
                   files: result.failed
                     .map((f) => `${f.fileName} (${errorMessage(t, f)})`)
                     .join(", "),

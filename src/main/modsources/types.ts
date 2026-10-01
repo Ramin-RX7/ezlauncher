@@ -5,7 +5,7 @@
  */
 
 /** The kinds of projects the launcher gets from a site. */
-export type ProjectType = "mod" | "resourcepack";
+export type ProjectType = "mod" | "resourcepack" | "shader";
 
 /** What a profile can run: its Minecraft version and the loaders it loads mods for. */
 export interface ModTarget {
@@ -32,6 +32,8 @@ export interface RemoteProject {
   projectType?: string;
   /** A one-line summary, when the site gives one. */
   description?: string;
+  /** The loaders its versions are tagged with, when a search says (shaders: `iris`, …). */
+  loaders?: string[];
 }
 
 export interface RemoteFile {

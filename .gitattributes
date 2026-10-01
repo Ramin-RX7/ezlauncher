@@ -4,3 +4,4 @@
 *.icns binary
 # Game-written fixtures keep their exact bytes (CRLF included).
 src/main/profiles/testing/options-*.txt -text
+src/main/profiles/testing/iris-*.properties -text

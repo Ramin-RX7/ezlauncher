@@ -195,6 +195,51 @@ describe("findExact", () => {
 const facetsOf = (url: string): unknown =>
   JSON.parse(decodeURIComponent(new URL(url).searchParams.get("facets") ?? ""));
 
+describe("shader packs", () => {
+  it("searches every shader and says which loaders each is tagged for", async () => {
+    const { source, seen } = fakeModrinth({
+      "/search": {
+        json: {
+          hits: [
+            {
+              project_id: "C1",
+              slug: "complementary-reimagined",
+              title: "Complementary Reimagined",
+              project_type: "shader",
+              categories: ["iris", "optifine", "realistic"],
+            },
+            {
+              project_id: "O1",
+              slug: "old-pack",
+              title: "Old Pack",
+              project_type: "shader",
+              categories: ["optifine", "cartoon"],
+            },
+          ],
+          total_hits: 2,
+        },
+      },
+    });
+    const page = await source.search("", {
+      projectType: "shader",
+      gameVersion: "26.3",
+      offset: 0,
+      limit: 20,
+    });
+    expect(page.hits.map((h) => h.loaders)).toEqual([
+      ["iris", "optifine"],
+      ["optifine"],
+    ]);
+    expect(page.hits[0]?.pageUrl).toBe(
+      "https://modrinth.com/shader/complementary-reimagined",
+    );
+    expect(facetsOf(seen[0]!.url)).toEqual([
+      ["project_type:shader"],
+      ["versions:26.3"],
+    ]);
+  });
+});
+
 describe("resource packs", () => {
   it("searches one kind of project for a version, a page at a time", async () => {
     const { source, seen } = fakeModrinth({

@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDownloader } from "../minecraft/downloader";
 import { createPaths, type Paths } from "../minecraft/paths";
 import { createFakeFetch, sha1 } from "../minecraft/testing/fakeFetch";
-import { createPackLibrary } from "../profiles/packs/library";
-import { downloadPack } from "./downloadPack";
+import { createPackLibrary, shaderPackKind } from "../profiles/packs/library";
+import { downloadPack, SHADER_DOWNLOAD } from "./downloadPack";
 import { createFakeModSource } from "./testing/fakeModSource";
 
 let dir: string;
@@ -137,5 +137,109 @@ describe("downloadPack", () => {
     await expect(downloadPack(deps, "emf")).rejects.toMatchObject({
       code: "PACK_NO_VERSION",
     });
+  });
+});
+
+describe("downloadPack for shaders", () => {
+  const shader = (marker: string) =>
+    zipSync({ "shaders/final.fsh": strToU8(`// ${marker}`) });
+  const irisNow = shader("iris 26.3");
+  const optifineNow = shader("optifine 26.3");
+  const irisOld = shader("iris 1.21");
+
+  function shaderSetup() {
+    const files = createFakeFetch({
+      "https://fake/iris-now.zip": irisNow,
+      "https://fake/optifine-now.zip": optifineNow,
+      "https://fake/iris-old.zip": irisOld,
+    });
+    const v = (
+      projectId: string,
+      versionId: string,
+      loaders: string[],
+      gameVersions: string[],
+      bytes: Uint8Array,
+      url: string,
+    ) => ({
+      projectId,
+      versionId,
+      loaders,
+      gameVersions,
+      sha1: sha1(bytes),
+      size: bytes.length,
+      url,
+      fileName: `${versionId}.zip`,
+    });
+    const source = createFakeModSource(
+      [
+        { projectId: "both", name: "Both", projectType: "shader" },
+        { projectId: "of", name: "OptiFine only", projectType: "shader" },
+        { projectId: "old", name: "Old", projectType: "shader" },
+      ],
+      [
+        // Newest first: the OptiFine-only build is newer than the Iris one.
+        v(
+          "both",
+          "b2",
+          ["optifine"],
+          ["26.3"],
+          optifineNow,
+          "https://fake/optifine-now.zip",
+        ),
+        v(
+          "both",
+          "b1",
+          ["iris"],
+          ["26.3"],
+          irisNow,
+          "https://fake/iris-now.zip",
+        ),
+        v(
+          "of",
+          "o1",
+          ["optifine"],
+          ["26.3"],
+          optifineNow,
+          "https://fake/optifine-now.zip",
+        ),
+        v(
+          "old",
+          "x1",
+          ["iris"],
+          ["1.21"],
+          irisOld,
+          "https://fake/iris-old.zip",
+        ),
+      ],
+    );
+    const downloader = createDownloader({ fetch: files.fetch, userAgent: "t" });
+    const library = createPackLibrary({ paths, kind: shaderPackKind(paths) });
+    return { deps: { downloader, library, source }, library };
+  }
+
+  it("prefers a version tagged for Iris for the Minecraft version", async () => {
+    const { deps, library } = shaderSetup();
+    const result = await downloadPack(deps, "both", {
+      gameVersion: "26.3",
+      kind: SHADER_DOWNLOAD,
+    });
+    expect(result).toMatchObject({ sha1: sha1(irisNow), otherVersion: false });
+    expect(await library.list()).toEqual([
+      expect.objectContaining({ name: "b1", loaders: ["iris"] }),
+    ]);
+  });
+
+  it("then any loader for the version, then Iris for another version", async () => {
+    const { deps } = shaderSetup();
+    const of = await downloadPack(deps, "of", {
+      gameVersion: "26.3",
+      kind: SHADER_DOWNLOAD,
+    });
+    expect(of.version.loaders).toEqual(["optifine"]);
+    const old = await downloadPack(deps, "old", {
+      gameVersion: "26.3",
+      kind: SHADER_DOWNLOAD,
+    });
+    expect(old).toMatchObject({ sha1: sha1(irisOld), otherVersion: true });
   });
 });

@@ -6,6 +6,7 @@ import { registerModsIpc } from "./mods";
 import { registerProfilesIpc } from "./profiles";
 import { registerResourcePacksIpc } from "./resourcePacks";
 import { registerSetupIpc } from "./setup";
+import { registerShadersIpc } from "./shaders";
 
 /** Register every IPC handler. Each feature adds its own `register…Ipc()` here. */
 export function registerIpc(): void {
@@ -15,6 +16,7 @@ export function registerIpc(): void {
   registerProfilesIpc();
   registerModsIpc();
   registerResourcePacksIpc();
+  registerShadersIpc();
   registerJavaIpc();
   registerBackupsIpc();
 }

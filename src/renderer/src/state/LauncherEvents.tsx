@@ -50,6 +50,7 @@ export function LauncherEvents() {
     void queryClient.invalidateQueries({ queryKey: ["versions"] });
     void queryClient.invalidateQueries({ queryKey: ["mods"] });
     void queryClient.invalidateQueries({ queryKey: ["resourcePacks"] });
+    void queryClient.invalidateQueries({ queryKey: ["shaders"] });
   });
   return null;
 }

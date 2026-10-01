@@ -58,6 +58,19 @@ describe("LibraryPage", () => {
     expect(screen.getByText("Unused")).toBeInTheDocument();
   });
 
+  it("has a shader library tab", async () => {
+    const api = mockApi({
+      "shaders:library": () => [
+        { ...packs[0]!, name: "Complementary", description: "" },
+      ],
+      "profiles:list": () => [profile()],
+    });
+    renderPage("/mods?tab=shaders");
+    expect(await screen.findByText("Shader library")).toBeInTheDocument();
+    expect(await screen.findByText("Complementary")).toBeInTheDocument();
+    expect(api.invoke).toHaveBeenCalledWith("shaders:library");
+  });
+
   it("asks before removing unused packs", async () => {
     const api = mockApi({
       "resourcePacks:library": () => packs,

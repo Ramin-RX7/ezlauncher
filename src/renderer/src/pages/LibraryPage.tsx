@@ -4,15 +4,17 @@ import { PackLibraryTab } from "../components/resourcepacks/PackLibraryTab";
 import { TabBar } from "../components/ui/Tabs";
 import { ModLibraryPage } from "./ModLibraryPage";
 
-type Tab = "mods" | "resourcePacks";
-const TABS: readonly Tab[] = ["mods", "resourcePacks"];
+type Tab = "mods" | "resourcePacks" | "shaders";
+const TABS: readonly Tab[] = ["mods", "resourcePacks", "shaders"];
+const isTab = (value: string | null): value is Tab =>
+  TABS.some((tab) => tab === value);
 
-/** The shared libraries: mods and resource packs, each stored once for every profile. */
+/** The shared libraries: mods, resource packs and shaders, each stored once for every profile. */
 export function LibraryPage() {
   const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
-  const tab: Tab =
-    params.get("tab") === "resourcePacks" ? "resourcePacks" : "mods";
+  const requested = params.get("tab");
+  const tab: Tab = isTab(requested) ? requested : "mods";
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       <TabBar
@@ -27,7 +29,11 @@ export function LibraryPage() {
         }}
       />
       <div className="flex min-h-0 flex-1 flex-col">
-        {tab === "mods" ? <ModLibraryPage /> : <PackLibraryTab />}
+        {tab === "mods" ? (
+          <ModLibraryPage />
+        ) : (
+          <PackLibraryTab key={tab} kind={tab} />
+        )}
       </div>
     </div>
   );

@@ -37,10 +37,14 @@ const searchSchema = z.looseObject({
       project_type: z.string().optional(),
       icon_url: z.string().nullable().optional(),
       downloads: z.number().optional(),
+      /** Includes the loaders its versions are tagged with. */
+      categories: z.array(z.string()).optional(),
     }),
   ),
   total_hits: z.number().optional(),
 });
+/** Modrinth's loaders for shader packs (they show up among a hit's categories). */
+const SHADER_LOADER_TAGS = new Set(["iris", "optifine", "canvas", "vanilla"]);
 const dependenciesSchema = z.looseObject({
   projects: z.array(projectSchema),
 });
@@ -335,6 +339,11 @@ export function createModrinthSource({
         ...(hit.downloads !== undefined && { downloads: hit.downloads }),
         projectType: hit.project_type ?? projectType,
         pageUrl: pageUrl(hit.slug, hit.project_type ?? projectType),
+        ...(projectType === "shader" && {
+          loaders: (hit.categories ?? []).filter((c) =>
+            SHADER_LOADER_TAGS.has(c),
+          ),
+        }),
       }));
       return { hits, total: result?.total_hits ?? hits.length };
     },

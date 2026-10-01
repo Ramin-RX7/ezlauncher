@@ -9,12 +9,19 @@ import { ProfileEditor } from "../components/profiles/ProfileEditor";
 import { ProfileIcon } from "../components/profiles/ProfileIcon";
 import { WorldsTab } from "../components/profiles/WorldsTab";
 import { ResourcePacksTab } from "../components/resourcepacks/ResourcePacksTab";
+import { ShadersTab } from "../components/shaders/ShadersTab";
 import { Button } from "../components/ui/Button";
 import { TabBar } from "../components/ui/Tabs";
 import { useProfiles } from "../state/queries";
 
-type Tab = "settings" | "worlds" | "mods" | "resourcePacks";
-const TABS: readonly Tab[] = ["settings", "worlds", "mods", "resourcePacks"];
+type Tab = "settings" | "worlds" | "mods" | "resourcePacks" | "shaders";
+const TABS: readonly Tab[] = [
+  "settings",
+  "worlds",
+  "mods",
+  "resourcePacks",
+  "shaders",
+];
 
 export function ProfilePage() {
   const { t } = useTranslation();
@@ -88,6 +95,7 @@ export function ProfilePage() {
           {tab === "worlds" && <WorldsTab profile={profile} />}
           {tab === "mods" && <ModsTab profile={profile} />}
           {tab === "resourcePacks" && <ResourcePacksTab profile={profile} />}
+          {tab === "shaders" && <ShadersTab profile={profile} />}
           {duplicating && (
             <DuplicateProfileDialog
               profile={profile}

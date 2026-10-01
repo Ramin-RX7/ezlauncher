@@ -10,8 +10,11 @@ import type {
   LibraryPack,
   PackDownloadProgress,
   PackInstallResult,
+  PackRef,
   PackSearchResult,
   ProfilePacks,
+  ProfileShaders,
+  ShaderInstallResult,
   ApplyModsResult,
   BackupProgress,
   BackupResult,
@@ -121,7 +124,10 @@ export interface IpcInvokeContract {
   };
   /** Opens the profile's game folder, or its `mods/` (created if missing). */
   "profiles:openFolder": {
-    args: [id: string, folder?: "game" | "mods" | "resourcepacks"];
+    args: [
+      id: string,
+      folder?: "game" | "mods" | "resourcepacks" | "shaderpacks",
+    ];
     result: void;
   };
 
@@ -256,6 +262,53 @@ export interface IpcInvokeContract {
   };
   "resourcePacks:cancelInstall": { args: [projectId: string]; result: boolean };
 
+  /** Every library shader pack (runs pack sync first). */
+  "shaders:library": { args: []; result: LibraryPack[] };
+  /** A library shader's icon (its project's, from the site) as a `data:` URL, or null. */
+  "shaders:icon": { args: [sha1: string]; result: string | null };
+  /** A profile's active shader, its shaders, the library's others, and whether it has Iris. */
+  "shaders:profile": { args: [profileId: string]; result: ProfileShaders };
+  /** Makes a shader active in a profile, or turns shaders off (`null`). Fails with `GAME_RUNNING` while it plays. */
+  "shaders:setActive": {
+    args: [options: { profileId: string; shader: PackRef | null }];
+    result: void;
+  };
+  /** Puts a library shader in a profile, or takes it out. */
+  "shaders:setInProfile": {
+    args: [options: { profileId: string; sha1: string; present: boolean }];
+    result: void;
+  };
+  /** Opens a file picker; the chosen zips are added (and put in the profile, if given). */
+  "shaders:addFromPicker": {
+    args: [options: { profileId?: string }];
+    result: AddPacksResult;
+  };
+  /** Adds dropped zips by path (and puts them in the profile, if given). */
+  "shaders:addFiles": {
+    args: [options: { paths: string[]; profileId?: string }];
+    result: AddPacksResult;
+  };
+  /** Removes a shader from the library. Fails with `SHADER_IN_USE` when profiles have it, unless `force`. */
+  "shaders:remove": {
+    args: [options: { sha1: string; force: boolean }];
+    result: void;
+  };
+  /** Removes every shader no profile has. Resolves to how many. */
+  "shaders:removeUnused": { args: []; result: number };
+  /** Searches the site for shaders (for the profile's Minecraft version, if given), 20 at a time. */
+  "shaders:search": {
+    args: [options: { query: string; profileId?: string; offset: number }];
+    result: PackSearchResult;
+  };
+  /** Downloads a shader into the library (and makes it active in the profile, if given). */
+  "shaders:install": {
+    args: [
+      options: { sourceId: string; projectId: string; profileId?: string },
+    ];
+    result: ShaderInstallResult;
+  };
+  "shaders:cancelInstall": { args: [projectId: string]; result: boolean };
+
   /** Mojang Java runtimes (installed and offered) and Java found on the computer. */
   "java:list": { args: []; result: JavaListResult };
   /** Downloads a Mojang Java runtime; progress on `java:progress`. */
@@ -334,6 +387,7 @@ export interface IpcEventContract {
   "mods:download": ModDownloadProgress;
   "mods:bulkProgress": ModBulkProgress;
   "resourcePacks:download": PackDownloadProgress;
+  "shaders:download": PackDownloadProgress;
   "java:progress": JavaInstallProgress;
   "backup:progress": BackupProgress;
   "backup:state": BackupStateEvent;
@@ -402,6 +456,18 @@ export const INVOKE_CHANNELS = [
   "resourcePacks:search",
   "resourcePacks:install",
   "resourcePacks:cancelInstall",
+  "shaders:library",
+  "shaders:icon",
+  "shaders:profile",
+  "shaders:setActive",
+  "shaders:setInProfile",
+  "shaders:addFromPicker",
+  "shaders:addFiles",
+  "shaders:remove",
+  "shaders:removeUnused",
+  "shaders:search",
+  "shaders:install",
+  "shaders:cancelInstall",
   "java:list",
   "backups:create",
   "backups:cancel",
@@ -434,6 +500,7 @@ export const EVENT_CHANNELS = [
   "mods:download",
   "mods:bulkProgress",
   "resourcePacks:download",
+  "shaders:download",
   "java:progress",
   "backup:progress",
   "backup:state",

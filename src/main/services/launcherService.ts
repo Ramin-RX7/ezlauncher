@@ -9,8 +9,11 @@ import type {
   AddPacksResult,
   LibraryPack,
   PackInstallResult,
+  PackRef,
   PackSearchResult,
   ProfilePacks,
+  ProfileShaders,
+  ShaderInstallResult,
   BackupResult,
   BackupSummary,
   WorldBackup,
@@ -100,7 +103,7 @@ import {
   type BackupMoment,
 } from "../profiles/backups";
 import { downloadPlan, storeVersions } from "../modsources/downloadMods";
-import { downloadPack } from "../modsources/downloadPack";
+import { downloadPack, SHADER_DOWNLOAD } from "../modsources/downloadPack";
 import { packCompat } from "../profiles/packs/packMeta";
 import { resolveBulk } from "../modsources/bulkFetch";
 import { createModSourceRegistry } from "../modsources/registry";
@@ -113,8 +116,16 @@ import { isLink, removeTree } from "../profiles/links";
 import { createModLibrary, type ModSourceRef } from "../profiles/mods";
 import {
   createPackLibrary,
+  shaderPackKind,
+  type PackLibrary,
   type PackSourceRef,
 } from "../profiles/packs/library";
+import {
+  createProfileShaders,
+  shaderRefSchema,
+} from "../profiles/packs/profileShaders";
+import type { ReconcileDiff } from "../profiles/linkedStore";
+import type { ProjectType } from "../modsources/types";
 import { readGameFormat, type GameFormat } from "../profiles/packs/packFormat";
 import {
   activePacksSchema,
@@ -196,6 +207,16 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     gameFormat,
     logger: log,
   });
+  const shaders = createPackLibrary({
+    paths,
+    kind: shaderPackKind(paths),
+    logger: log,
+  });
+  const profileShaders = createProfileShaders({
+    paths,
+    library: shaders,
+    logger: log,
+  });
   const patchNotes = createPatchNotes({ paths, downloader });
   const sources = createModSourceRegistry({
     fetch: (url, init) => net.fetch(url, init),
@@ -218,6 +239,8 @@ export function createLauncherService(dataDir: string, logger: Logger) {
   let bulk: AbortController | undefined;
   /** Resource pack downloads in progress, by project id. */
   const packDownloads = new Map<string, AbortController>();
+  /** Shader downloads in progress, by project id. */
+  const shaderDownloads = new Map<string, AbortController>();
   const EMPTY_INPUT: ValidationInput = {
     gameVersion: "",
     loader: null,
@@ -277,29 +300,39 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       for (const u of result.unlinked)
         log.warn(`world ${u.worldId} of ${u.profileId} isn't linked`);
       if ((await mods.sync(options)) > 0) scheduleIdentify();
-      await syncPacks(options);
+      await syncPackKind(options, packs, paths.resourcePacksDir, (p, diff) =>
+        profilePacks.followSync(p, diff),
+      );
+      await syncPackKind(options, shaders, paths.shaderPacksDir, (p, diff) =>
+        profileShaders.followSync(p, diff),
+      );
     });
   }
 
-  /** Pack sync; an options.txt follows files renamed by hand. */
-  async function syncPacks(options: {
-    profileIds: string[];
-    only?: string[];
-    isRunning: (id: string) => boolean;
-  }): Promise<void> {
-    // A resourcepacks/ folder that is itself a link (shared with something else) is left alone.
+  /** Pack sync for one kind; the game's settings follow files renamed by hand. */
+  async function syncPackKind(
+    options: {
+      profileIds: string[];
+      only?: string[];
+      isRunning: (id: string) => boolean;
+    },
+    library: PackLibrary,
+    folderOf: (profileId: string) => string,
+    follow: (profile: Profile, diff: ReconcileDiff) => Promise<void>,
+  ): Promise<void> {
+    // A pack folder that is itself a link (shared with something else) is left alone.
     const shared = new Set<string>();
     for (const id of options.only ?? options.profileIds)
-      if (await isLink(paths.resourcePacksDir(id))) shared.add(id);
-    const { adopted, diffs } = await packs.sync({
+      if (await isLink(folderOf(id))) shared.add(id);
+    const { adopted, diffs } = await library.sync({
       ...options,
       isRunning: (id) => options.isRunning(id) || shared.has(id),
     });
     for (const [id, diff] of diffs) {
       const profile = await profiles.get(id);
       if (!profile) continue;
-      await profilePacks.followSync(profile, diff).catch((err: unknown) => {
-        log.warn(`updating ${id}'s resource packs after sync failed`, err);
+      await follow(profile, diff).catch((err: unknown) => {
+        log.warn(`updating ${id}'s packs after sync failed`, err);
       });
     }
     if (adopted > 0) scheduleIdentify();
@@ -341,11 +374,12 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     };
   }
 
-  /** Ask the mod sources about hand-added mods and resource packs. */
+  /** Ask the mod sources about hand-added mods, resource packs and shaders. */
   async function identifyPending(): Promise<void> {
     const modsAsked = await identifyPendingMods();
-    const packsAsked = await identifyPendingPacks();
-    if (modsAsked || packsAsked) changed();
+    const packsAsked = await identifyPendingPacks(packs, "resourcepack");
+    const shadersAsked = await identifyPendingPacks(shaders, "shader");
+    if (modsAsked || packsAsked || shadersAsked) changed();
   }
 
   async function identifyPendingMods(): Promise<boolean> {
@@ -372,25 +406,68 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     return true;
   }
 
-  /** The same for resource packs added by hand (Modrinth badge and page link). */
-  async function identifyPendingPacks(): Promise<boolean> {
-    const pending = await packs.pendingIdentification();
+  /**
+   * The same for packs added by hand (Modrinth badge and page link). Shaders have
+   * no icon of their own, so they get their project's.
+   */
+  async function identifyPendingPacks(
+    library: PackLibrary,
+    projectType: ProjectType,
+  ): Promise<boolean> {
+    const pending = await library.pendingIdentification();
     if (pending.length === 0) return false;
-    const matches = new Map<string, PackSourceRef>();
+    const matches = new Map<
+      string,
+      { source: PackSourceRef; loaders: string[] }
+    >();
     for (const source of sources.sources) {
       const left = pending.filter((sha1) => !matches.has(sha1));
       if (left.length === 0) break;
-      for (const [sha1, v] of await source.identifyFiles(left))
+      const found = await source.identifyFiles(left);
+      for (const [sha1, v] of found)
         matches.set(sha1, {
-          sourceId: v.sourceId,
-          projectId: v.projectId,
-          versionId: v.versionId,
-          pageUrl: source.pageUrl(v.projectId, "resourcepack"),
+          source: {
+            sourceId: v.sourceId,
+            projectId: v.projectId,
+            versionId: v.versionId,
+            pageUrl: source.pageUrl(v.projectId, projectType),
+          },
+          loaders: v.loaders,
         });
+      if (projectType === "shader" && found.size > 0) {
+        const projects = await source
+          .getProjects([
+            ...new Set([...found.values()].map((v) => v.projectId)),
+          ])
+          .catch(() => []);
+        for (const [sha1, v] of found) {
+          const iconUrl = projects.find(
+            (p) => p.projectId === v.projectId,
+          )?.iconUrl;
+          if (iconUrl) await saveIcon(library, sha1, iconUrl);
+        }
+      }
     }
-    const found = await packs.recordIdentification(pending, matches);
-    log.info(`identified ${found} of ${pending.length} resource packs`);
+    const found = await library.recordIdentification(pending, matches);
+    log.info(`identified ${found} of ${pending.length} ${projectType}s`);
     return true;
+  }
+
+  /** A pack's icon from its project's page (small images only); failures are ignored. */
+  async function saveIcon(
+    library: PackLibrary,
+    sha1: string,
+    url: string,
+  ): Promise<void> {
+    try {
+      if (!url.startsWith("https://")) return;
+      const res = await net.fetch(url);
+      if (!res.ok) return;
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      await library.setIcon(sha1, bytes);
+    } catch (err) {
+      log.info(`fetching an icon failed: ${url}`, err);
+    }
   }
 
   // ---- Mod validation (Scope 05) ----
@@ -852,6 +929,93 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     );
   }
 
+  /** Whether a profile has a mod turned on (by its id, what it provides, or one inside it). */
+  async function hasMod(profileId: string, modId: string): Promise<boolean> {
+    const matches = (m: { modId?: string; provides?: string[] }) =>
+      m.modId === modId || (m.provides?.includes(modId) ?? false);
+    return (await mods.enabledMods(profileId)).some(
+      ({ meta }) => matches(meta) || (meta.nested?.some(matches) ?? false),
+    );
+  }
+
+  /**
+   * Check picked or dropped paths (only existing `.zip` files) and add them to a
+   * pack library. Resolves to the counts and the SHA1s of the stored zips.
+   */
+  async function addZips(
+    library: PackLibrary,
+    files: readonly unknown[],
+    notPackCode: string,
+  ): Promise<{
+    result: AddPacksResult;
+    stored: string[];
+    storedNames: string[];
+  }> {
+    const result: AddPacksResult = { added: 0, existing: 0, failed: [] };
+    const valid: string[] = [];
+    for (const path of files) {
+      const fileName = typeof path === "string" ? basename(path) : "?";
+      try {
+        if (
+          typeof path !== "string" ||
+          !isAbsolute(path) ||
+          !/\.zip$/i.test(path) ||
+          !(await stat(path)).isFile()
+        )
+          throw new AppError(notPackCode, "Not a pack zip.");
+        valid.push(path);
+      } catch {
+        result.failed.push({ fileName, code: notPackCode });
+      }
+    }
+    const added = await serialFs(() => library.add(valid));
+    const stored: string[] = [];
+    const storedNames: string[] = [];
+    for (const item of added) {
+      if (!item.ok) {
+        result.failed.push({ fileName: item.fileName, code: item.code });
+        continue;
+      }
+      if (item.added) result.added++;
+      else result.existing++;
+      stored.push(item.sha1);
+      storedNames.push(item.fileName);
+    }
+    return { result, stored, storedNames };
+  }
+
+  /** One page of a kind of pack on the first mod site, for a profile's version if given. */
+  async function searchSite(
+    projectType: ProjectType,
+    query: unknown,
+    profile: Profile | undefined,
+    offset: number,
+  ): Promise<PackSearchResult> {
+    const source = sources.sources[0];
+    if (!source) return { hits: [], total: 0 };
+    const page = await source.search(typeof query === "string" ? query : "", {
+      projectType,
+      ...(profile && { gameVersion: profile.gameVersion }),
+      offset: Number.isFinite(offset) ? offset : 0,
+      limit: 20,
+    });
+    return {
+      total: page.total,
+      hits: page.hits.map((p) => ({
+        sourceId: p.sourceId,
+        projectId: p.projectId,
+        slug: p.slug,
+        name: p.name,
+        author: p.author,
+        pageUrl: p.pageUrl,
+        ...(p.description && { description: p.description }),
+        ...(p.iconUrl && { iconUrl: p.iconUrl }),
+        ...(p.downloads !== undefined && { downloads: p.downloads }),
+        ...(p.loaders && { loaders: p.loaders }),
+      })),
+    };
+  }
+
   /** Profiles that play each installed version, directly or through a loader install on it. */
   async function versionUsers(): Promise<Map<string, string[]>> {
     const installed = await listInstalledVersions(paths);
@@ -1039,6 +1203,12 @@ export function createLauncherService(dataDir: string, logger: Logger) {
           log.warn(`copying the resource packs of ${id} failed`, err);
         },
       );
+      // The same shaders with their options, and the same active one.
+      await serialFs(() => profileShaders.copyTo(src, profile)).catch(
+        (err: unknown) => {
+          log.warn(`copying the shaders of ${id} failed`, err);
+        },
+      );
       if (copyWorlds) {
         try {
           const count = await serialFs(() =>
@@ -1050,6 +1220,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
           await serialFs(async () => {
             await mods.forgetProfile(profile.id);
             await packs.forgetProfile(profile.id);
+            await shaders.forgetProfile(profile.id);
             await removeTree(paths.gameDir(profile.id)).catch(() => undefined);
             await profiles.remove(profile.id);
           });
@@ -1119,6 +1290,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
         await removeTree(paths.gameDir(id));
         await mods.forgetProfile(id);
         await packs.forgetProfile(id);
+        await shaders.forgetProfile(id);
       });
       if (moveTo) await sync([moveTo]);
       const current = await settings.load();
@@ -1129,16 +1301,16 @@ export function createLauncherService(dataDir: string, logger: Logger) {
 
     async openProfileFolder(
       id: string,
-      folder: "game" | "mods" | "resourcepacks" = "game",
+      folder: "game" | "mods" | "resourcepacks" | "shaderpacks" = "game",
     ): Promise<void> {
       await requireProfile(id);
-      await openFolder(
-        folder === "mods"
-          ? paths.modsDir(id)
-          : folder === "resourcepacks"
-            ? paths.resourcePacksDir(id)
-            : paths.gameDir(id),
-      );
+      const dirs = {
+        game: paths.gameDir,
+        mods: paths.modsDir,
+        resourcepacks: paths.resourcePacksDir,
+        shaderpacks: paths.shaderPacksDir,
+      };
+      await openFolder(dirs[folder](id));
     },
 
     // ---- Worlds ----
@@ -1412,52 +1584,21 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     ): Promise<AddPacksResult> {
       await ready;
       const profile = profileId ? await requireProfile(profileId) : undefined;
-      const result: AddPacksResult = { added: 0, existing: 0, failed: [] };
-      const valid: string[] = [];
-      for (const path of files) {
-        const fileName = typeof path === "string" ? basename(path) : "?";
-        try {
-          if (
-            typeof path !== "string" ||
-            !isAbsolute(path) ||
-            !/\.zip$/i.test(path) ||
-            !(await stat(path)).isFile()
-          )
-            throw new AppError("NOT_A_PACK", "Not a pack zip.");
-          valid.push(path);
-        } catch {
-          result.failed.push({ fileName, code: "NOT_A_PACK" });
-        }
-      }
-      const added = await serialFs(() => packs.add(valid));
-      const stored: string[] = [];
-      for (const item of added) {
-        if (!item.ok) {
-          result.failed.push({ fileName: item.fileName, code: item.code });
-          continue;
-        }
-        if (item.added) result.added++;
-        else result.existing++;
-        stored.push(item.sha1);
-      }
+      const { result, stored, storedNames } = await addZips(
+        packs,
+        files,
+        "NOT_A_PACK",
+      );
       if (profile && stored.length > 0) {
-        if (isBusy(profile.id)) {
-          for (const item of added)
-            if (item.ok)
-              result.failed.push({
-                fileName: item.fileName,
-                code: "GAME_RUNNING",
-              });
-        } else {
-          try {
-            await activatePacks(profile, stored);
-          } catch (err) {
-            const code = err instanceof AppError ? err.code : "INTERNAL";
-            for (const item of added)
-              if (item.ok)
-                result.failed.push({ fileName: item.fileName, code });
-          }
-        }
+        let code: string | undefined;
+        if (isBusy(profile.id)) code = "GAME_RUNNING";
+        else
+          await activatePacks(profile, stored).catch((err: unknown) => {
+            code = err instanceof AppError ? err.code : "INTERNAL";
+          });
+        if (code)
+          for (const fileName of storedNames)
+            result.failed.push({ fileName, code });
       }
       changed();
       return result;
@@ -1490,28 +1631,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       offset: number,
     ): Promise<PackSearchResult> {
       const profile = profileId ? await requireProfile(profileId) : undefined;
-      const source = sources.sources[0];
-      if (!source) return { hits: [], total: 0 };
-      const page = await source.search(typeof query === "string" ? query : "", {
-        projectType: "resourcepack",
-        ...(profile && { gameVersion: profile.gameVersion }),
-        offset: Number.isFinite(offset) ? offset : 0,
-        limit: 20,
-      });
-      return {
-        total: page.total,
-        hits: page.hits.map((p) => ({
-          sourceId: p.sourceId,
-          projectId: p.projectId,
-          slug: p.slug,
-          name: p.name,
-          author: p.author,
-          pageUrl: p.pageUrl,
-          ...(p.description && { description: p.description }),
-          ...(p.iconUrl && { iconUrl: p.iconUrl }),
-          ...(p.downloads !== undefined && { downloads: p.downloads }),
-        })),
-      };
+      return searchSite("resourcepack", query, profile, offset);
     },
 
     /** Download a pack into the library; with a profile, turn it on there (at the top). */
@@ -1528,7 +1648,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       packDownloads.set(projectId, controller);
       try {
         const result = await downloadPack(
-          { downloader, paths, library: packs, source: sources.get(sourceId) },
+          { downloader, library: packs, source: sources.get(sourceId) },
           projectId,
           {
             ...(profile && { gameVersion: profile.gameVersion }),
@@ -1571,6 +1691,202 @@ export function createLauncherService(dataDir: string, logger: Logger) {
 
     cancelPackInstall(projectId: string): boolean {
       const controller = packDownloads.get(projectId);
+      controller?.abort();
+      return controller !== undefined;
+    },
+
+    // ---- Shader packs ----
+
+    async shaderLibrary(): Promise<LibraryPack[]> {
+      await ready;
+      await sync();
+      return shaders.list();
+    },
+
+    shaderIcon: (sha1: string) => shaders.icon(sha1),
+
+    /** A profile's Shaders tab: the active shader, its shaders, the library's, and Iris. */
+    async profileShaders(profileId: string): Promise<ProfileShaders> {
+      const profile = await requireProfile(profileId);
+      const busy = isBusy(profileId);
+      if (!busy) await sync([profileId]);
+      return profileShaders.view(profile, {
+        running: busy,
+        hasIris: profile.loader !== null && (await hasMod(profileId, "iris")),
+      });
+    },
+
+    /**
+     * Make a shader the profile's active one, or turn shaders off (`null`). Never
+     * while a game of it runs or starts: Iris rewrites its config on start.
+     */
+    async setActiveShader(profileId: string, ref: unknown): Promise<void> {
+      const profile = await requireProfile(profileId);
+      assertNotRunning(profileId);
+      let parsed: PackRef | null = null;
+      if (ref !== null) {
+        const result = shaderRefSchema.safeParse(ref);
+        if (!result.success)
+          throw new AppError("SHADER_NOT_FOUND", "That shader isn't valid.");
+        parsed = result.data;
+      }
+      const chosen = parsed;
+      await serialFs(() => profileShaders.setActive(profile, chosen));
+      changed();
+    },
+
+    /** Put a library shader in a profile, or take it out (`present: false`). */
+    async setShaderInProfile(
+      profileId: string,
+      sha1: string,
+      present: boolean,
+    ): Promise<void> {
+      const profile = await requireProfile(profileId);
+      assertNotRunning(profileId);
+      if (typeof sha1 !== "string" || !/^[0-9a-f]{40}$/.test(sha1))
+        throw new AppError("SHADER_NOT_FOUND", "That shader isn't valid.");
+      await serialFs(() =>
+        present
+          ? profileShaders.add(profile, sha1)
+          : profileShaders.remove(profile, sha1),
+      );
+      changed();
+    },
+
+    /**
+     * Add shader zips to the library; with a profile, also put them there, and make
+     * the last one active when the profile had none.
+     */
+    async addShaders(
+      files: readonly unknown[],
+      profileId?: string,
+    ): Promise<AddPacksResult> {
+      await ready;
+      const profile = profileId ? await requireProfile(profileId) : undefined;
+      const { result, stored, storedNames } = await addZips(
+        shaders,
+        files,
+        "NOT_A_SHADER",
+      );
+      if (profile && stored.length > 0) {
+        let code: string | undefined;
+        if (isBusy(profile.id)) code = "GAME_RUNNING";
+        else
+          await serialFs(async () => {
+            for (const sha1 of stored) await profileShaders.add(profile, sha1);
+          }).catch((err: unknown) => {
+            code = err instanceof AppError ? err.code : "INTERNAL";
+          });
+        if (code)
+          for (const fileName of storedNames)
+            result.failed.push({ fileName, code });
+      }
+      changed();
+      return result;
+    },
+
+    /** Delete a shader from the library and every profile (`force` when profiles have it). */
+    async removeShader(sha1: string, force: boolean): Promise<void> {
+      await ready;
+      const users = await shaders.usedBy(sha1);
+      if (users.length > 0 && !force)
+        throw new AppError("SHADER_IN_USE", "Profiles still use this shader.");
+      for (const id of users) assertNotRunning(id);
+      await serialFs(async () => {
+        for (const id of users) {
+          const profile = await profiles.get(id);
+          if (profile) await profileShaders.remove(profile, sha1);
+        }
+        await shaders.remove(sha1);
+      });
+      changed();
+    },
+
+    async removeUnusedShaders(): Promise<number> {
+      await ready;
+      await sync();
+      const count = await serialFs(() => shaders.removeUnused());
+      changed();
+      return count;
+    },
+
+    /** Shaders on the mod sites matching `query`, for the profile's Minecraft version if given. */
+    async searchShaders(
+      query: string,
+      profileId: string | undefined,
+      offset: number,
+    ): Promise<PackSearchResult> {
+      const profile = profileId ? await requireProfile(profileId) : undefined;
+      return searchSite("shader", query, profile, offset);
+    },
+
+    /** Download a shader into the library; with a profile, make it the active one there. */
+    async installShader(
+      sourceId: string,
+      projectId: string,
+      profileId?: string,
+    ): Promise<ShaderInstallResult> {
+      await ready;
+      const profile = profileId ? await requireProfile(profileId) : undefined;
+      if (shaderDownloads.has(projectId))
+        throw new AppError("BUSY", "This shader is already downloading.");
+      const controller = new AbortController();
+      shaderDownloads.set(projectId, controller);
+      try {
+        const result = await downloadPack(
+          { downloader, library: shaders, source: sources.get(sourceId) },
+          projectId,
+          {
+            ...(profile && { gameVersion: profile.gameVersion }),
+            kind: SHADER_DOWNLOAD,
+            signal: controller.signal,
+            onProgress: (p) => {
+              broadcast("shaders:download", {
+                projectId,
+                bytes: p.bytes,
+                totalBytes: p.totalBytes,
+              });
+            },
+          },
+        );
+        if (result.project?.iconUrl)
+          await saveIcon(shaders, result.sha1, result.project.iconUrl);
+        let activated = false;
+        if (profile && profile.loader !== null && !isBusy(profile.id)) {
+          activated = await serialFs(() =>
+            profileShaders.setActive(profile, {
+              kind: "library",
+              sha1: result.sha1,
+            }),
+          ).then(
+            () => true,
+            () => false,
+          );
+        }
+        const meta = await shaders.meta(result.sha1);
+        changed();
+        return {
+          sha1: result.sha1,
+          name: (meta?.fileName ?? result.version.file.fileName).replace(
+            /\.zip$/i,
+            "",
+          ),
+          versionNumber: result.version.versionNumber,
+          otherVersion: result.otherVersion,
+          irisTagged: result.version.loaders.includes("iris"),
+          activated,
+          irisMissing:
+            profile !== undefined &&
+            profile.loader !== null &&
+            !(await hasMod(profile.id, "iris")),
+        };
+      } finally {
+        shaderDownloads.delete(projectId);
+      }
+    },
+
+    cancelShaderInstall(projectId: string): boolean {
+      const controller = shaderDownloads.get(projectId);
       controller?.abort();
       return controller !== undefined;
     },

@@ -328,6 +328,8 @@ export interface LibraryPack {
   addedAt: string;
   /** Profiles it's in (active, or turned off in game). */
   usedBy: string[];
+  /** The site's loaders for the downloaded version (shaders: `iris`, `optifine`, …). */
+  loaders?: string[];
   source?: PackSourceInfo;
   /** The mod sources were asked about it (or it came from one). */
   checked: boolean;
@@ -382,6 +384,8 @@ export interface RemotePack {
   iconUrl?: string;
   downloads?: number;
   pageUrl: string;
+  /** Shaders: what runs them (`iris`, `optifine`, `canvas`, `vanilla`). */
+  loaders?: string[];
 }
 
 export interface PackSearchResult {
@@ -415,6 +419,47 @@ export interface PackDownloadProgress {
   projectId: string;
   bytes: number;
   totalBytes: number;
+}
+
+// ---- Shader packs ----
+
+/** A shader as a profile sees it: from the library, or a folder in its `shaderpacks/`. */
+export interface ProfileShader {
+  ref: PackRef;
+  name: string;
+  hasIcon: boolean;
+  /** False when the site lists it only for other loaders (may not work with Iris). */
+  irisTagged?: boolean;
+  source?: PackSourceInfo;
+}
+
+export interface ProfileShaders {
+  /** The shader Iris uses; none when shaders are off. */
+  active?: PackRef;
+  /** Shaders in the profile's `shaderpacks/` (Iris lists them in game). */
+  inProfile: ProfileShader[];
+  /** Library shaders the profile doesn't have. */
+  available: ProfileShader[];
+  /** Files in `shaderpacks/` Iris can't use. */
+  notPacks: ProfilePacks["notPacks"];
+  /** Whether the profile has Iris, which runs shaders (needs Fabric or Quilt). */
+  iris: "present" | "missing" | "noLoader";
+  /** Why the shaders can't be changed right now. */
+  locked?: "running" | "noLoader";
+}
+
+export interface ShaderInstallResult {
+  sha1: string;
+  name: string;
+  versionNumber: string;
+  /** No version for the profile's Minecraft version: the newest one was taken. */
+  otherVersion: boolean;
+  /** The site lists the downloaded version for Iris. */
+  irisTagged: boolean;
+  /** Made the profile's shader (false without one, or while it plays). */
+  activated: boolean;
+  /** The profile has no Iris yet. */
+  irisMissing: boolean;
 }
 
 /** What to do with a deleted profile's worlds. */

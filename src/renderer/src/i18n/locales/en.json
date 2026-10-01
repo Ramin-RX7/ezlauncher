@@ -259,7 +259,14 @@
     "PACKS_VERSION_UNKNOWN": "Launch this profile once first, so the launcher knows which packs fit it.",
     "PACKS_UNSUPPORTED": "This Minecraft version uses texture packs, which the launcher doesn't manage.",
     "OPTIONS_UNWRITABLE": "The game's options.txt couldn't be saved.",
-    "PACK_NO_VERSION": "This pack has no version to download."
+    "PACK_NO_VERSION": "This pack has no version to download.",
+    "NOT_A_SHADER": "Only shader pack .zip files (with a shaders folder inside) can be added.",
+    "SHADER_NESTED": "The shader is one folder down. Use the folder inside it instead.",
+    "SHADER_NOT_FOUND": "This shader isn't in the library or the profile.",
+    "SHADER_IN_USE": "Profiles still have this shader.",
+    "SHADERS_NEED_LOADER": "Shaders need Fabric or Quilt.",
+    "IRIS_CONFIG_UNWRITABLE": "Iris's settings (config/iris.properties) couldn't be saved.",
+    "SHADER_NO_VERSION": "This shader has no version to download."
   },
   "error": {
     "title": "Something went wrong",
@@ -295,7 +302,8 @@
       "settings": "Settings",
       "worlds": "Worlds",
       "mods": "Mods",
-      "resourcePacks": "Resource packs"
+      "resourcePacks": "Resource packs",
+      "shaders": "Shaders"
     },
     "notFound": "This profile doesn't exist any more.",
     "editor": {
@@ -626,7 +634,75 @@
     "label": "Library",
     "tabs": {
       "mods": "Mods",
-      "resourcePacks": "Resource packs"
+      "resourcePacks": "Resource packs",
+      "shaders": "Shaders"
+    }
+  },
+  "shaders": {
+    "title": "Shader library",
+    "libraryHint": "Every shader is stored once here. Choose a profile's shader in its Shaders tab.",
+    "empty": "No shaders yet. Add zip files, or drop them here.",
+    "add": "Add zip files",
+    "drop": "Drop shader .zip files here to add them",
+    "added": "Added {{added}}, already in the library {{existing}}.",
+    "notAdded": "Not added or not put in the profile: {{files}}",
+    "openFolder": "Open shaderpacks folder",
+    "active": "Shader",
+    "activeHint": "Iris uses the chosen shader. In game you can also switch between this profile's shaders.",
+    "off": "Off",
+    "offHint": "No shader",
+    "noShaders": "This profile has no shaders yet. Add one from the library below, or find one on Modrinth.",
+    "available": "In the library",
+    "noAvailable": "Every shader in the library is in this profile.",
+    "addToProfile": "Add",
+    "addToProfileLabel": "Add {{name}} to this profile",
+    "removeFromProfile": "Remove {{name}} from this profile",
+    "folder": "Folder",
+    "folderHint": "An unzipped shader in this profile only",
+    "notIris": "May not work with Iris",
+    "notIrisHint": "Modrinth lists it only for other shader loaders.",
+    "iris": {
+      "missing": "Shaders need the Iris mod (it brings Sodium with it). This profile doesn't have it yet.",
+      "install": "Install Iris",
+      "noLoader": "Shaders need Fabric or Quilt. This profile plays Minecraft without a mod loader."
+    },
+    "notPacksTitle": "Not shader packs",
+    "notPack": {
+      "invalid": "{{name}}: no shaders folder inside, so Iris can't use it.",
+      "nested": "{{name}}: the shader is inside the folder \"{{folder}}\". Move that folder into shaderpacks instead.",
+      "unreadable": "{{name}}: couldn't be read. It may be damaged."
+    },
+    "usedBy": "In {{names}}",
+    "unused": "Unused",
+    "notChecked": "Not checked with Modrinth yet",
+    "remove": "Remove…",
+    "removeTitle": "Remove {{name}}?",
+    "removeBody": "The shader is deleted from the library. Its settings in each profile are kept.",
+    "removeUsed": "It is removed from these profiles too: {{names}}",
+    "removeConfirm": "Remove",
+    "removeUnused": "Remove unused",
+    "removeUnusedTitle_one": "Remove {{count}} unused shader?",
+    "removeUnusedTitle_other": "Remove {{count}} unused shaders?",
+    "removeUnusedBody": "Shaders that no profile has are deleted from the library. You can add them again later.",
+    "removedUnused_one": "Removed {{count}} shader.",
+    "removedUnused_other": "Removed {{count}} shaders.",
+    "cancel": "Cancel",
+    "find": {
+      "open": "Find on Modrinth",
+      "title": "Find shaders",
+      "search": "Search shaders",
+      "forVersion": "Shaders for Minecraft {{version}}.",
+      "anyVersion": "Shaders for every Minecraft version.",
+      "noResults": "No shaders found.",
+      "loadMore": "Load more",
+      "download": "Download",
+      "downloadLabel": "Download {{name}}",
+      "downloading": "Downloading",
+      "cancel": "Cancel the download",
+      "added": "Added {{name}} ({{version}}) to the library.",
+      "activated": "It is this profile's shader now.",
+      "otherVersion": "There is no version for this Minecraft version, so the newest one was downloaded.",
+      "irisMissing": "This profile needs Iris to run it."
     }
   },
   "resourcePacks": {

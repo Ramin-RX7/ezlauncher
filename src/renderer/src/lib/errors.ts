@@ -52,6 +52,13 @@ const KNOWN = [
   "PACKS_UNSUPPORTED",
   "OPTIONS_UNWRITABLE",
   "PACK_NO_VERSION",
+  "NOT_A_SHADER",
+  "SHADER_NESTED",
+  "SHADER_NOT_FOUND",
+  "SHADER_IN_USE",
+  "SHADERS_NEED_LOADER",
+  "IRIS_CONFIG_UNWRITABLE",
+  "SHADER_NO_VERSION",
 ] as const;
 
 /** A user-facing message for an error code from the main process. */

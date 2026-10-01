@@ -13,16 +13,61 @@ import {
   linkSchema,
   type ReconcileDiff,
 } from "../linkedStore";
-import { readPackZip } from "./packMeta";
+import { readPackZip, type PackRead } from "./packMeta";
+import { readShaderZip } from "./shaderMeta";
 
 /*
- * The shared resource pack library. Every pack zip is stored once as
- * `resourcepacks-store/<sha1>.zip`; a profile that has it gets a hard link in its
- * `resourcepacks/` folder (a copy where hard links don't work). `launcher/
- * resourcepacks.json` holds each pack's metadata and which file in which profile is
- * which pack. Which packs are active, and their order, live only in the profile's
- * `options.txt` (see profilePacks.ts). Folder packs are never stored here.
+ * A shared pack library, one per kind (resource packs, shader packs). Every pack
+ * zip is stored once as `<store>/<sha1>.zip`; a profile that has it gets a hard
+ * link in its pack folder (a copy where hard links don't work). `launcher/
+ * <kind>.json` holds each pack's metadata and which file in which profile is which
+ * pack. Which packs are active lives in the game's own files (`options.txt` for
+ * resource packs, see profilePacks.ts; Iris's config for shaders, see
+ * profileShaders.ts). Folder packs are never stored here.
  */
+
+/** What differs between pack kinds: where they live and how a zip is read. */
+export interface PackKind {
+  /** For log lines and messages ("resource pack"). */
+  label: string;
+  jsonName: string;
+  storeDir: string;
+  storeFile: (sha1: string) => string;
+  iconFile: (sha1: string) => string;
+  profileDir: (profileId: string) => string;
+  read: (path: string) => Promise<PackRead>;
+  codes: { notPack: string; nested: string; notFound: string };
+}
+
+export const resourcePackKind = (paths: Paths): PackKind => ({
+  label: "resource pack",
+  jsonName: "resourcepacks.json",
+  storeDir: paths.resourcePacksStoreDir,
+  storeFile: paths.resourcePackStoreFile,
+  iconFile: paths.resourcePackIcon,
+  profileDir: paths.resourcePacksDir,
+  read: readPackZip,
+  codes: {
+    notPack: "NOT_A_PACK",
+    nested: "PACK_NESTED",
+    notFound: "PACK_NOT_FOUND",
+  },
+});
+
+export const shaderPackKind = (paths: Paths): PackKind => ({
+  label: "shader pack",
+  jsonName: "shaderpacks.json",
+  storeDir: paths.shaderPacksStoreDir,
+  storeFile: paths.shaderPackStoreFile,
+  iconFile: paths.shaderPackIcon,
+  profileDir: paths.shaderPacksDir,
+  read: readShaderZip,
+  codes: {
+    notPack: "NOT_A_SHADER",
+    nested: "SHADER_NESTED",
+    notFound: "SHADER_NOT_FOUND",
+  },
+});
 
 const formatSchema = z.object({ major: z.number(), minor: z.number() });
 
@@ -30,6 +75,8 @@ const metaSchema = z.object({
   fileName: z.string(),
   description: z.string(),
   range: z.object({ min: formatSchema, max: formatSchema }).optional(),
+  /** The site's loaders for the downloaded version (shaders: `iris`, `optifine`, …). */
+  loaders: z.array(z.string()).optional(),
   /** Relative to the store folder. */
   iconPath: z.string().optional(),
   size: z.number(),
@@ -52,7 +99,7 @@ export type PackSourceRef = NonNullable<PackMetaRecord["source"]>;
 const fileSchema = z.object({
   schema: z.literal(1),
   packs: z.record(z.string(), metaSchema),
-  /** profileId → file name in its `resourcepacks/` → the pack it is. */
+  /** profileId → file name in its pack folder → the pack it is. */
   links: z.record(z.string(), z.record(z.string(), linkSchema)),
 });
 type PacksFile = z.infer<typeof fileSchema>;
@@ -66,6 +113,20 @@ export interface PackSyncOptions {
 /** Packs not identified yet are asked about again after this long. */
 export const PACK_RECHECK_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** The image type of an icon, from its first bytes (site icons aren't always PNG). */
+export function imageType(bytes: Uint8Array): string | undefined {
+  const at = (i: number, ...b: number[]) =>
+    b.every((v, n) => bytes[i + n] === v);
+  if (at(0, 0x89, 0x50, 0x4e, 0x47)) return "image/png";
+  if (at(0, 0xff, 0xd8, 0xff)) return "image/jpeg";
+  if (at(0, 0x47, 0x49, 0x46, 0x38)) return "image/gif";
+  if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50))
+    return "image/webp";
+  return undefined;
+}
+
+const MAX_ICON = 2 * 1024 * 1024;
+
 const fileState = async (path: string) => {
   const s = await stat(path);
   return { size: s.size, mtimeMs: Math.floor(s.mtimeMs) };
@@ -73,22 +134,28 @@ const fileState = async (path: string) => {
 
 export function createPackLibrary({
   paths,
+  kind = resourcePackKind(paths),
   logger,
   now = () => new Date(),
 }: {
   paths: Paths;
+  /** Resource packs unless given. */
+  kind?: PackKind;
   logger?: Logger;
   now?: () => Date;
 }) {
-  const file = paths.launcherFile("resourcepacks.json");
+  const file = paths.launcherFile(kind.jsonName);
+  const { codes } = kind;
   const store = createLinkedStore({
-    storeDir: paths.resourcePacksStoreDir,
-    storeFile: paths.resourcePackStoreFile,
-    profileDir: paths.resourcePacksDir,
+    storeDir: kind.storeDir,
+    storeFile: kind.storeFile,
+    profileDir: kind.profileDir,
     ext: ".zip",
-    label: "resource pack",
+    label: kind.label,
     ...(logger && { logger }),
   });
+  const notInLibrary = () =>
+    new AppError(codes.notFound, `This ${kind.label} isn't in the library.`);
 
   let queue: Promise<unknown> = Promise.resolve();
   const serial = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -99,7 +166,7 @@ export function createPackLibrary({
 
   async function load(): Promise<PacksFile> {
     const data = await readJson(file, fileSchema).catch((err: unknown) => {
-      logger?.warn("resourcepacks.json is unreadable; starting empty", err);
+      logger?.warn(`${kind.jsonName} is unreadable; starting empty`, err);
       return undefined;
     });
     return data ?? { schema: 1, packs: {}, links: {} };
@@ -111,19 +178,19 @@ export function createPackLibrary({
     sha1: string,
     fileName: string,
   ): Promise<PackMetaRecord> {
-    const stored = paths.resourcePackStoreFile(sha1);
-    const read = await readPackZip(stored);
+    const stored = kind.storeFile(sha1);
+    const read = await kind.read(stored);
     if (read.status === "nested")
       throw new AppError(
-        "PACK_NESTED",
+        codes.nested,
         `${fileName} has its pack one folder down.`,
       );
     if (read.status !== "ok")
-      throw new AppError("NOT_A_PACK", `${fileName} isn't a resource pack.`);
+      throw new AppError(codes.notPack, `${fileName} isn't a ${kind.label}.`);
     let iconPath: string | undefined;
     if (read.icon) {
-      await mkdir(dirname(paths.resourcePackIcon(sha1)), { recursive: true });
-      await writeFile(paths.resourcePackIcon(sha1), read.icon);
+      await mkdir(dirname(kind.iconFile(sha1)), { recursive: true });
+      await writeFile(kind.iconFile(sha1), read.icon);
       iconPath = `icons/${sha1}.png`;
     }
     const state = await fileState(stored);
@@ -148,7 +215,7 @@ export function createPackLibrary({
    */
   async function rekeyEdited(data: PacksFile): Promise<void> {
     for (const [sha1, meta] of Object.entries(data.packs)) {
-      const stored = paths.resourcePackStoreFile(sha1);
+      const stored = kind.storeFile(sha1);
       let state;
       try {
         state = await fileState(stored);
@@ -166,13 +233,13 @@ export function createPackLibrary({
         continue;
       }
       try {
-        const target = paths.resourcePackStoreFile(actual);
+        const target = kind.storeFile(actual);
         if (await exists(target)) {
           await rm(stored, { force: true }); // the edited file equals another stored pack
         } else {
           await rename(stored, target);
         }
-        await rm(paths.resourcePackIcon(sha1), { force: true });
+        await rm(kind.iconFile(sha1), { force: true });
         Reflect.deleteProperty(data.packs, sha1);
         data.packs[actual] ??= await describe(actual, meta.fileName);
         for (const links of Object.values(data.links))
@@ -199,6 +266,7 @@ export function createPackLibrary({
       size: meta.size,
       addedAt: meta.addedAt,
       usedBy,
+      ...(meta.loaders && { loaders: meta.loaders }),
       ...(meta.source && {
         source: {
           sourceId: meta.source.sourceId,
@@ -212,16 +280,16 @@ export function createPackLibrary({
 
   async function removeFromStore(data: PacksFile, sha1: string) {
     await store.removeEverywhere(data.links, sha1);
-    await rm(paths.resourcePackIcon(sha1), { force: true });
+    await rm(kind.iconFile(sha1), { force: true });
     Reflect.deleteProperty(data.packs, sha1);
   }
 
   return {
     /**
-     * Bring the library and profiles' `resourcepacks/` in line: adopt pack zips put
+     * Bring the library and profiles' pack folders in line: adopt pack zips put
      * there by hand (zips that aren't packs stay unstored), drop links whose file is
      * gone, follow renames. Running profiles are skipped. Resolves to each synced
-     * profile's changes, so its `options.txt` can follow renames.
+     * profile's changes, so the game's settings can follow renames.
      */
     sync({ profileIds, only, isRunning }: PackSyncOptions): Promise<{
       adopted: number;
@@ -242,17 +310,13 @@ export function createPackLibrary({
             id,
             Object.keys(data.packs),
             (sha1, name) => ensureMeta(data, sha1, name),
-            async (path) => (await readPackZip(path)).status === "ok",
+            async (path) => (await kind.read(path)).status === "ok",
           );
           diffs.set(id, diff);
         }
         const users = store.usage(data.links);
         for (const sha1 of Object.keys(data.packs)) {
-          if (
-            users.has(sha1) ||
-            (await exists(paths.resourcePackStoreFile(sha1)))
-          )
-            continue;
+          if (users.has(sha1) || (await exists(kind.storeFile(sha1)))) continue;
           Reflect.deleteProperty(data.packs, sha1);
         }
         await save(data);
@@ -306,12 +370,12 @@ export function createPackLibrary({
         const results = [];
         for (const path of files) {
           const fileName = basename(path);
-          const read = await readPackZip(path);
+          const read = await kind.read(path);
           if (read.status !== "ok") {
             results.push({
               ok: false as const,
               fileName,
-              code: read.status === "nested" ? "PACK_NESTED" : "NOT_A_PACK",
+              code: read.status === "nested" ? codes.nested : codes.notPack,
             });
             continue;
           }
@@ -338,20 +402,39 @@ export function createPackLibrary({
         sha1: string;
         fileName: string;
         source: PackSourceRef;
+        loaders?: readonly string[];
       }[],
     ): Promise<void> {
       return serial(async () => {
         const data = await load();
         for (const f of files) {
-          if (!(await exists(paths.resourcePackStoreFile(f.sha1))))
-            throw new AppError("PACK_NOT_FOUND", `${f.fileName} isn't stored.`);
+          if (!(await exists(kind.storeFile(f.sha1))))
+            throw new AppError(codes.notFound, `${f.fileName} isn't stored.`);
           await ensureMeta(data, f.sha1, f.fileName);
           const meta = data.packs[f.sha1];
           if (meta) {
             meta.source = f.source;
             meta.sourceCheckedAt = now().toISOString();
+            if (f.loaders) meta.loaders = [...f.loaders];
           }
         }
+        await save(data);
+      });
+    },
+
+    /** The stored zip of a pack (it may not exist yet). */
+    storeFile: kind.storeFile,
+
+    /** Give a pack without one an icon from elsewhere (its project's icon on a site). */
+    setIcon(sha1: string, image: Uint8Array): Promise<void> {
+      return serial(async () => {
+        const data = await load();
+        const meta = data.packs[sha1];
+        if (!meta || meta.iconPath) return;
+        if (image.length > MAX_ICON || !imageType(image)) return;
+        await mkdir(dirname(kind.iconFile(sha1)), { recursive: true });
+        await writeFile(kind.iconFile(sha1), image);
+        meta.iconPath = `icons/${sha1}.png`;
         await save(data);
       });
     },
@@ -361,16 +444,12 @@ export function createPackLibrary({
       return serial(async () => {
         const data = await load();
         const meta = data.packs[sha1];
-        if (!meta || !(await exists(paths.resourcePackStoreFile(sha1))))
-          throw new AppError(
-            "PACK_NOT_FOUND",
-            "This pack isn't in the library.",
-          );
+        if (!meta || !(await exists(kind.storeFile(sha1))))
+          throw notInLibrary();
         const links = (data.links[profileId] ??= {});
         for (const [name, entry] of Object.entries(links)) {
           if (entry.sha1 !== sha1) continue;
-          if (await exists(join(paths.resourcePacksDir(profileId), name)))
-            return name;
+          if (await exists(join(kind.profileDir(profileId), name))) return name;
           Reflect.deleteProperty(links, name); // removed by hand since
         }
         const { name } = await store.linkInto(
@@ -412,11 +491,7 @@ export function createPackLibrary({
     remove(sha1: string): Promise<void> {
       return serial(async () => {
         const data = await load();
-        if (!data.packs[sha1])
-          throw new AppError(
-            "PACK_NOT_FOUND",
-            "This pack isn't in the library.",
-          );
+        if (!data.packs[sha1]) throw notInLibrary();
         await removeFromStore(data, sha1);
         await save(data);
       });
@@ -459,7 +534,10 @@ export function createPackLibrary({
 
     recordIdentification(
       checked: readonly string[],
-      matches: ReadonlyMap<string, PackSourceRef>,
+      matches: ReadonlyMap<
+        string,
+        { source: PackSourceRef; loaders?: readonly string[] }
+      >,
     ): Promise<number> {
       return serial(async () => {
         const data = await load();
@@ -468,9 +546,10 @@ export function createPackLibrary({
           const meta = data.packs[sha1];
           if (!meta) continue;
           meta.sourceCheckedAt = now().toISOString();
-          const source = matches.get(sha1);
-          if (source && !meta.source) {
-            meta.source = source;
+          const match = matches.get(sha1);
+          if (match && !meta.source) {
+            meta.source = match.source;
+            if (match.loaders) meta.loaders = [...match.loaders];
             found++;
           }
         }
@@ -481,8 +560,9 @@ export function createPackLibrary({
 
     async icon(sha1: string): Promise<string | null> {
       try {
-        const bytes = await readFile(paths.resourcePackIcon(sha1));
-        return `data:image/png;base64,${bytes.toString("base64")}`;
+        const bytes = await readFile(kind.iconFile(sha1));
+        const type = imageType(bytes) ?? "image/png";
+        return `data:${type};base64,${bytes.toString("base64")}`;
       } catch {
         return null;
       }

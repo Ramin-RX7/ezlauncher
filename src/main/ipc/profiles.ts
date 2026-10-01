@@ -18,7 +18,11 @@ export function registerProfilesIpc(): void {
   handle("profiles:openFolder", (_e, id, folder) =>
     getService().openProfileFolder(
       id,
-      folder === "mods" || folder === "resourcepacks" ? folder : "game",
+      folder === "mods" ||
+        folder === "resourcepacks" ||
+        folder === "shaderpacks"
+        ? folder
+        : "game",
     ),
   );
 

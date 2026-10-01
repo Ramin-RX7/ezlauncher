@@ -6,19 +6,37 @@ import { invoke } from "../../lib/api";
 import { errorMessage } from "../../lib/errors";
 import { useProfiles } from "../../state/queries";
 import { SourceBadge } from "../mods/SourceBadge";
+import { FindShadersDialog } from "../shaders/FindShadersDialog";
 import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
-import { AddPacks } from "./AddPacks";
+import { AddPacks, type PackKind } from "./AddPacks";
 import { FindPacksDialog } from "./FindPacksDialog";
 import { PackIcon } from "./PackIcon";
 
-/** Every stored resource pack, which profiles have it, and removing packs. */
-export function PackLibraryTab() {
+const listOf = (kind: PackKind) =>
+  kind === "shaders"
+    ? invoke("shaders:library")
+    : invoke("resourcePacks:library");
+const removeOne = (kind: PackKind, sha1: string) =>
+  kind === "shaders"
+    ? invoke("shaders:remove", { sha1, force: true })
+    : invoke("resourcePacks:remove", { sha1, force: true });
+const removeAllUnused = (kind: PackKind) =>
+  kind === "shaders"
+    ? invoke("shaders:removeUnused")
+    : invoke("resourcePacks:removeUnused");
+
+/** Every stored pack of a kind, which profiles have it, and removing packs. */
+export function PackLibraryTab({
+  kind = "resourcePacks",
+}: {
+  kind?: PackKind;
+}) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const library = useQuery({
-    queryKey: ["resourcePacks", "library"],
-    queryFn: () => invoke("resourcePacks:library"),
+    queryKey: [kind, "library"],
+    queryFn: () => listOf(kind),
   });
   const profiles = useProfiles();
   const [removing, setRemoving] = useState<LibraryPack>();
@@ -35,22 +53,21 @@ export function PackLibraryTab() {
   const list = library.data ?? [];
   const unused = list.filter((p) => p.usedBy.length === 0).length;
   const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ["resourcePacks"] });
+    void queryClient.invalidateQueries({ queryKey: [kind] });
   };
 
   const remove = useMutation({
-    mutationFn: (sha1: string) =>
-      invoke("resourcePacks:remove", { sha1, force: true }),
+    mutationFn: (sha1: string) => removeOne(kind, sha1),
     onSuccess: () => {
       setRemoving(undefined);
       refresh();
     },
   });
   const removeUnused = useMutation({
-    mutationFn: () => invoke("resourcePacks:removeUnused"),
+    mutationFn: () => removeAllUnused(kind),
     onSuccess: (count) => {
       setConfirmUnused(false);
-      setNotice(t("resourcePacks.removedUnused", { count }));
+      setNotice(t(`${kind}.removedUnused`, { count }));
       refresh();
     },
   });
@@ -59,8 +76,8 @@ export function PackLibraryTab() {
     <div className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">{t("resourcePacks.title")}</h1>
-          <p className="text-sm text-muted">{t("resourcePacks.libraryHint")}</p>
+          <h1 className="text-lg font-semibold">{t(`${kind}.title`)}</h1>
+          <p className="text-sm text-muted">{t(`${kind}.libraryHint`)}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -68,7 +85,7 @@ export function PackLibraryTab() {
               setFinding(true);
             }}
           >
-            {t("resourcePacks.find.open")}
+            {t(`${kind}.find.open`)}
           </Button>
           <Button
             disabled={unused === 0}
@@ -77,17 +94,24 @@ export function PackLibraryTab() {
               setConfirmUnused(true);
             }}
           >
-            {t("resourcePacks.removeUnused")}
+            {t(`${kind}.removeUnused`)}
           </Button>
         </div>
       </div>
-      {finding && (
-        <FindPacksDialog
-          onClose={() => {
-            setFinding(false);
-          }}
-        />
-      )}
+      {finding &&
+        (kind === "shaders" ? (
+          <FindShadersDialog
+            onClose={() => {
+              setFinding(false);
+            }}
+          />
+        ) : (
+          <FindPacksDialog
+            onClose={() => {
+              setFinding(false);
+            }}
+          />
+        ))}
       {notice && (
         <p className="text-sm text-muted" aria-live="polite">
           {notice}
@@ -99,10 +123,10 @@ export function PackLibraryTab() {
         </p>
       )}
 
-      <AddPacks>
+      <AddPacks kind={kind}>
         {library.isSuccess && list.length === 0 ? (
           <p className="rounded-ezl border border-dashed border-border p-6 text-center text-sm text-muted">
-            {t("resourcePacks.empty")}
+            {t(`${kind}.empty`)}
           </p>
         ) : (
           <ul className="min-h-0 overflow-auto rounded-ezl border border-border bg-surface">
@@ -112,6 +136,7 @@ export function PackLibraryTab() {
                 className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0"
               >
                 <PackIcon
+                  kind={kind}
                   packRef={{ kind: "library", sha1: p.sha1 }}
                   hasIcon={p.hasIcon}
                 />
@@ -127,12 +152,12 @@ export function PackLibraryTab() {
                     )}
                     {!p.source && !p.checked && (
                       <span className="text-xs text-muted">
-                        {t("resourcePacks.notChecked")}
+                        {t(`${kind}.notChecked`)}
                       </span>
                     )}
                     {p.usedBy.length === 0 && (
                       <span className="rounded-ezl border border-border px-2 py-0.5 text-xs text-muted">
-                        {t("resourcePacks.unused")}
+                        {t(`${kind}.unused`)}
                       </span>
                     )}
                   </span>
@@ -143,7 +168,7 @@ export function PackLibraryTab() {
                   )}
                   {p.usedBy.length > 0 && (
                     <span className="truncate text-xs text-muted">
-                      {t("resourcePacks.usedBy", { names: names(p.usedBy) })}
+                      {t(`${kind}.usedBy`, { names: names(p.usedBy) })}
                     </span>
                   )}
                 </div>
@@ -155,7 +180,7 @@ export function PackLibraryTab() {
                     setRemoving(p);
                   }}
                 >
-                  {t("resourcePacks.remove")}
+                  {t(`${kind}.remove`)}
                 </Button>
               </li>
             ))}
@@ -169,9 +194,9 @@ export function PackLibraryTab() {
           onOpenChange={(open) => {
             if (!open) setRemoving(undefined);
           }}
-          title={t("resourcePacks.removeTitle", { name: removing.name })}
-          description={t("resourcePacks.removeBody")}
-          closeLabel={t("resourcePacks.cancel")}
+          title={t(`${kind}.removeTitle`, { name: removing.name })}
+          description={t(`${kind}.removeBody`)}
+          closeLabel={t(`${kind}.cancel`)}
           footer={
             <>
               <Button
@@ -179,7 +204,7 @@ export function PackLibraryTab() {
                   setRemoving(undefined);
                 }}
               >
-                {t("resourcePacks.cancel")}
+                {t(`${kind}.cancel`)}
               </Button>
               <Button
                 variant="danger"
@@ -188,14 +213,14 @@ export function PackLibraryTab() {
                   remove.mutate(removing.sha1);
                 }}
               >
-                {t("resourcePacks.removeConfirm")}
+                {t(`${kind}.removeConfirm`)}
               </Button>
             </>
           }
         >
           {removing.usedBy.length > 0 && (
             <p className="text-sm text-warning">
-              {t("resourcePacks.removeUsed", { names: names(removing.usedBy) })}
+              {t(`${kind}.removeUsed`, { names: names(removing.usedBy) })}
             </p>
           )}
           {remove.isError && (
@@ -210,9 +235,9 @@ export function PackLibraryTab() {
         <Dialog
           open
           onOpenChange={setConfirmUnused}
-          title={t("resourcePacks.removeUnusedTitle", { count: unused })}
-          description={t("resourcePacks.removeUnusedBody")}
-          closeLabel={t("resourcePacks.cancel")}
+          title={t(`${kind}.removeUnusedTitle`, { count: unused })}
+          description={t(`${kind}.removeUnusedBody`)}
+          closeLabel={t(`${kind}.cancel`)}
           footer={
             <>
               <Button
@@ -220,7 +245,7 @@ export function PackLibraryTab() {
                   setConfirmUnused(false);
                 }}
               >
-                {t("resourcePacks.cancel")}
+                {t(`${kind}.cancel`)}
               </Button>
               <Button
                 variant="danger"
@@ -229,7 +254,7 @@ export function PackLibraryTab() {
                   removeUnused.mutate();
                 }}
               >
-                {t("resourcePacks.removeUnused")}
+                {t(`${kind}.removeUnused`)}
               </Button>
             </>
           }
