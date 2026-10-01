@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Archive, FolderOpen, TriangleAlert } from "lucide-react";
+import { Archive, FolderOpen, Package, TriangleAlert } from "lucide-react";
 import type { BackupResult, ProfileInfo, WorldInfo } from "@shared/launcher";
 import { invoke } from "../../lib/api";
 import { errorMessage } from "../../lib/errors";
 import { relativeTime } from "../../lib/relativeTime";
 import { keys, useProfiles, useVersionList } from "../../state/queries";
 import { BackupsDialog } from "../backups/BackupsDialog";
+import { WorldDataPacksDialog } from "../datapacks/WorldDataPacksDialog";
 import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
 import { ContextMenuArea, type MenuItem } from "../ui/Menu";
@@ -24,6 +25,7 @@ export function WorldsTab({ profile }: { profile: ProfileInfo }) {
   });
   const [moving, setMoving] = useState<WorldInfo>();
   const [browsing, setBrowsing] = useState<WorldInfo>();
+  const [packsOf, setPacksOf] = useState<WorldInfo>();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const dateFormat = useMemo(
@@ -136,6 +138,13 @@ export function WorldsTab({ profile }: { profile: ProfileInfo }) {
                 },
               },
               {
+                label: t("dataPacks.button"),
+                disabled: !w.linked,
+                onSelect: () => {
+                  setPacksOf(w);
+                },
+              },
+              {
                 label: t("worlds.openFolder"),
                 onSelect: () => {
                   openFolder(w);
@@ -201,6 +210,16 @@ export function WorldsTab({ profile }: { profile: ProfileInfo }) {
                   </Button>
                   <Button
                     variant="ghost"
+                    disabled={!w.linked}
+                    onClick={() => {
+                      setPacksOf(w);
+                    }}
+                  >
+                    <Package size={16} aria-hidden />
+                    {t("dataPacks.button")}
+                  </Button>
+                  <Button
+                    variant="ghost"
                     onClick={() => {
                       openFolder(w);
                     }}
@@ -229,6 +248,15 @@ export function WorldsTab({ profile }: { profile: ProfileInfo }) {
           from={profile}
           onClose={() => {
             setMoving(undefined);
+          }}
+        />
+      )}
+      {packsOf && (
+        <WorldDataPacksDialog
+          world={packsOf}
+          profile={profile}
+          onClose={() => {
+            setPacksOf(undefined);
           }}
         />
       )}

@@ -18,7 +18,7 @@ A desktop Minecraft: Java Edition launcher. **Offline mode only**: no Microsoft/
 - Scope 07, Backups, library tools and UI polish: world backups (manual/automatic, retention, restore as a new world), mods for a chosen version, version changelogs, profile duplication and icons, Java management, UI/UX improvements (done).
 - Scope 08, Resource packs: a shared pack library, per-profile activation and order written to `options.txt`, pack-format compatibility, Modrinth search (done).
 
-Since the scopes: shader packs (a shared shader library on the same engine as resource packs; the active shader is written to Iris's `config/iris.properties`; Iris + Sodium are offered through the mod download).
+Since the scopes: shader packs (a shared shader library on the same engine as resource packs; the active shader is written to Iris's `config/iris.properties`; Iris + Sodium are offered through the mod download); data packs (a shared library keyed by **world**, linked into `worlds/<id>/datapacks/`; the game turns new files on itself, and `level.dat` is only ever read).
 
 Out of scope until a scope covers it: Microsoft login, Forge/NeoForge, CurseForge, mod updates, modpacks, skins, multiplayer server lists.
 

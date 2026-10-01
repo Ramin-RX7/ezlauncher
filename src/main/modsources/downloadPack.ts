@@ -38,6 +38,13 @@ export const RESOURCE_PACK_DOWNLOAD: PackDownloadKind = {
   codes: { notPack: "NOT_A_PACK", noVersion: "PACK_NO_VERSION" },
 };
 
+/** Data packs: the `datapack` loader's version is a zip, never a project's mod jar. */
+export const DATAPACK_DOWNLOAD: PackDownloadKind = {
+  projectType: "datapack",
+  loaderSets: [["datapack"]],
+  codes: { notPack: "NOT_A_DATAPACK", noVersion: "DATAPACK_NO_VERSION" },
+};
+
 /** What runs shader packs on a site; Iris is the one this launcher can run. */
 export const SHADER_LOADERS = ["iris", "optifine", "canvas", "vanilla"];
 

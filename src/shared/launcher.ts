@@ -421,6 +421,63 @@ export interface PackDownloadProgress {
   totalBytes: number;
 }
 
+// ---- Data packs ----
+
+/** A data pack as a world sees it: from the library, or a folder in its `datapacks/`. */
+export interface WorldDataPack {
+  ref: PackRef;
+  name: string;
+  description: string;
+  hasIcon: boolean;
+  compat: PackCompat;
+  /** Turned off in game (the world's `level.dat` lists it as disabled). */
+  offInGame: boolean;
+  /** Experimental features it needs that the world doesn't have: the game won't load it. */
+  missingFeatures: string[];
+  source?: PackSourceInfo;
+}
+
+export interface WorldDataPacks {
+  /** The packs in the world's `datapacks/` folder. */
+  inWorld: WorldDataPack[];
+  /** Library packs the world doesn't have. */
+  available: WorldDataPack[];
+  /** Files in `datapacks/` the game can't use. */
+  notPacks: ProfilePacks["notPacks"];
+  /** Why the world's packs can't be changed right now. */
+  locked?: "running" | "unsupported";
+}
+
+/** A world for "Add to worlds…": who owns it, and whether it has the pack already. */
+export interface DataPackWorld {
+  worldId: string;
+  name: string;
+  profileId: string;
+  profileName: string;
+  hasPack: boolean;
+  /** Its profile's game runs (or starts): it can't be changed now. */
+  busy: boolean;
+  /** Its Minecraft version has no data packs (before 1.13). */
+  unsupported: boolean;
+}
+
+export interface AddToWorldsResult {
+  added: string[];
+  failed: { worldId: string; code: string }[];
+}
+
+export interface DataPackInstallResult {
+  sha1: string;
+  name: string;
+  versionNumber: string;
+  compat: PackCompat;
+  /** No version for the world's Minecraft version: the newest one was taken. */
+  otherVersion: boolean;
+  /** Put in the world (false without one, or while it plays). */
+  added: boolean;
+  needs: PackNeed[];
+}
+
 // ---- Shader packs ----
 
 /** A shader as a profile sees it: from the library, or a folder in its `shaderpacks/`. */

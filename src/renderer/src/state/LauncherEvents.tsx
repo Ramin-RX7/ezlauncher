@@ -51,6 +51,7 @@ export function LauncherEvents() {
     void queryClient.invalidateQueries({ queryKey: ["mods"] });
     void queryClient.invalidateQueries({ queryKey: ["resourcePacks"] });
     void queryClient.invalidateQueries({ queryKey: ["shaders"] });
+    void queryClient.invalidateQueries({ queryKey: ["dataPacks"] });
   });
   return null;
 }

@@ -5,6 +5,8 @@ import type { LibraryPack } from "@shared/launcher";
 import { invoke } from "../../lib/api";
 import { errorMessage } from "../../lib/errors";
 import { useProfiles } from "../../state/queries";
+import { AddToWorldsDialog } from "../datapacks/AddToWorldsDialog";
+import { FindDataPacksDialog } from "../datapacks/FindDataPacksDialog";
 import { SourceBadge } from "../mods/SourceBadge";
 import { FindShadersDialog } from "../shaders/FindShadersDialog";
 import { Button } from "../ui/Button";
@@ -14,19 +16,25 @@ import { FindPacksDialog } from "./FindPacksDialog";
 import { PackIcon } from "./PackIcon";
 
 const listOf = (kind: PackKind) =>
-  kind === "shaders"
-    ? invoke("shaders:library")
-    : invoke("resourcePacks:library");
+  kind === "dataPacks"
+    ? invoke("dataPacks:library")
+    : kind === "shaders"
+      ? invoke("shaders:library")
+      : invoke("resourcePacks:library");
 const removeOne = (kind: PackKind, sha1: string) =>
-  kind === "shaders"
-    ? invoke("shaders:remove", { sha1, force: true })
-    : invoke("resourcePacks:remove", { sha1, force: true });
+  kind === "dataPacks"
+    ? invoke("dataPacks:remove", { sha1, force: true })
+    : kind === "shaders"
+      ? invoke("shaders:remove", { sha1, force: true })
+      : invoke("resourcePacks:remove", { sha1, force: true });
 const removeAllUnused = (kind: PackKind) =>
-  kind === "shaders"
-    ? invoke("shaders:removeUnused")
-    : invoke("resourcePacks:removeUnused");
+  kind === "dataPacks"
+    ? invoke("dataPacks:removeUnused")
+    : kind === "shaders"
+      ? invoke("shaders:removeUnused")
+      : invoke("resourcePacks:removeUnused");
 
-/** Every stored pack of a kind, which profiles have it, and removing packs. */
+/** Every stored pack of a kind, which profiles (data packs: worlds) have it, and removing packs. */
 export function PackLibraryTab({
   kind = "resourcePacks",
 }: {
@@ -43,6 +51,7 @@ export function PackLibraryTab({
   const [confirmUnused, setConfirmUnused] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [finding, setFinding] = useState(false);
+  const [toWorlds, setToWorlds] = useState<LibraryPack>();
 
   const profileNames = useMemo(
     () => Object.fromEntries((profiles.data ?? []).map((p) => [p.id, p.name])),
@@ -98,8 +107,22 @@ export function PackLibraryTab({
           </Button>
         </div>
       </div>
+      {toWorlds && (
+        <AddToWorldsDialog
+          pack={toWorlds}
+          onClose={() => {
+            setToWorlds(undefined);
+          }}
+        />
+      )}
       {finding &&
-        (kind === "shaders" ? (
+        (kind === "dataPacks" ? (
+          <FindDataPacksDialog
+            onClose={() => {
+              setFinding(false);
+            }}
+          />
+        ) : kind === "shaders" ? (
           <FindShadersDialog
             onClose={() => {
               setFinding(false);
@@ -172,6 +195,19 @@ export function PackLibraryTab({
                     </span>
                   )}
                 </div>
+                {kind === "dataPacks" && (
+                  <Button
+                    variant="secondary"
+                    aria-label={t("dataPacks.toWorlds.openLabel", {
+                      name: p.name,
+                    })}
+                    onClick={() => {
+                      setToWorlds(p);
+                    }}
+                  >
+                    {t("dataPacks.toWorlds.open")}
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   className="text-danger"

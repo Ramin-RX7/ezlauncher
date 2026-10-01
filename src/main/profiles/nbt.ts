@@ -1,9 +1,10 @@
 import { gunzipSync } from "fflate";
 
 /*
- * Just enough NBT (Minecraft's binary format) to read a world's name and last
- * played time from `level.dat`: a gzipped root compound with a `Data` compound.
- * Every other tag is skipped. Bad input throws; callers fall back to the folder name.
+ * Just enough NBT (Minecraft's binary format) to read a world's name, last played
+ * time and data pack lists from `level.dat`: a gzipped root compound with a `Data`
+ * compound. Every other tag is skipped. Read only: nothing here writes NBT. Bad
+ * input throws; callers fall back to the folder name or "unknown".
  */
 
 const END = 0;
@@ -114,16 +115,18 @@ export interface LevelInfo {
   lastPlayed?: number;
 }
 
-/** Read `Data.LevelName` and `Data.LastPlayed` from the bytes of a (gzipped) `level.dat`. */
-export function readLevelInfo(file: Uint8Array): LevelInfo {
+/** Calls `onTag` for each tag of `level.dat`'s `Data` compound; it reads or skips the payload. */
+function readData(
+  file: Uint8Array,
+  onTag: (r: Reader, type: number, key: string) => void,
+): void {
   const isGzip = file[0] === 0x1f && file[1] === 0x8b;
   const r = new Reader(isGzip ? gunzipSync(file) : file);
   if (r.u8() !== COMPOUND) throw new Error("level.dat has no root compound");
   r.string(); // root name
-  const info: LevelInfo = {};
   for (;;) {
     const type = r.u8();
-    if (type === END) return info;
+    if (type === END) return;
     const name = r.string();
     if (type !== COMPOUND || name !== "Data") {
       skipPayload(r, type, 1);
@@ -131,12 +134,66 @@ export function readLevelInfo(file: Uint8Array): LevelInfo {
     }
     for (;;) {
       const t = r.u8();
-      if (t === END) return info;
-      const key = r.string();
-      if (t === STRING && key === "LevelName") info.name = r.string();
-      else if (t === LONG && key === "LastPlayed")
-        info.lastPlayed = Number(r.i64());
-      else skipPayload(r, t, 2);
+      if (t === END) return;
+      onTag(r, t, r.string());
     }
   }
+}
+
+/** A list of strings (other lists are skipped and read as empty). */
+function stringList(r: Reader, type: number, depth: number): string[] {
+  if (type !== LIST) {
+    skipPayload(r, type, depth);
+    return [];
+  }
+  const itemType = r.u8();
+  const count = r.i32();
+  if (count < 0) throw new Error("bad NBT list");
+  const items: string[] = [];
+  for (let i = 0; i < count; i++) {
+    if (itemType === STRING) items.push(r.string());
+    else skipPayload(r, itemType, depth + 1);
+  }
+  return items;
+}
+
+/** Read `Data.LevelName` and `Data.LastPlayed` from the bytes of a (gzipped) `level.dat`. */
+export function readLevelInfo(file: Uint8Array): LevelInfo {
+  const info: LevelInfo = {};
+  readData(file, (r, t, key) => {
+    if (t === STRING && key === "LevelName") info.name = r.string();
+    else if (t === LONG && key === "LastPlayed")
+      info.lastPlayed = Number(r.i64());
+    else skipPayload(r, t, 2);
+  });
+  return info;
+}
+
+export interface DataPackState {
+  /** In load order, e.g. `vanilla`, `file/Terralith.zip`, `fabric`. */
+  enabled: string[];
+  /** Packs turned off in game (`/datapack disable` or the world's pack screen). */
+  disabled: string[];
+  /** The world's experimental features (`Data.enabled_features`), e.g. `minecraft:vanilla`. */
+  features: string[];
+}
+
+/** The data pack lists of a world, from the bytes of its `level.dat`. */
+export function readDataPackState(file: Uint8Array): DataPackState {
+  const state: DataPackState = { enabled: [], disabled: [], features: [] };
+  readData(file, (r, t, key) => {
+    if (key === "enabled_features") {
+      state.features = stringList(r, t, 2);
+    } else if (key === "DataPacks" && t === COMPOUND) {
+      for (;;) {
+        const inner = r.u8();
+        if (inner === END) return;
+        const name = r.string();
+        if (name === "Enabled") state.enabled = stringList(r, inner, 3);
+        else if (name === "Disabled") state.disabled = stringList(r, inner, 3);
+        else skipPayload(r, inner, 3);
+      }
+    } else skipPayload(r, t, 2);
+  });
+  return state;
 }

@@ -1,7 +1,14 @@
 import { gzipSync, strToU8 } from "fflate";
 
-/** Test helper: a gzipped `level.dat` with `Data.LevelName`, `Data.LastPlayed` and some other tags. */
-export function makeLevelDat(name: string, lastPlayed: number): Uint8Array {
+/**
+ * Test helper: a gzipped `level.dat` with `Data.LevelName`, `Data.LastPlayed` and
+ * some other tags, plus `Data.DataPacks` / `Data.enabled_features` when given.
+ */
+export function makeLevelDat(
+  name: string,
+  lastPlayed: number,
+  dataPacks?: { enabled: string[]; disabled: string[]; features?: string[] },
+): Uint8Array {
   const parts: number[] = [];
   const u8 = (v: number) => parts.push(v & 0xff);
   const u16 = (v: number) => {
@@ -43,6 +50,19 @@ export function makeLevelDat(name: string, lastPlayed: number): Uint8Array {
   i32(1);
   i32(2);
   u8(0); // end WorldGenSettings
+  const strings = (tagName: string, items: string[]) => {
+    tag(9, tagName);
+    u8(8);
+    i32(items.length);
+    for (const s of items) str(s);
+  };
+  if (dataPacks) {
+    tag(10, "DataPacks");
+    strings("Enabled", dataPacks.enabled);
+    strings("Disabled", dataPacks.disabled);
+    u8(0); // end DataPacks
+    if (dataPacks.features) strings("enabled_features", dataPacks.features);
+  }
   tag(8, "LevelName");
   str(name);
   tag(4, "LastPlayed");

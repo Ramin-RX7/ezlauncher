@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   packCompat,
   parsePackMcmeta,
+  readDataPackFolder,
+  readDataPackZip,
   readPackFolder,
   readPackZip,
 } from "./packMeta";
@@ -199,5 +201,65 @@ describe("reading packs from disk", () => {
     expect(await readPackFolder(join(dir, "Empty"))).toEqual({
       status: "invalid",
     });
+  });
+});
+
+describe("data packs", () => {
+  const data = (pack: unknown, extra: Record<string, unknown> = {}) =>
+    strToU8(JSON.stringify({ pack, ...extra }));
+
+  it("accepts packs with data/, and reads the features they need", async () => {
+    const path = join(dir, "Terralith.zip");
+    await writeFile(
+      path,
+      zipSync({
+        "pack.mcmeta": data(
+          { pack_format: 48, description: "Worlds" },
+          { features: { enabled: ["minecraft:bundle"] } },
+        ),
+        "data/terralith/worldgen/x.json": strToU8("{}"),
+      }),
+    );
+    expect(await readDataPackZip(path)).toMatchObject({
+      status: "ok",
+      meta: { description: "Worlds", features: ["minecraft:bundle"] },
+    });
+  });
+
+  it("says a resource pack (assets/ only) isn't a data pack", async () => {
+    const path = join(dir, "Faithful.zip");
+    await writeFile(
+      path,
+      zipSync({
+        "pack.mcmeta": data({ pack_format: 15 }),
+        "assets/minecraft/x.png": PNG,
+      }),
+    );
+    expect(await readDataPackZip(path)).toEqual({ status: "invalid" });
+    expect((await readPackZip(path)).status).toBe("ok");
+  });
+
+  it("explains a data pack one folder down, and reads folders", async () => {
+    const nested = join(dir, "nested.zip");
+    await writeFile(
+      nested,
+      zipSync({
+        "Pack-main/pack.mcmeta": data({ pack_format: 48 }),
+        "Pack-main/data/x/y.json": strToU8("{}"),
+      }),
+    );
+    expect(await readDataPackZip(nested)).toEqual({
+      status: "nested",
+      folder: "Pack-main",
+    });
+
+    const folder = join(dir, "Folder pack");
+    await mkdir(join(folder, "data"), { recursive: true });
+    await writeFile(join(folder, "pack.mcmeta"), data({ pack_format: 48 }));
+    expect((await readDataPackFolder(folder)).status).toBe("ok");
+    const resource = join(dir, "Resource folder");
+    await mkdir(join(resource, "assets"), { recursive: true });
+    await writeFile(join(resource, "pack.mcmeta"), data({ pack_format: 15 }));
+    expect(await readDataPackFolder(resource)).toEqual({ status: "invalid" });
   });
 });

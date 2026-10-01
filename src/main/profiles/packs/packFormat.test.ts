@@ -8,6 +8,7 @@ import {
   formatFromVersionJson,
   legacyFormat,
   optionsDialect,
+  predatesDataPacks,
   predatesResourcePacks,
   readGameFormat,
 } from "./packFormat";
@@ -25,13 +26,21 @@ describe("formatFromVersionJson", () => {
   it("reads all three shapes of version.json", () => {
     expect(
       formatFromVersionJson({ world_version: 1976, pack_version: 4 }),
-    ).toEqual({ resource: { major: 4, minor: 0 }, worldVersion: 1976 });
+    ).toEqual({
+      resource: { major: 4, minor: 0 },
+      data: { major: 4, minor: 0 },
+      worldVersion: 1976,
+    });
     expect(
       formatFromVersionJson({
-        world_version: 3465,
-        pack_version: { resource: 15, data: 15 },
+        world_version: 3700,
+        pack_version: { resource: 22, data: 26 },
       }),
-    ).toEqual({ resource: { major: 15, minor: 0 }, worldVersion: 3465 });
+    ).toEqual({
+      resource: { major: 22, minor: 0 },
+      data: { major: 26, minor: 0 },
+      worldVersion: 3700,
+    });
     expect(
       formatFromVersionJson({
         world_version: 5023,
@@ -42,7 +51,17 @@ describe("formatFromVersionJson", () => {
           data_minor: 0,
         },
       }),
-    ).toEqual({ resource: { major: 97, minor: 1 }, worldVersion: 5023 });
+    ).toEqual({
+      resource: { major: 97, minor: 1 },
+      data: { major: 121, minor: 0 },
+      worldVersion: 5023,
+    });
+  });
+
+  it("knows which releases came before data packs", () => {
+    expect(predatesDataPacks("1.12.2")).toBe(true);
+    expect(predatesDataPacks("1.13")).toBe(false);
+    expect(predatesDataPacks("26.3")).toBe(false);
   });
 
   it("returns nothing for files without a pack version", () => {
@@ -60,8 +79,10 @@ describe("legacy versions", () => {
     expect(legacyFormat("1.12.2")?.resource.major).toBe(3);
     expect(legacyFormat("1.13.2")).toEqual({
       resource: { major: 4, minor: 0 },
+      data: { major: 4, minor: 0 },
       worldVersion: 1631,
     });
+    expect(legacyFormat("1.12.2")?.data).toBeUndefined();
     expect(legacyFormat("1.12.2")?.worldVersion).toBeUndefined();
   });
 

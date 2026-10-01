@@ -23,6 +23,8 @@ export interface PackMeta {
   /** Plain text: text components flattened, § colour codes removed. */
   description: string;
   range?: PackRange;
+  /** Experimental features a data pack needs (`features.enabled`, e.g. `minecraft:bundle`). */
+  features?: string[];
 }
 
 export type PackRead =
@@ -162,10 +164,21 @@ export function parsePackMcmeta(bytes: Uint8Array): PackMeta | undefined {
   if (typeof pack !== "object" || pack === null) return undefined;
   const p = pack as Record<string, unknown>;
   const range = rangeOf(p);
+  const features = featuresOf((json as Record<string, unknown>).features);
   return {
     description: cleanText(plainText(p.description)),
     ...(range && { range }),
+    ...(features.length > 0 && { features }),
   };
+}
+
+/** `"features": { "enabled": ["minecraft:bundle"] }` (top level, beside `pack`). */
+function featuresOf(features: unknown): string[] {
+  if (typeof features !== "object" || features === null) return [];
+  const enabled = (features as Record<string, unknown>).enabled;
+  return Array.isArray(enabled)
+    ? enabled.filter((f): f is string => typeof f === "string")
+    : [];
 }
 
 /** Can a game with this format use a pack with this range? */
@@ -218,6 +231,24 @@ export async function readPackZip(path: string): Promise<PackRead> {
   return result(mcmeta, read.data.get("pack.png"));
 }
 
+/**
+ * A zip data pack: a pack with a `data/` folder. A zip with only `assets/` is a
+ * resource pack, not a data pack; one with both is both.
+ */
+export async function readDataPackZip(path: string): Promise<PackRead> {
+  const read = await readPackZip(path);
+  if (read.status !== "ok" && read.status !== "nested") return read;
+  const index = await readZipEntries(path, () => [], 0);
+  if (!index) return { status: "unreadable" };
+  if (read.status === "nested")
+    return index.entries.some((e) => e.name.startsWith(`${read.folder}/data/`))
+      ? read
+      : { status: "invalid" };
+  return index.entries.some((e) => e.name.startsWith("data/"))
+    ? read
+    : { status: "invalid" };
+}
+
 async function readSmall(
   path: string,
   max: number,
@@ -247,4 +278,17 @@ export async function readPackFolder(dir: string): Promise<PackRead> {
     return { status: "unreadable" };
   }
   return { status: "invalid" };
+}
+
+/** An unzipped data pack folder (a pack folder with `data/` inside). */
+export async function readDataPackFolder(dir: string): Promise<PackRead> {
+  const read = await readPackFolder(dir);
+  if (read.status !== "ok") return read;
+  try {
+    return (await stat(join(dir, "data"))).isDirectory()
+      ? read
+      : { status: "invalid" };
+  } catch {
+    return { status: "invalid" };
+  }
 }

@@ -6,8 +6,16 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDownloader } from "../minecraft/downloader";
 import { createPaths, type Paths } from "../minecraft/paths";
 import { createFakeFetch, sha1 } from "../minecraft/testing/fakeFetch";
-import { createPackLibrary, shaderPackKind } from "../profiles/packs/library";
-import { downloadPack, SHADER_DOWNLOAD } from "./downloadPack";
+import {
+  createPackLibrary,
+  dataPackKind,
+  shaderPackKind,
+} from "../profiles/packs/library";
+import {
+  DATAPACK_DOWNLOAD,
+  downloadPack,
+  SHADER_DOWNLOAD,
+} from "./downloadPack";
 import { createFakeModSource } from "./testing/fakeModSource";
 
 let dir: string;
@@ -137,6 +145,56 @@ describe("downloadPack", () => {
     await expect(downloadPack(deps, "emf")).rejects.toMatchObject({
       code: "PACK_NO_VERSION",
     });
+  });
+});
+
+describe("downloadPack for data packs", () => {
+  it("takes the data pack zip, never the project's mod jar", async () => {
+    const zip = zipSync({
+      "pack.mcmeta": strToU8('{"pack":{"pack_format":48}}'),
+      "data/t/worldgen/x.json": strToU8("{}"),
+    });
+    const jar = zipSync({ "fabric.mod.json": strToU8("{}") });
+    const files = createFakeFetch({
+      "https://fake/t.zip": zip,
+      "https://fake/t.jar": jar,
+    });
+    const source = createFakeModSource(
+      [{ projectId: "terralith", name: "Terralith" }],
+      [
+        {
+          projectId: "terralith",
+          versionId: "mod",
+          loaders: ["fabric"],
+          gameVersions: ["1.21"],
+          sha1: sha1(jar),
+          size: jar.length,
+          url: "https://fake/t.jar",
+          fileName: "Terralith.jar",
+        },
+        {
+          projectId: "terralith",
+          versionId: "dp",
+          loaders: ["datapack"],
+          gameVersions: ["1.21"],
+          sha1: sha1(zip),
+          size: zip.length,
+          url: "https://fake/t.zip",
+          fileName: "Terralith.zip",
+        },
+      ],
+    );
+    const library = createPackLibrary({ paths, kind: dataPackKind(paths) });
+    const downloader = createDownloader({ fetch: files.fetch, userAgent: "t" });
+    const result = await downloadPack(
+      { downloader, library, source },
+      "terralith",
+      { gameVersion: "1.21", kind: DATAPACK_DOWNLOAD },
+    );
+    expect(result).toMatchObject({ sha1: sha1(zip), otherVersion: false });
+    expect(await library.list()).toEqual([
+      expect.objectContaining({ name: "Terralith", loaders: ["datapack"] }),
+    ]);
   });
 });
 

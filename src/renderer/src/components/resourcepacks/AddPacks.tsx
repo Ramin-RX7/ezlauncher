@@ -6,14 +6,20 @@ import { invoke } from "../../lib/api";
 import { errorMessage } from "../../lib/errors";
 import { FileDropZone } from "../ui/FileDropZone";
 
-/** Which pack library: resource packs or shader packs. */
-export type PackKind = "resourcePacks" | "shaders";
+/** Which pack library: resource packs, shader packs or data packs. */
+export type PackKind = "resourcePacks" | "shaders" | "dataPacks";
 
 function addZips(
   kind: PackKind,
   paths: string[] | "picker",
-  target: { profileId?: string },
+  target: { profileId?: string; worldId?: string },
 ): Promise<AddPacksResult> {
+  if (kind === "dataPacks") {
+    const world = target.worldId ? { worldId: target.worldId } : {};
+    return paths === "picker"
+      ? invoke("dataPacks:addFromPicker", world)
+      : invoke("dataPacks:addFiles", { paths, ...world });
+  }
   if (kind === "shaders")
     return paths === "picker"
       ? invoke("shaders:addFromPicker", target)
@@ -26,22 +32,28 @@ function addZips(
 /**
  * An area that takes dropped pack `.zip` files, with an add button (file picker).
  * With a profile, added resource packs are also turned on there, at the top, and
- * added shaders are put in it.
+ * added shaders are put in it; with a world, added data packs are put in it.
  */
 export function AddPacks({
   kind = "resourcePacks",
   profileId,
+  worldId,
   actions,
   children,
 }: {
   kind?: PackKind;
   profileId?: string;
+  /** Data packs only: the world they go into. */
+  worldId?: string;
   actions?: ReactNode;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const target = profileId ? { profileId } : {};
+  const target = {
+    ...(profileId && { profileId }),
+    ...(worldId && { worldId }),
+  };
 
   const add = useMutation({
     mutationFn: (paths: string[] | "picker") => addZips(kind, paths, target),

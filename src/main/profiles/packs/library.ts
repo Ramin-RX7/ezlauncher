@@ -13,7 +13,7 @@ import {
   linkSchema,
   type ReconcileDiff,
 } from "../linkedStore";
-import { readPackZip, type PackRead } from "./packMeta";
+import { readDataPackZip, readPackZip, type PackRead } from "./packMeta";
 import { readShaderZip } from "./shaderMeta";
 
 /*
@@ -69,12 +69,33 @@ export const shaderPackKind = (paths: Paths): PackKind => ({
   },
 });
 
+/**
+ * Data packs belong to worlds, not profiles: the library's keys are world ids, and
+ * each world's packs live in its own `datapacks/` folder.
+ */
+export const dataPackKind = (paths: Paths): PackKind => ({
+  label: "data pack",
+  jsonName: "datapacks.json",
+  storeDir: paths.dataPacksStoreDir,
+  storeFile: paths.dataPackStoreFile,
+  iconFile: paths.dataPackIcon,
+  profileDir: paths.worldDataPacksDir,
+  read: readDataPackZip,
+  codes: {
+    notPack: "NOT_A_DATAPACK",
+    nested: "DATAPACK_NESTED",
+    notFound: "DATAPACK_NOT_FOUND",
+  },
+});
+
 const formatSchema = z.object({ major: z.number(), minor: z.number() });
 
 const metaSchema = z.object({
   fileName: z.string(),
   description: z.string(),
   range: z.object({ min: formatSchema, max: formatSchema }).optional(),
+  /** Experimental features a data pack needs. */
+  features: z.array(z.string()).optional(),
   /** The site's loaders for the downloaded version (shaders: `iris`, `optifine`, …). */
   loaders: z.array(z.string()).optional(),
   /** Relative to the store folder. */
@@ -198,6 +219,7 @@ export function createPackLibrary({
       fileName,
       description: read.meta.description,
       ...(read.meta.range && { range: read.meta.range }),
+      ...(read.meta.features && { features: read.meta.features }),
       ...(iconPath && { iconPath }),
       size: state.size,
       verified: state,

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Folder, Image, Sparkles } from "lucide-react";
+import { Folder, Image, Package, Sparkles } from "lucide-react";
 import type { PackRef } from "@shared/launcher";
 import { invoke } from "../../lib/api";
 import { StoreIcon } from "../ui/StoreIcon";
@@ -10,10 +10,13 @@ function fetchIcon(
   packRef: PackRef,
   profileId: string | undefined,
 ): Promise<string | null> {
-  if (packRef.kind === "folder")
-    return kind === "shaders"
-      ? Promise.resolve(null) // shader folders have no icon
+  if (packRef.kind === "folder") {
+    if (kind === "shaders") return Promise.resolve(null); // shader folders have no icon
+    return kind === "dataPacks"
+      ? invoke("dataPacks:folderIcon", profileId ?? "", packRef.name)
       : invoke("resourcePacks:folderIcon", profileId ?? "", packRef.name);
+  }
+  if (kind === "dataPacks") return invoke("dataPacks:icon", packRef.sha1);
   return kind === "shaders"
     ? invoke("shaders:icon", packRef.sha1)
     : invoke("resourcePacks:icon", packRef.sha1);
@@ -29,7 +32,7 @@ export function PackIcon({
   kind?: PackKind;
   packRef: PackRef;
   hasIcon: boolean;
-  /** Needed for folder packs, which live in one profile. */
+  /** Needed for folder packs, which live in one profile (data packs: in one world, by its id). */
   profileId?: string;
 }) {
   const folder = packRef.kind === "folder" ? packRef.name : undefined;
@@ -50,7 +53,9 @@ export function PackIcon({
           ? Folder
           : kind === "shaders"
             ? Sparkles
-            : Image
+            : kind === "dataPacks"
+              ? Package
+              : Image
       }
     />
   );

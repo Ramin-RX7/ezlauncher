@@ -5,7 +5,8 @@
  */
 
 /** The kinds of projects the launcher gets from a site. */
-export type ProjectType = "mod" | "resourcepack" | "shader";
+/** `datapack` finds projects with data pack versions, even ones the site calls mods. */
+export type ProjectType = "mod" | "resourcepack" | "shader" | "datapack";
 
 /** What a profile can run: its Minecraft version and the loaders it loads mods for. */
 export interface ModTarget {

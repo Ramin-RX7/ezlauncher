@@ -65,6 +65,7 @@ export function createPaths(dataDir: string) {
   const modsStore = join(dataDir, "mods-store");
   const packsStore = join(dataDir, "resourcepacks-store");
   const shadersStore = join(dataDir, "shaderpacks-store");
+  const dataPacksStore = join(dataDir, "datapacks-store");
   const backups = join(dataDir, "backups");
 
   return {
@@ -148,6 +149,14 @@ export function createPaths(dataDir: string) {
     backupIndex: (key: string) =>
       join(backups, safeFolderName(key), "index.json"),
     worldDir: (worldId: string) => join(worlds, safeFolderName(worldId)),
+    /** A world's data packs (the game reads them from here; each world has its own). */
+    worldDataPacksDir: (worldId: string) =>
+      join(worlds, safeFolderName(worldId), "datapacks"),
+    /** An unzipped data pack folder in a world's `datapacks/`. */
+    folderDataPackDir: (worldId: string, name: string) =>
+      join(worlds, safeFolderName(worldId), "datapacks", safeFolderName(name)),
+    worldLevelDat: (worldId: string) =>
+      join(worlds, safeFolderName(worldId), "level.dat"),
 
     modsStoreDir: modsStore,
     modStoreFile: (sha1: string) => join(modsStore, `${sha1Name(sha1)}.jar`),
@@ -159,6 +168,12 @@ export function createPaths(dataDir: string) {
       join(packsStore, `${sha1Name(sha1)}.zip`),
     resourcePackIcon: (sha1: string) =>
       join(packsStore, "icons", `${sha1Name(sha1)}.png`),
+
+    dataPacksStoreDir: dataPacksStore,
+    dataPackStoreFile: (sha1: string) =>
+      join(dataPacksStore, `${sha1Name(sha1)}.zip`),
+    dataPackIcon: (sha1: string) =>
+      join(dataPacksStore, "icons", `${sha1Name(sha1)}.png`),
 
     shaderPacksStoreDir: shadersStore,
     shaderPackStoreFile: (sha1: string) =>

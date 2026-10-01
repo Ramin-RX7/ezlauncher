@@ -71,6 +71,25 @@ describe("LibraryPage", () => {
     expect(api.invoke).toHaveBeenCalledWith("shaders:library");
   });
 
+  it("has a data pack library tab with Add to worlds", async () => {
+    mockApi({
+      "dataPacks:library": () => [
+        { ...packs[0]!, name: "Terralith", usedBy: ["New World"] },
+      ],
+      "dataPacks:worlds": () => [],
+      "profiles:list": () => [profile()],
+    });
+    renderPage("/mods?tab=dataPacks");
+    expect(await screen.findByText("Data pack library")).toBeInTheDocument();
+    expect(await screen.findByText("In worlds: New World")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add Terralith to worlds" }),
+    );
+    expect(
+      await screen.findByText("There are no worlds yet."),
+    ).toBeInTheDocument();
+  });
+
   it("asks before removing unused packs", async () => {
     const api = mockApi({
       "resourcePacks:library": () => packs,

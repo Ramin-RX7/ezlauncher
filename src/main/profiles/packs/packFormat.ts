@@ -2,12 +2,13 @@ import { strFromU8 } from "fflate";
 import { readZipEntries } from "../../core/zipEntries";
 
 /*
- * Which resource pack format a Minecraft version uses. Since 1.14 the client jar
- * says so itself (`version.json`), so new versions need no table here; only the
- * frozen 1.6–1.13.2 releases are listed. `version.json` comes in three shapes:
- *   1.14–1.16    "pack_version": 4
+ * Which resource and data pack formats a Minecraft version uses. Since 1.14 the
+ * client jar says so itself (`version.json`), so new versions need no table here;
+ * only the frozen 1.6–1.13.2 releases are listed. `version.json` comes in three shapes:
+ *   1.14–1.16    "pack_version": 4          (data packs used the same number then)
  *   1.17–1.21.8  "pack_version": { "resource": 15, "data": 15 }
- *   1.21.9+      "pack_version": { "resource_major": 69, "resource_minor": 0, … }
+ *   1.21.9+      "pack_version": { "resource_major": 69, "resource_minor": 0,
+ *                                  "data_major": 88, "data_minor": 0 }
  */
 
 /** A pack format; formats before 1.21.9 have minor 0. */
@@ -18,6 +19,8 @@ export interface PackFormat {
 
 export interface GameFormat {
   resource: PackFormat;
+  /** The data pack format; none before 1.13. */
+  data?: PackFormat;
   /** The data version (`options.txt`'s `version:`), when known. */
   worldVersion?: number;
 }
@@ -37,17 +40,33 @@ export function formatFromVersionJson(json: unknown): GameFormat | undefined {
     unknown
   >;
   let resource: PackFormat | undefined;
+  let data: PackFormat | undefined;
   const plain = int(pack);
-  if (plain !== undefined) resource = { major: plain, minor: 0 };
-  else if (typeof pack === "object" && pack !== null) {
+  if (plain !== undefined) {
+    resource = { major: plain, minor: 0 };
+    data = resource;
+  } else if (typeof pack === "object" && pack !== null) {
     const p = pack as Record<string, unknown>;
     const major = int(p.resource_major) ?? int(p.resource);
     if (major !== undefined)
       resource = { major, minor: int(p.resource_minor) ?? 0 };
+    const dataMajor = int(p.data_major) ?? int(p.data);
+    if (dataMajor !== undefined)
+      data = { major: dataMajor, minor: int(p.data_minor) ?? 0 };
   }
   if (!resource) return undefined;
   const worldVersion = int(world);
-  return { resource, ...(worldVersion !== undefined && { worldVersion }) };
+  return {
+    resource,
+    ...(data && { data }),
+    ...(worldVersion !== undefined && { worldVersion }),
+  };
+}
+
+/** Releases before 1.13 have no data packs. */
+export function predatesDataPacks(versionId: string): boolean {
+  const m = RELEASE.exec(versionId);
+  return m !== null && Number(m[1]) < 13;
 }
 
 /** `1.<minor>[.<patch>]` releases. */
@@ -79,6 +98,8 @@ export function legacyFormat(versionId: string): GameFormat | undefined {
   const worldVersion = LEGACY_WORLD_VERSIONS[versionId];
   return {
     resource: { major, minor: 0 },
+    // Data packs came in 1.13, with data format 4.
+    ...(minor >= 13 && { data: { major: 4, minor: 0 } }),
     ...(worldVersion !== undefined && { worldVersion }),
   };
 }

@@ -4,12 +4,12 @@ import { PackLibraryTab } from "../components/resourcepacks/PackLibraryTab";
 import { TabBar } from "../components/ui/Tabs";
 import { ModLibraryPage } from "./ModLibraryPage";
 
-type Tab = "mods" | "resourcePacks" | "shaders";
-const TABS: readonly Tab[] = ["mods", "resourcePacks", "shaders"];
+type Tab = "mods" | "resourcePacks" | "shaders" | "dataPacks";
+const TABS: readonly Tab[] = ["mods", "resourcePacks", "shaders", "dataPacks"];
 const isTab = (value: string | null): value is Tab =>
   TABS.some((tab) => tab === value);
 
-/** The shared libraries: mods, resource packs and shaders, each stored once for every profile. */
+/** The shared libraries: mods, resource packs, shaders and data packs, each stored once. */
 export function LibraryPage() {
   const { t } = useTranslation();
   const [params, setParams] = useSearchParams();

@@ -59,6 +59,12 @@ const KNOWN = [
   "SHADERS_NEED_LOADER",
   "IRIS_CONFIG_UNWRITABLE",
   "SHADER_NO_VERSION",
+  "NOT_A_DATAPACK",
+  "DATAPACK_NESTED",
+  "DATAPACK_NOT_FOUND",
+  "DATAPACK_IN_USE",
+  "DATAPACKS_UNSUPPORTED",
+  "DATAPACK_NO_VERSION",
 ] as const;
 
 /** A user-facing message for an error code from the main process. */

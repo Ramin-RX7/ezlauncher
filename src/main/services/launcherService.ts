@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { basename, isAbsolute, join } from "node:path";
 import { app, BrowserWindow, net, shell } from "electron";
 import type {
@@ -14,6 +14,10 @@ import type {
   ProfilePacks,
   ProfileShaders,
   ShaderInstallResult,
+  AddToWorldsResult,
+  DataPackInstallResult,
+  DataPackWorld,
+  WorldDataPacks,
   BackupResult,
   BackupSummary,
   WorldBackup,
@@ -103,7 +107,11 @@ import {
   type BackupMoment,
 } from "../profiles/backups";
 import { downloadPlan, storeVersions } from "../modsources/downloadMods";
-import { downloadPack, SHADER_DOWNLOAD } from "../modsources/downloadPack";
+import {
+  DATAPACK_DOWNLOAD,
+  downloadPack,
+  SHADER_DOWNLOAD,
+} from "../modsources/downloadPack";
 import { packCompat } from "../profiles/packs/packMeta";
 import { resolveBulk } from "../modsources/bulkFetch";
 import { createModSourceRegistry } from "../modsources/registry";
@@ -116,6 +124,7 @@ import { isLink, removeTree } from "../profiles/links";
 import { createModLibrary, type ModSourceRef } from "../profiles/mods";
 import {
   createPackLibrary,
+  dataPackKind,
   shaderPackKind,
   type PackLibrary,
   type PackSourceRef,
@@ -125,8 +134,13 @@ import {
   shaderRefSchema,
 } from "../profiles/packs/profileShaders";
 import type { ReconcileDiff } from "../profiles/linkedStore";
+import { createWorldDataPacks } from "../profiles/packs/worldDataPacks";
 import type { ProjectType } from "../modsources/types";
-import { readGameFormat, type GameFormat } from "../profiles/packs/packFormat";
+import {
+  predatesDataPacks,
+  readGameFormat,
+  type GameFormat,
+} from "../profiles/packs/packFormat";
 import {
   activePacksSchema,
   createProfilePacks,
@@ -217,6 +231,17 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     library: shaders,
     logger: log,
   });
+  /** Data packs belong to worlds: this library's keys are world ids. */
+  const dataPacks = createPackLibrary({
+    paths,
+    kind: dataPackKind(paths),
+    logger: log,
+  });
+  const worldDataPacks = createWorldDataPacks({
+    paths,
+    library: dataPacks,
+    logger: log,
+  });
   const patchNotes = createPatchNotes({ paths, downloader });
   const sources = createModSourceRegistry({
     fetch: (url, init) => net.fetch(url, init),
@@ -241,6 +266,8 @@ export function createLauncherService(dataDir: string, logger: Logger) {
   const packDownloads = new Map<string, AbortController>();
   /** Shader downloads in progress, by project id. */
   const shaderDownloads = new Map<string, AbortController>();
+  /** Data pack downloads in progress, by project id. */
+  const dataPackDownloads = new Map<string, AbortController>();
   const EMPTY_INPUT: ValidationInput = {
     gameVersion: "",
     loader: null,
@@ -306,7 +333,55 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       await syncPackKind(options, shaders, paths.shaderPacksDir, (p, diff) =>
         profileShaders.followSync(p, diff),
       );
+      await syncDataPacks(options);
     });
+  }
+
+  /** Every world in `worlds/` and the profile that owns it. */
+  async function worldOwners(): Promise<Map<string, string | undefined>> {
+    let names: string[] = [];
+    try {
+      names = (await readdir(paths.worldsDir, { withFileTypes: true }))
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name);
+    } catch {
+      // no worlds yet
+    }
+    const owners = new Map<string, string | undefined>();
+    for (const id of names) owners.set(id, await readWorldOwner(paths, id));
+    return owners;
+  }
+
+  /**
+   * Data pack sync, by world: every world is a key (a world that's gone drops its
+   * links), only the worlds of `only`'s profiles are reconciled, and a world counts
+   * as running when its profile does. The game itself turns new files on.
+   */
+  async function syncDataPacks(options: {
+    profileIds: string[];
+    only?: string[];
+    isRunning: (id: string) => boolean;
+  }): Promise<void> {
+    const owners = await worldOwners();
+    const only = options.only;
+    const worlds = only
+      ? [...owners]
+          .filter(([, owner]) => owner !== undefined && only.includes(owner))
+          .map(([worldId]) => worldId)
+      : undefined;
+    await syncPackKind(
+      {
+        profileIds: [...owners.keys()],
+        ...(worlds && { only: worlds }),
+        isRunning: (worldId) => {
+          const owner = owners.get(worldId);
+          return owner !== undefined && options.isRunning(owner);
+        },
+      },
+      dataPacks,
+      paths.worldDataPacksDir,
+      () => Promise.resolve(), // nothing else names a world's packs
+    );
   }
 
   /** Pack sync for one kind; the game's settings follow files renamed by hand. */
@@ -379,7 +454,8 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     const modsAsked = await identifyPendingMods();
     const packsAsked = await identifyPendingPacks(packs, "resourcepack");
     const shadersAsked = await identifyPendingPacks(shaders, "shader");
-    if (modsAsked || packsAsked || shadersAsked) changed();
+    const dataPacksAsked = await identifyPendingPacks(dataPacks, "datapack");
+    if (modsAsked || packsAsked || shadersAsked || dataPacksAsked) changed();
   }
 
   async function identifyPendingMods(): Promise<boolean> {
@@ -939,6 +1015,44 @@ export function createLauncherService(dataDir: string, logger: Logger) {
   }
 
   /**
+   * A world's owner profile, the data pack format that plays it, and whether that
+   * version has data packs at all. Worlds still in `saves/` (not synced) aren't found.
+   */
+  async function dataPackWorld(worldId: unknown) {
+    if (typeof worldId !== "string")
+      throw new AppError("WORLD_NOT_FOUND", "World not found.");
+    let ownerId: string | undefined;
+    try {
+      ownerId = await readWorldOwner(paths, worldId);
+    } catch {
+      ownerId = undefined; // not a valid world name
+    }
+    const profile = ownerId ? await profiles.get(ownerId) : undefined;
+    if (!profile) throw new AppError("WORLD_NOT_FOUND", "World not found.");
+    const format = await gameFormat(profile);
+    return {
+      profile,
+      context: {
+        id: worldId,
+        ...(format?.data && { format: format.data }),
+        unsupported: predatesDataPacks(profile.gameVersion),
+      },
+    };
+  }
+
+  /** A world whose packs may change now: its profile isn't playing, and its version has data packs. */
+  async function editableWorld(worldId: unknown) {
+    const world = await dataPackWorld(worldId);
+    assertNotRunning(world.profile.id);
+    if (world.context.unsupported)
+      throw new AppError(
+        "DATAPACKS_UNSUPPORTED",
+        "This Minecraft version has no data packs.",
+      );
+    return world;
+  }
+
+  /**
    * Check picked or dropped paths (only existing `.zip` files) and add them to a
    * pack library. Resolves to the counts and the SHA1s of the stored zips.
    */
@@ -1282,7 +1396,10 @@ export function createLauncherService(dataDir: string, logger: Logger) {
             await moveWorld({ paths, logger: log }, worldId, moveTo, options);
         } else {
           const owned = await worldsOwnedBy(paths, id);
-          for (const worldId of owned) await deleteWorld(paths, worldId);
+          for (const worldId of owned) {
+            await deleteWorld(paths, worldId);
+            await dataPacks.forgetProfile(worldId); // a moved world keeps its packs
+          }
         }
         await profiles.remove(id);
         // Never follows links, so worlds linked into this profile can't be touched.
@@ -1693,6 +1810,240 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       const controller = packDownloads.get(projectId);
       controller?.abort();
       return controller !== undefined;
+    },
+
+    // ---- Data packs (per world) ----
+
+    async dataPackLibrary(): Promise<LibraryPack[]> {
+      await ready;
+      await sync();
+      return dataPacks.list();
+    },
+
+    dataPackIcon: (sha1: string) => dataPacks.icon(sha1),
+
+    async dataPackFolderIcon(
+      worldId: string,
+      name: string,
+    ): Promise<string | null> {
+      await ready;
+      if (typeof worldId !== "string" || typeof name !== "string") return null;
+      return worldDataPacks.folderIcon(worldId, name).catch(() => null);
+    },
+
+    /** A world's Data packs dialog: its packs, the library's others, and non-packs. */
+    async worldDataPacks(worldId: string): Promise<WorldDataPacks> {
+      await ready;
+      const { profile, context } = await dataPackWorld(worldId);
+      const busy = isBusy(profile.id);
+      if (!busy) await sync([profile.id]);
+      return worldDataPacks.view(context, { running: busy });
+    },
+
+    /**
+     * Put a library pack in a world, or take it out. Never while the world's
+     * profile plays: the game keeps the world's packs open.
+     */
+    async setDataPackInWorld(
+      worldId: string,
+      sha1: string,
+      present: boolean,
+    ): Promise<void> {
+      await ready;
+      await editableWorld(worldId);
+      if (typeof sha1 !== "string" || !/^[0-9a-f]{40}$/.test(sha1))
+        throw new AppError("DATAPACK_NOT_FOUND", "That data pack isn't valid.");
+      await serialFs(() =>
+        present
+          ? worldDataPacks.add(worldId, sha1)
+          : worldDataPacks.remove(worldId, sha1),
+      );
+      changed();
+    },
+
+    /** Every world (by profile), with whether it has this pack, for "Add to worlds…". */
+    async dataPackWorlds(sha1: string): Promise<DataPackWorld[]> {
+      await ready;
+      const users =
+        typeof sha1 === "string" ? await dataPacks.usedBy(sha1) : [];
+      const worlds: DataPackWorld[] = [];
+      for (const p of await profiles.list())
+        for (const w of await listWorlds(paths, p.id))
+          if (w.linked)
+            worlds.push({
+              worldId: w.id,
+              name: w.name,
+              profileId: p.id,
+              profileName: p.name,
+              hasPack: users.includes(w.id),
+              busy: isBusy(p.id),
+              unsupported: predatesDataPacks(p.gameVersion),
+            });
+      return worlds;
+    },
+
+    /** Put a library pack in several worlds; ones that can't change now are reported. */
+    async addDataPackToWorlds(
+      sha1: string,
+      worldIds: readonly unknown[],
+    ): Promise<AddToWorldsResult> {
+      await ready;
+      const result: AddToWorldsResult = { added: [], failed: [] };
+      for (const worldId of Array.isArray(worldIds) ? worldIds : []) {
+        if (typeof worldId !== "string") continue;
+        try {
+          await editableWorld(worldId);
+          await serialFs(() => worldDataPacks.add(worldId, sha1));
+          result.added.push(worldId);
+        } catch (err) {
+          result.failed.push({
+            worldId,
+            code: err instanceof AppError ? err.code : "INTERNAL",
+          });
+        }
+      }
+      changed();
+      return result;
+    },
+
+    /** Add data pack zips to the library; with a world, also put them there. */
+    async addDataPacks(
+      files: readonly unknown[],
+      worldId?: string,
+    ): Promise<AddPacksResult> {
+      await ready;
+      const world = worldId ? await dataPackWorld(worldId) : undefined;
+      const { result, stored, storedNames } = await addZips(
+        dataPacks,
+        files,
+        "NOT_A_DATAPACK",
+      );
+      if (world && worldId && stored.length > 0) {
+        let code: string | undefined;
+        try {
+          await editableWorld(worldId);
+          await serialFs(async () => {
+            for (const sha1 of stored) await worldDataPacks.add(worldId, sha1);
+          });
+        } catch (err) {
+          code = err instanceof AppError ? err.code : "INTERNAL";
+        }
+        if (code)
+          for (const fileName of storedNames)
+            result.failed.push({ fileName, code });
+      }
+      changed();
+      return result;
+    },
+
+    /** Delete a data pack from the library and every world (`force` when worlds have it). */
+    async removeDataPack(sha1: string, force: boolean): Promise<void> {
+      await ready;
+      const users = await dataPacks.usedBy(sha1);
+      if (users.length > 0 && !force)
+        throw new AppError("DATAPACK_IN_USE", "Worlds still have this pack.");
+      // A world being played keeps its packs open (locked on Windows).
+      for (const worldId of users) {
+        const owner = await readWorldOwner(paths, worldId).catch(
+          () => undefined,
+        );
+        if (owner) assertNotRunning(owner);
+      }
+      await serialFs(() => dataPacks.remove(sha1));
+      changed();
+    },
+
+    async removeUnusedDataPacks(): Promise<number> {
+      await ready;
+      await sync();
+      const count = await serialFs(() => dataPacks.removeUnused());
+      changed();
+      return count;
+    },
+
+    /** Data packs on the mod sites matching `query`, for the world's Minecraft version if given. */
+    async searchDataPacks(
+      query: string,
+      worldId: string | undefined,
+      offset: number,
+    ): Promise<PackSearchResult> {
+      await ready;
+      const world = worldId ? await dataPackWorld(worldId) : undefined;
+      return searchSite("datapack", query, world?.profile, offset);
+    },
+
+    /** Download a data pack into the library; with a world, put it there too. */
+    async installDataPack(
+      sourceId: string,
+      projectId: string,
+      worldId?: string,
+    ): Promise<DataPackInstallResult> {
+      await ready;
+      const world = worldId ? await dataPackWorld(worldId) : undefined;
+      if (dataPackDownloads.has(projectId))
+        throw new AppError("BUSY", "This pack is already downloading.");
+      const controller = new AbortController();
+      dataPackDownloads.set(projectId, controller);
+      try {
+        const result = await downloadPack(
+          { downloader, library: dataPacks, source: sources.get(sourceId) },
+          projectId,
+          {
+            ...(world && { gameVersion: world.profile.gameVersion }),
+            kind: DATAPACK_DOWNLOAD,
+            signal: controller.signal,
+            onProgress: (p) => {
+              broadcast("dataPacks:download", {
+                projectId,
+                bytes: p.bytes,
+                totalBytes: p.totalBytes,
+              });
+            },
+          },
+        );
+        if (result.project?.iconUrl)
+          await saveIcon(dataPacks, result.sha1, result.project.iconUrl);
+        let added = false;
+        if (worldId && world) {
+          added = await editableWorld(worldId)
+            .then(() =>
+              serialFs(() => worldDataPacks.add(worldId, result.sha1)),
+            )
+            .then(
+              () => true,
+              () => false,
+            );
+        }
+        const meta = await dataPacks.meta(result.sha1);
+        changed();
+        return {
+          sha1: result.sha1,
+          name: (meta?.fileName ?? result.version.file.fileName).replace(
+            /\.zip$/i,
+            "",
+          ),
+          versionNumber: result.version.versionNumber,
+          compat: packCompat(meta?.range, world?.context.format),
+          otherVersion: result.otherVersion,
+          added,
+          needs: result.needs,
+        };
+      } finally {
+        dataPackDownloads.delete(projectId);
+      }
+    },
+
+    cancelDataPackInstall(projectId: string): boolean {
+      const controller = dataPackDownloads.get(projectId);
+      controller?.abort();
+      return controller !== undefined;
+    },
+
+    async openWorldDataPacksFolder(worldId: string): Promise<void> {
+      await ready;
+      await dataPackWorld(worldId);
+      await mkdir(paths.worldDataPacksDir(worldId), { recursive: true });
+      await openFolder(paths.worldDataPacksDir(worldId));
     },
 
     // ---- Shader packs ----

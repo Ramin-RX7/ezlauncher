@@ -15,6 +15,10 @@ import type {
   ProfilePacks,
   ProfileShaders,
   ShaderInstallResult,
+  AddToWorldsResult,
+  DataPackInstallResult,
+  DataPackWorld,
+  WorldDataPacks,
   ApplyModsResult,
   BackupProgress,
   BackupResult,
@@ -262,6 +266,57 @@ export interface IpcInvokeContract {
   };
   "resourcePacks:cancelInstall": { args: [projectId: string]; result: boolean };
 
+  /** Every library data pack (runs pack sync first); `usedBy` holds world ids. */
+  "dataPacks:library": { args: []; result: LibraryPack[] };
+  "dataPacks:icon": { args: [sha1: string]; result: string | null };
+  /** A folder data pack's icon (in a world's `datapacks/`), or null. */
+  "dataPacks:folderIcon": {
+    args: [worldId: string, name: string];
+    result: string | null;
+  };
+  /** A world's data packs, the library's others, and non-pack files. */
+  "dataPacks:world": { args: [worldId: string]; result: WorldDataPacks };
+  /** Puts a library pack in a world, or takes it out. Fails with `GAME_RUNNING` while its profile plays. */
+  "dataPacks:setInWorld": {
+    args: [options: { worldId: string; sha1: string; present: boolean }];
+    result: void;
+  };
+  /** Every world, with whether it has this pack (for "Add to worlds…"). */
+  "dataPacks:worlds": { args: [sha1: string]; result: DataPackWorld[] };
+  /** Puts a library pack in several worlds. */
+  "dataPacks:addToWorlds": {
+    args: [options: { sha1: string; worldIds: string[] }];
+    result: AddToWorldsResult;
+  };
+  /** Opens a file picker; the chosen zips are added (and put in the world, if given). */
+  "dataPacks:addFromPicker": {
+    args: [options: { worldId?: string }];
+    result: AddPacksResult;
+  };
+  /** Adds dropped zips by path (and puts them in the world, if given). */
+  "dataPacks:addFiles": {
+    args: [options: { paths: string[]; worldId?: string }];
+    result: AddPacksResult;
+  };
+  /** Removes a data pack from the library. Fails with `DATAPACK_IN_USE` when worlds have it, unless `force`. */
+  "dataPacks:remove": {
+    args: [options: { sha1: string; force: boolean }];
+    result: void;
+  };
+  "dataPacks:removeUnused": { args: []; result: number };
+  /** Searches the site for data packs (for the world's Minecraft version, if given), 20 at a time. */
+  "dataPacks:search": {
+    args: [options: { query: string; worldId?: string; offset: number }];
+    result: PackSearchResult;
+  };
+  /** Downloads a data pack into the library (and puts it in the world, if given). */
+  "dataPacks:install": {
+    args: [options: { sourceId: string; projectId: string; worldId?: string }];
+    result: DataPackInstallResult;
+  };
+  "dataPacks:cancelInstall": { args: [projectId: string]; result: boolean };
+  "dataPacks:openFolder": { args: [worldId: string]; result: void };
+
   /** Every library shader pack (runs pack sync first). */
   "shaders:library": { args: []; result: LibraryPack[] };
   /** A library shader's icon (its project's, from the site) as a `data:` URL, or null. */
@@ -388,6 +443,7 @@ export interface IpcEventContract {
   "mods:bulkProgress": ModBulkProgress;
   "resourcePacks:download": PackDownloadProgress;
   "shaders:download": PackDownloadProgress;
+  "dataPacks:download": PackDownloadProgress;
   "java:progress": JavaInstallProgress;
   "backup:progress": BackupProgress;
   "backup:state": BackupStateEvent;
@@ -456,6 +512,21 @@ export const INVOKE_CHANNELS = [
   "resourcePacks:search",
   "resourcePacks:install",
   "resourcePacks:cancelInstall",
+  "dataPacks:library",
+  "dataPacks:icon",
+  "dataPacks:folderIcon",
+  "dataPacks:world",
+  "dataPacks:setInWorld",
+  "dataPacks:worlds",
+  "dataPacks:addToWorlds",
+  "dataPacks:addFromPicker",
+  "dataPacks:addFiles",
+  "dataPacks:remove",
+  "dataPacks:removeUnused",
+  "dataPacks:search",
+  "dataPacks:install",
+  "dataPacks:cancelInstall",
+  "dataPacks:openFolder",
   "shaders:library",
   "shaders:icon",
   "shaders:profile",
@@ -501,6 +572,7 @@ export const EVENT_CHANNELS = [
   "mods:bulkProgress",
   "resourcePacks:download",
   "shaders:download",
+  "dataPacks:download",
   "java:progress",
   "backup:progress",
   "backup:state",
