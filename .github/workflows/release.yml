@@ -66,7 +66,7 @@ jobs:
           cat .github/release-footer.md >> release-notes.md
 
       - if: github.ref_type == 'tag'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-notes
           path: release-notes.md
@@ -94,7 +94,7 @@ jobs:
       # The checks job already type checked, so skip `npm run build`'s typecheck.
       - run: npx electron-vite build
       - run: npx electron-builder --${{ matrix.platform }} --publish never
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: build-${{ matrix.platform }}
           path: |
