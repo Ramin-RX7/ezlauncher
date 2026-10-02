@@ -30,6 +30,13 @@ export function registerProfilesIpc(): void {
   handle("profiles:createShortcut", (_e, { profileId, iconPng, description }) =>
     getService().createShortcut(profileId, { iconPng, description }),
   );
+  handle("servers:list", (_e, profileId) => getService().serverList(profileId));
+  handle("servers:save", (_e, { profileId, servers }) =>
+    getService().saveServerList(profileId, servers),
+  );
+  handle("profiles:playHistory", (_e, profileId) =>
+    getService().playHistory(profileId),
+  );
   handle("profiles:playTargets", (_e, profileId) =>
     getService().playTargets(profileId),
   );

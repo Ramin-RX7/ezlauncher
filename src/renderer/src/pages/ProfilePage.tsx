@@ -10,7 +10,9 @@ import { DeleteProfileDialog } from "../components/profiles/DeleteProfileDialog"
 import { DuplicateProfileDialog } from "../components/profiles/DuplicateProfileDialog";
 import { ProfileEditor } from "../components/profiles/ProfileEditor";
 import { ProfileIcon } from "../components/profiles/ProfileIcon";
+import { PlayHistoryDialog } from "../components/profiles/PlayHistoryDialog";
 import { ServersTab } from "../components/profiles/ServersTab";
+import { formatDuration } from "../lib/formatDuration";
 import { ShortcutButton } from "../components/profiles/ShortcutButton";
 import { WorldsTab } from "../components/profiles/WorldsTab";
 import { ResourcePacksTab } from "../components/resourcepacks/ResourcePacksTab";
@@ -40,6 +42,7 @@ export function ProfilePage() {
   const [duplicating, setDuplicating] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [playRequest, setPlayRequest] = useState<PlayRequest>();
   const list = profiles.data ?? [];
   const profile = list.find((p) => p.id === id);
@@ -83,6 +86,20 @@ export function ProfilePage() {
                     })}
                   </span>
                 )}
+                <span className="flex items-center gap-2 text-xs text-muted">
+                  {t("playTime.played", {
+                    time: formatDuration(t, profile.playTimeMs ?? 0),
+                  })}
+                  <button
+                    type="button"
+                    className="text-accent hover:underline"
+                    onClick={() => {
+                      setHistoryOpen(true);
+                    }}
+                  >
+                    {t("playTime.history")}
+                  </button>
+                </span>
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -170,6 +187,14 @@ export function ProfilePage() {
           {tab === "mods" && <ModsTab profile={profile} />}
           {tab === "resourcePacks" && <ResourcePacksTab profile={profile} />}
           {tab === "shaders" && <ShadersTab profile={profile} />}
+          {historyOpen && (
+            <PlayHistoryDialog
+              profile={profile}
+              onClose={() => {
+                setHistoryOpen(false);
+              }}
+            />
+          )}
           {updating && (
             <UpdateModpackDialog
               profile={profile}

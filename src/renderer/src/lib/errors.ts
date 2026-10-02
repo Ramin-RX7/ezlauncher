@@ -81,6 +81,9 @@ const KNOWN = [
   "WORLD_IN_USE",
   "SHORTCUT_UNSUPPORTED",
   "SHORTCUT_FAILED",
+  "SERVERS_UNREADABLE",
+  "STORAGE_BUSY",
+  "CLEANUP_FAILED",
 ] as const;
 
 /** A user-facing message for an error code from the main process. */

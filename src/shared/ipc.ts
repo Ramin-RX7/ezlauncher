@@ -55,7 +55,12 @@ import type {
   LoaderInfo,
   LoaderBuildInfo,
   OrphanWorld,
+  PlayHistory,
   PlayTargets,
+  SavedServerList,
+  StorageReport,
+  CleanupId,
+  CleanupResult,
   Profile,
   ProfileInfo,
   ProfileInput,
@@ -214,6 +219,29 @@ export interface IpcInvokeContract {
   "worlds:list": { args: [profileId: string]; result: WorldInfo[] };
   /** Whether worlds can be started into, and the game's server list (read only). */
   "profiles:playTargets": { args: [profileId: string]; result: PlayTargets };
+  /** How long a profile was played, and its sessions. */
+  "profiles:playHistory": { args: [profileId: string]; result: PlayHistory };
+  /** The game's server list of a profile, for editing. */
+  "servers:list": { args: [profileId: string]; result: SavedServerList };
+  /** The data folder's size by part, and what each clean-up would free (progress on `storage:progress`). */
+  "storage:scan": { args: []; result: StorageReport };
+  /** Runs the chosen clean-ups, each planned again first. */
+  "storage:clean": { args: [ids: CleanupId[]]; result: CleanupResult };
+  /** Saves the visible servers in this order (`key` = an existing one). Refused while it plays. */
+  "servers:save": {
+    args: [
+      options: {
+        profileId: string;
+        servers: {
+          key?: number;
+          name: string;
+          address: string;
+          resourcePacks: "prompt" | "enabled" | "disabled";
+        }[];
+      },
+    ];
+    result: void;
+  };
   /** Makes a desktop shortcut that opens the launcher on this profile; resolves to its path. */
   "profiles:createShortcut": {
     args: [
@@ -541,6 +569,8 @@ export interface IpcEventContract {
   "setup:moveProgress": MoveProgress;
   /** A profile's desktop shortcut was opened while the launcher runs: show that profile. */
   "app:openProfile": { profileId: string };
+  /** Files counted so far by a storage scan. */
+  "storage:progress": { files: number };
 }
 
 export type InvokeChannel = keyof IpcInvokeContract;
@@ -591,6 +621,11 @@ export const INVOKE_CHANNELS = [
   "modpacks:export",
   "worlds:list",
   "profiles:playTargets",
+  "profiles:playHistory",
+  "servers:list",
+  "storage:scan",
+  "storage:clean",
+  "servers:save",
   "profiles:createShortcut",
   "worlds:move",
   "worlds:orphans",
@@ -690,6 +725,7 @@ export const EVENT_CHANNELS = [
   "backup:state",
   "setup:moveProgress",
   "app:openProfile",
+  "storage:progress",
 ] as const satisfies readonly EventChannel[];
 
 /** Errors cross the IPC boundary in this shape. */

@@ -195,9 +195,16 @@ describe("App", () => {
         canCreateShortcuts: true,
       }),
       "profiles:createShortcut": () => "C:/Users/me/Desktop/Survival.lnk",
-      "profiles:playTargets": () => ({
-        worlds: "yes",
-        servers: [{ name: "Friends", address: "friends.example.com" }],
+      "servers:list": () => ({
+        locked: false,
+        servers: [
+          {
+            key: 0,
+            name: "Friends",
+            address: "friends.example.com",
+            resourcePacks: "prompt",
+          },
+        ],
       }),
       "game:launch": () => ({
         status: "started",

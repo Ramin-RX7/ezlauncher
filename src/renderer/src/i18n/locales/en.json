@@ -6,6 +6,7 @@
     "label": "Main",
     "home": "Home",
     "versions": "Versions",
+    "storage": "Storage",
     "settings": "Settings",
     "mods": "Library"
   },
@@ -290,7 +291,10 @@
     "INVALID_ADDRESS": "That isn't a server address. Use a name like play.example.com, optionally with :port.",
     "WORLD_IN_USE": "This world may be open in the game that's running. Close it first.",
     "SHORTCUT_UNSUPPORTED": "Shortcuts can't be made for this copy of the launcher.",
-    "SHORTCUT_FAILED": "The shortcut couldn't be made."
+    "SHORTCUT_FAILED": "The shortcut couldn't be made.",
+    "SERVERS_UNREADABLE": "The game's server list can't be read. Open the Multiplayer screen in game once to repair it.",
+    "STORAGE_BUSY": "Wait for installs and backups to finish, then try again.",
+    "CLEANUP_FAILED": "Something couldn't be deleted. Try again, or close programs using those files."
   },
   "error": {
     "title": "Something went wrong",
@@ -425,14 +429,54 @@
     "join": "Join",
     "joinLabel": "Join {{name}}",
     "badAddress": "Not a server address.",
-    "empty": "No saved servers yet. Servers added on the game's Multiplayer screen show up here.",
-    "hint": "The game opens straight onto the server. The list is edited in game, on the Multiplayer screen."
+    "empty": "No saved servers yet. Add one here, or on the game's Multiplayer screen.",
+    "hint": "The game opens straight onto the server. Changes to this list show in the game's Multiplayer screen.",
+    "addToList": "Add to list",
+    "listTitle": "Server list",
+    "add": "Add server",
+    "locked": "Close the game to change the server list: the game saves its own list while it runs.",
+    "addTitle": "Add a server",
+    "editTitle": "Edit server",
+    "name": "Server name",
+    "namePlaceholder": "Minecraft Server",
+    "resourcePacks": "Server resource packs",
+    "packs": {
+      "prompt": "Ask",
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "save": "Save",
+    "cancel": "Cancel",
+    "moveUp": "Move {{name}} up",
+    "moveDown": "Move {{name}} down",
+    "editLabel": "Edit {{name}}",
+    "removeLabel": "Remove {{name}}",
+    "removeTitle": "Remove {{name}}?",
+    "removeBody": "It's taken off the game's server list.",
+    "remove": "Remove"
   },
   "shortcut": {
     "create": "Desktop shortcut",
     "hint": "Make a shortcut on your desktop that opens the launcher on this profile.",
     "created": "Shortcut created on your desktop.",
     "description": "Open {{name}} in EZLauncher"
+  },
+  "time": {
+    "lessThanMinute": "< 1 min",
+    "minutes": "{{m}} min",
+    "hoursMinutes": "{{h}} h {{m}} min"
+  },
+  "playTime": {
+    "played": "Played {{time}}",
+    "history": "History",
+    "historyTitle": "Play time of {{name}}",
+    "total": "{{time}} in all",
+    "none": "Not played yet.",
+    "about": "about {{time}}",
+    "removedAccount": "Removed account",
+    "inWorld": "in {{name}}",
+    "onServer": "on {{name}}",
+    "close": "Close"
   },
   "accounts": {
     "label": "Account",
@@ -1010,5 +1054,75 @@
       "getMod": "Get {{name}}",
       "findPack": "Find {{name}}"
     }
+  },
+  "storage": {
+    "title": "Storage",
+    "subtitle": "How much space the launcher's data folder takes, and what can go.",
+    "rescan": "Rescan",
+    "scanning": "Measuring the data folder…",
+    "counted_one": "{{count}} file counted",
+    "counted_other": "{{count}} files counted",
+    "usage": "In use",
+    "cleanUp": "Clean up",
+    "categories": {
+      "versions": "Minecraft versions",
+      "libraries": "Libraries",
+      "assets": "Game assets (sounds, languages)",
+      "java": "Java runtimes",
+      "mods": "Mods",
+      "resourcePacks": "Resource packs",
+      "shaders": "Shaders",
+      "dataPacks": "Data packs",
+      "worlds": "Worlds",
+      "backups": "Backups",
+      "profiles": "Profiles' other files (configs, screenshots, logs)",
+      "launcher": "Launcher data",
+      "other": "Other"
+    },
+    "cleanups": {
+      "libraryItems": {
+        "title": "Unused library items",
+        "body": "Mods, resource packs, shaders and data packs no profile or world uses."
+      },
+      "versions": {
+        "title": "Unused versions",
+        "body": "Minecraft and loader versions no profile plays. They download again if a profile needs them."
+      },
+      "java": {
+        "title": "Unused Java",
+        "body": "Java runtimes no installed version needs. They download again when needed."
+      },
+      "gameFiles": {
+        "title": "Leftover game files",
+        "body": "Libraries and assets no installed version needs, and installs that never finished."
+      },
+      "backups": {
+        "title": "Old backups and caches",
+        "body": "Backups of worlds that no longer exist, mod pack update backups, and cached patch notes."
+      },
+      "logs": {
+        "title": "Old logs and crash reports",
+        "body": "Game logs (except the latest) and crash reports of profiles that aren't playing."
+      }
+    },
+    "reasons": {
+      "busy": "Wait for installs and backups to finish.",
+      "unreadable": "Skipped: an installed version can't be read. Repair it on the Versions page first."
+    },
+    "nothing": "Nothing to clean",
+    "items_one": "{{count}} item, {{size}}",
+    "items_other": "{{count}} items, {{size}}",
+    "more_one": "…and {{count}} more",
+    "more_other": "…and {{count}} more",
+    "showItems": "Show items",
+    "hideItems": "Hide items",
+    "cleanSelected": "Clean up selected ({{size}})",
+    "confirmTitle": "Free {{size}}?",
+    "confirmBody": "These are deleted for good. Versions and Java download again when a profile needs them.",
+    "confirm": "Delete",
+    "cleaning": "Cleaning…",
+    "cancel": "Cancel",
+    "freed": "Freed {{size}}.",
+    "failed": "{{name}} wasn't cleaned:"
   }
 }

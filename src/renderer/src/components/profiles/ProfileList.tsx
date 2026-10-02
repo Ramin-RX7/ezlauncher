@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { MoreHorizontal, Play } from "lucide-react";
 import type { ProfileInfo } from "@shared/launcher";
 import { ContextMenuArea, Menu, type MenuItem } from "../ui/Menu";
+import { formatDuration } from "../../lib/formatDuration";
 import { ProfileIcon } from "./ProfileIcon";
 
 export interface ProfileListProps {
@@ -138,6 +139,10 @@ export function ProfileList({
                         t("modpacks.badge", {
                           name: p.modpack.name,
                           version: p.modpack.versionNumber,
+                        }),
+                      (p.playTimeMs ?? 0) >= 60_000 &&
+                        t("playTime.played", {
+                          time: formatDuration(t, p.playTimeMs ?? 0),
                         }),
                       p.lastPlayedAt
                         ? t("profiles.lastPlayed", {

@@ -16,6 +16,7 @@ import { LibraryPage } from "./pages/LibraryPage";
 import { NewProfilePage } from "./pages/NewProfilePage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { StoragePage } from "./pages/StoragePage";
 import { SetupPage } from "./pages/SetupPage";
 import { VersionsPage } from "./pages/VersionsPage";
 import { LauncherEvents } from "./state/LauncherEvents";
@@ -55,6 +56,7 @@ function Root() {
             <Route path="profiles/:id" element={<ProfilePage />} />
             <Route path="mods" element={<LibraryPage />} />
             <Route path="versions" element={<VersionsPage />} />
+            <Route path="storage" element={<StoragePage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Routes>

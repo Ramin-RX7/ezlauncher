@@ -35,7 +35,11 @@ import type {
   LoaderInfo,
   LoaderBuildInfo,
   OrphanWorld,
+  PlayHistory,
   PlayTargets,
+  SavedServerList,
+  StorageReport,
+  CleanupResult,
   QuickPlay,
   Profile,
   ProfileInfo,
@@ -59,7 +63,8 @@ import {
   quickPlaySupport,
   type QuickPlayTarget,
 } from "../minecraft/arguments";
-import { readJson } from "../core/fsAtomic";
+import { readJson, writeFileAtomic } from "../core/fsAtomic";
+import { checkEdits, readServers, writeServers } from "../profiles/serverList";
 import { versionJsonSchema } from "../minecraft/schemas";
 import { readServerList } from "../profiles/nbt";
 import { formatServerAddress, parseServerAddress } from "@shared/serverAddress";
@@ -159,6 +164,7 @@ import {
 } from "../profiles/packs/profilePacks";
 import { migrateLegacyGames } from "../profiles/migrate";
 import { createProfileStore } from "../profiles/profiles";
+import { createPlayTime } from "../profiles/playTime";
 import {
   copyProfileWorlds,
   deleteWorld,
@@ -172,6 +178,7 @@ import {
 } from "../profiles/worlds";
 import { createModpackService } from "./modpacks";
 import { createProfileShortcut } from "../shortcuts";
+import { createStorageService } from "./storage";
 import { resolveLaunchSettings } from "../settings/launchSettings";
 import { createSettingsStore } from "../settings/settings";
 import { collectInput } from "../validation/collect";
@@ -299,6 +306,35 @@ export function createLauncherService(dataDir: string, logger: Logger) {
   const runningFile = createRunningGamesFile(
     paths.launcherFile("running.json"),
   );
+  const playTime = createPlayTime(paths.launcherFile("playtime.json"), {
+    logger: log,
+  });
+  /** A game's play time, from its start to its end. */
+  function recordPlay(
+    game: RunningGame,
+    from: number,
+    to: number,
+    approx = false,
+  ): void {
+    void playTime
+      .record(game.profileId, {
+        startedAt: from,
+        endedAt: to,
+        accountId: game.accountId,
+        ...(game.quickPlay && { quickPlay: game.quickPlay }),
+        ...(approx && { approx: true }),
+      })
+      .then(changed)
+      .catch((err: unknown) => {
+        log.warn("saving play time failed", err);
+      });
+  }
+  // While games run, note every minute that they still do: a game that ends while
+  // the launcher is closed then counts until the last time it was seen.
+  setInterval(() => {
+    if (running.size > 0) saveRunning();
+  }, 60_000).unref();
+
   function saveRunning(): void {
     const games = [...running.values()].map((g) => ({
       ...g,
@@ -838,7 +874,12 @@ export function createLauncherService(dataDir: string, logger: Logger) {
   const ready: Promise<void> = (async () => {
     try {
       // Games still running from before a restart: their profiles stay untouched.
-      for (const { startedAt: at, ...game } of await runningFile.restore()) {
+      const restored = await runningFile.restore();
+      for (const { startedAt: at, seenAt, ...game } of restored.ended) {
+        if (seenAt - at <= 24 * 60 * 60 * 1000)
+          recordPlay(game, at, seenAt, true);
+      }
+      for (const { startedAt: at, ...game } of restored.running) {
         running.set(game.launchId, game);
         startedAt.set(game.launchId, at);
         watchRestored(game);
@@ -888,6 +929,14 @@ export function createLauncherService(dataDir: string, logger: Logger) {
   }
 
   // ---- Quick Play ----
+
+  /** A server icon from `servers.dat` (base64 PNG) as a `data:` URL, if it looks like one. */
+  function iconDataUrl(base64: string): string | undefined {
+    const clean = base64.replace(/\s/g, "");
+    return /^[A-Za-z0-9+/=]{1,200000}$/.test(clean)
+      ? `data:image/png;base64,${clean}`
+      : undefined;
+  }
 
   /** The day Quick Play arrived (23w14a, on the way to 1.20). */
   const QUICK_PLAY_SINCE = "2023-04-05";
@@ -1075,6 +1124,8 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     code: number | null,
     crashed: boolean,
   ): void {
+    const from = startedAt.get(game.launchId);
+    if (from !== undefined) recordPlay(game, from, Date.now());
     running.delete(game.launchId);
     startedAt.delete(game.launchId);
     saveRunning();
@@ -1320,7 +1371,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     if (mode === "close") app.quit(); // the game keeps running on its own
   }
 
-  return {
+  const api = {
     paths,
 
     // ---- Versions ----
@@ -1421,8 +1472,12 @@ export function createLauncherService(dataDir: string, logger: Logger) {
 
     async listProfiles(): Promise<ProfileInfo[]> {
       await ready;
+      const played = await playTime
+        .totals()
+        .catch(() => new Map<string, number>());
       return (await profiles.list()).map((p) => ({
         ...p,
+        playTimeMs: played.get(p.id) ?? 0,
         running: [...running.values()].filter((g) => g.profileId === p.id)
           .length,
       }));
@@ -1574,6 +1629,8 @@ export function createLauncherService(dataDir: string, logger: Logger) {
         await packs.forgetProfile(id);
         await shaders.forgetProfile(id);
         await modpacks.forgetProfile(id);
+        await playTime.forget(id);
+        await removeTree(paths.modpackBackupsDir(id)).catch(() => undefined);
         // Its desktop shortcut stays (it opens a "doesn't exist" page); its icon goes.
         for (const ext of ["ico", "png"] as const)
           await rm(paths.shortcutIcon(id, ext), { force: true });
@@ -2921,6 +2978,72 @@ export function createLauncherService(dataDir: string, logger: Logger) {
 
     runningGames: (): RunningGame[] => [...running.values()],
 
+    /** A profile's play time and its sessions (newest first), with account names. */
+    async playHistory(profileId: string): Promise<PlayHistory> {
+      const profile = await requireProfile(profileId);
+      const [history, known] = await Promise.all([
+        playTime.history(profile.id),
+        accounts.list(),
+      ]);
+      return {
+        totalMs: history.totalMs,
+        sessions: history.sessions.map((s) => {
+          const name = known.find((a) => a.id === s.accountId)?.username;
+          return {
+            startedAt: new Date(s.startedAt).toISOString(),
+            durationMs: s.endedAt - s.startedAt,
+            ...(name && { accountName: name }),
+            ...(s.quickPlay && { quickPlay: s.quickPlay }),
+            ...(s.approx && { approx: true }),
+          };
+        }),
+      };
+    },
+
+    /** The game's server list of a profile, for editing (hidden entries aren't shown). */
+    async serverList(profileId: string): Promise<SavedServerList> {
+      const profile = await requireProfile(profileId);
+      const bytes = await readFile(paths.serversFile(profile.id)).catch(
+        () => undefined,
+      );
+      return {
+        servers: readServers(bytes ? new Uint8Array(bytes) : undefined).map(
+          ({ icon, ...s }) => {
+            const url = icon && iconDataUrl(icon);
+            return { ...s, ...(url && { icon: url }) };
+          },
+        ),
+        locked: isBusy(profile.id),
+      };
+    },
+
+    /**
+     * Save a profile's server list: the visible servers in this order. Everything else
+     * the game keeps in the file stays. Refused while the profile plays (the game
+     * rewrites the file).
+     */
+    async saveServerList(profileId: string, servers: unknown): Promise<void> {
+      const profile = await requireProfile(profileId);
+      assertNotRunning(profile.id);
+      const edits = checkEdits(servers);
+      const file = paths.serversFile(profile.id);
+      await serialFs(async () => {
+        const bytes = await readFile(file).catch(() => undefined);
+        const next = writeServers(
+          bytes ? new Uint8Array(bytes) : undefined,
+          edits,
+        );
+        // The game's own file as it was before the launcher first changed it.
+        const backup = `${file}.ezl-bak`;
+        if (bytes && !(await pathExists(backup)))
+          await writeFileAtomic(backup, bytes);
+        await mkdir(paths.gameDir(profile.id), { recursive: true });
+        await writeFileAtomic(file, next);
+      });
+      log.info(`saved ${edits.length} servers for ${profile.id}`);
+      changed();
+    },
+
     /** What a profile can start straight into: its worlds (1.20+) and the game's server list. */
     async playTargets(profileId: string): Promise<PlayTargets> {
       const profile = await requireProfile(profileId);
@@ -2931,10 +3054,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
           .map((s) => ({
             name: s.name || s.ip,
             address: s.ip,
-            ...(s.icon &&
-              /^[A-Za-z0-9+/=\r\n]{1,200000}$/.test(s.icon) && {
-                icon: `data:image/png;base64,${s.icon.replace(/\s/g, "")}`,
-              }),
+            ...(s.icon && iconDataUrl(s.icon) && { icon: iconDataUrl(s.icon) }),
           }));
       } catch {
         // No server list yet (never opened Multiplayer), or one the game left damaged.
@@ -3174,7 +3294,76 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     resumeAfterMove(): void {
       moving = false;
     },
+
+    // ---- Storage ----
+
+    /** The data folder's size by part, and what each clean-up would free. */
+    storageScan(): Promise<StorageReport> {
+      return storage.scan();
+    },
+
+    /** Run the chosen clean-ups (each planned again first). */
+    async storageClean(ids: unknown): Promise<CleanupResult> {
+      await ready;
+      if (moving) throw new AppError("BUSY", "The data folder is being moved.");
+      try {
+        return await storage.clean(ids);
+      } finally {
+        changed();
+      }
+    },
   };
+
+  const storage = createStorageService({
+    paths,
+    platform,
+    logger: log,
+    libraries: [
+      {
+        list: async () =>
+          (await api.modLibrary()).map((m) => ({
+            name: m.name,
+            file: paths.modStoreFile(m.sha1),
+            usedBy: m.usedBy,
+          })),
+        removeUnused: () => api.removeUnusedMods(),
+      },
+      {
+        list: () => api.packLibrary(),
+        removeUnused: () => api.removeUnusedPacks(),
+      },
+      {
+        list: () => api.shaderLibrary(),
+        removeUnused: () => api.removeUnusedShaders(),
+      },
+      {
+        list: () => api.dataPackLibrary(),
+        removeUnused: () => api.removeUnusedDataPacks(),
+      },
+    ],
+    installedVersions: () => api.installedVersions(),
+    deleteVersion: (id) => api.deleteVersion(id, true),
+    removeJava: (component) => api.removeJava(component),
+    orphanBackupFolders: async () => {
+      const keys: string[] = [];
+      for (const folder of await listBackupFolders(paths))
+        if (await isOrphanBackup(folder.key)) keys.push(folder.key);
+      return keys;
+    },
+    profileIds: async () => (await profiles.list()).map((p) => p.id),
+    isBusy,
+    busy: () =>
+      queue.isAnyBusy() ||
+      javaInstall !== undefined ||
+      backupJob !== undefined ||
+      moving,
+    serialFs,
+    progress: (files) => {
+      broadcast("storage:progress", { files });
+    },
+  });
+
+  return api;
 }
 
 export type LauncherService = ReturnType<typeof createLauncherService>;

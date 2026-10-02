@@ -11,7 +11,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Play a world straight from its profile: each world on the Worlds tab has a Play button that starts the game right into it (Minecraft 1.20 and newer)
 - Join a server straight from a profile: the new Servers tab lists the game's own server list and takes any address (works on old versions too)
 - Profile pages have their own Play bar
+- Play time per profile: the total in the profile list and on the profile page, with a history of every session (when, how long, which account, and the world or server)
+- Server list editor on the Servers tab: add, edit, remove and reorder the game's own servers, and choose each one's server resource packs setting (icons and everything else the game keeps stay as they are)
+- Storage page: how much space each part of the data folder takes (versions, game files, Java, mods, packs, worlds, backups, …), and clean-ups for what nothing uses: unused library items, versions and Java, leftover game files, old backups and caches, old logs and crash reports. Each one shows what it removes and asks first
 - Desktop shortcuts for profiles (Windows and the Linux AppImage): a shortcut with the profile's icon that opens the launcher on that profile, or switches an open launcher to it
+
+### Fixed
+
+- Deleting a mod pack profile now also deletes its mod pack update backups.
 
 ## [0.2.0] - 2026-10-02
 

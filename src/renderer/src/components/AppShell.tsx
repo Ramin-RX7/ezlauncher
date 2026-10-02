@@ -5,6 +5,7 @@ import { useIpcEvent } from "../lib/useIpcEvent";
 import { AccountPicker } from "./accounts/AccountPicker";
 import { BackupIndicator } from "./backups/BackupIndicator";
 import {
+  HardDrive,
   House,
   Layers,
   Package,
@@ -14,7 +15,8 @@ import {
 
 interface NavItem {
   to: string;
-  labelKey: "nav.home" | "nav.mods" | "nav.versions" | "nav.settings";
+  labelKey:
+    "nav.home" | "nav.mods" | "nav.versions" | "nav.storage" | "nav.settings";
   icon: ComponentType<LucideProps>;
 }
 
@@ -22,6 +24,7 @@ const NAV: NavItem[] = [
   { to: "/", labelKey: "nav.home", icon: House },
   { to: "/mods", labelKey: "nav.mods", icon: Package },
   { to: "/versions", labelKey: "nav.versions", icon: Layers },
+  { to: "/storage", labelKey: "nav.storage", icon: HardDrive },
   { to: "/settings", labelKey: "nav.settings", icon: Settings },
 ];
 

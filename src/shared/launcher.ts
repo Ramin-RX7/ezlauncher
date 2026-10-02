@@ -54,6 +54,85 @@ export interface PlayTargets {
   servers: { name: string; address: string; icon?: string }[];
 }
 
+// ---- Storage ----
+
+/** The parts of the data folder the Storage page sizes. */
+export const STORAGE_CATEGORIES = [
+  "versions",
+  "libraries",
+  "assets",
+  "java",
+  "mods",
+  "resourcePacks",
+  "shaders",
+  "dataPacks",
+  "worlds",
+  "backups",
+  "profiles",
+  "launcher",
+  "other",
+] as const;
+export type StorageCategory = (typeof STORAGE_CATEGORIES)[number];
+
+export type CleanupId =
+  "libraryItems" | "versions" | "java" | "gameFiles" | "backups" | "logs";
+
+/** What a clean-up would remove, and how much it frees. */
+export interface CleanupPlan {
+  id: CleanupId;
+  bytes: number;
+  count: number;
+  /** The biggest items (at most a few hundred). */
+  items: { label: string; bytes: number }[];
+  /** There's something to clean, and it can be cleaned now. */
+  available: boolean;
+  /** Why it can't run now: installs going on, or a version that can't be read. */
+  reason?: "busy" | "unreadable";
+}
+
+export interface StorageReport {
+  totalBytes: number;
+  categories: { id: StorageCategory; bytes: number; files: number }[];
+  cleanups: CleanupPlan[];
+  /** ISO date. */
+  scannedAt: string;
+}
+
+export interface CleanupResult {
+  freedBytes: number;
+  failed: { id: CleanupId; code: string }[];
+}
+
+/** A profile's server list (the game's Multiplayer list), for editing. */
+export interface SavedServerList {
+  servers: {
+    /** Its place in the game's file; send it back with edits. */
+    key: number;
+    name: string;
+    address: string;
+    /** The game's "Server Resource Packs" choice. */
+    resourcePacks: "prompt" | "enabled" | "disabled";
+    icon?: string;
+  }[];
+  /** A game of the profile runs: it can't be changed now. */
+  locked: boolean;
+}
+
+/** How long a profile was played, and its sessions (newest first). */
+export interface PlayHistory {
+  totalMs: number;
+  sessions: {
+    /** ISO date. */
+    startedAt: string;
+    durationMs: number;
+    /** Missing when the account was removed since. */
+    accountName?: string;
+    quickPlay?: QuickPlay;
+    /** Ended while the launcher was closed: about this long. */
+    approx?: boolean;
+  }[];
+}
+
 /** Every launch is a profile played by an account. */
 export interface LaunchRequest {
   profileId: string;
@@ -135,6 +214,8 @@ export interface ProfileInput {
 export interface ProfileInfo extends Profile {
   /** How many games of this profile are running. */
   running: number;
+  /** How long it was played in all (ms). */
+  playTimeMs?: number;
 }
 
 export interface WorldInfo {

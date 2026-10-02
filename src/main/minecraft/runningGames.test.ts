@@ -35,7 +35,11 @@ describe("running games file", () => {
       uptimeMs: () => 9_000,
     });
     await store.save([game(11, 5_000), game(12, 5_000)]);
-    expect(await store.restore()).toEqual([game(11, 5_000)]);
+    // 12 ended while the launcher was closed: it ran until the launcher last saw it.
+    expect(await store.restore()).toEqual({
+      running: [game(11, 5_000)],
+      ended: [{ ...game(12, 5_000), seenAt: 10_000 }],
+    });
   });
 
   it("forgets games started before the computer last booted", async () => {
@@ -46,15 +50,16 @@ describe("running games file", () => {
       uptimeMs: () => 2_000,
     });
     await store.save([game(11, 5_000)]);
-    expect(await store.restore()).toEqual([]);
+    expect((await store.restore()).running).toEqual([]);
   });
 
   it("restores nothing from a missing or damaged file", async () => {
     const file = join(dir, "running.json");
     const store = createRunningGamesFile(file);
-    expect(await store.restore()).toEqual([]);
+    const empty = { running: [], ended: [] };
+    expect(await store.restore()).toEqual(empty);
     await writeFile(file, "{not json");
-    expect(await store.restore()).toEqual([]);
+    expect(await store.restore()).toEqual(empty);
   });
 
   it("knows this process is alive and a bad id is not", () => {
