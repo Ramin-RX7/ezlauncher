@@ -27,6 +27,12 @@ export function registerProfilesIpc(): void {
   );
 
   handle("worlds:list", (_e, profileId) => getService().listWorlds(profileId));
+  handle("profiles:createShortcut", (_e, { profileId, iconPng, description }) =>
+    getService().createShortcut(profileId, { iconPng, description }),
+  );
+  handle("profiles:playTargets", (_e, profileId) =>
+    getService().playTargets(profileId),
+  );
   handle("worlds:move", (_e, { worldId, toProfileId }) =>
     getService().moveWorld(worldId, toProfileId),
   );

@@ -55,6 +55,7 @@ import type {
   LoaderInfo,
   LoaderBuildInfo,
   OrphanWorld,
+  PlayTargets,
   Profile,
   ProfileInfo,
   ProfileInput,
@@ -76,6 +77,8 @@ export interface AppInfo {
   node: string;
   /** The computer's total memory, for the memory setting. */
   totalMemoryMb: number;
+  /** Desktop shortcuts to profiles can be made (Windows, the Linux AppImage). */
+  canCreateShortcuts: boolean;
 }
 
 /** Renderer → main request/response calls (`ipcRenderer.invoke`). `void` = returns nothing. */
@@ -209,6 +212,15 @@ export interface IpcInvokeContract {
   };
 
   "worlds:list": { args: [profileId: string]; result: WorldInfo[] };
+  /** Whether worlds can be started into, and the game's server list (read only). */
+  "profiles:playTargets": { args: [profileId: string]; result: PlayTargets };
+  /** Makes a desktop shortcut that opens the launcher on this profile; resolves to its path. */
+  "profiles:createShortcut": {
+    args: [
+      options: { profileId: string; iconPng?: Uint8Array; description: string },
+    ];
+    result: string;
+  };
   "worlds:move": {
     args: [options: { worldId: string; toProfileId: string }];
     result: void;
@@ -527,6 +539,8 @@ export interface IpcEventContract {
   "backup:progress": BackupProgress;
   "backup:state": BackupStateEvent;
   "setup:moveProgress": MoveProgress;
+  /** A profile's desktop shortcut was opened while the launcher runs: show that profile. */
+  "app:openProfile": { profileId: string };
 }
 
 export type InvokeChannel = keyof IpcInvokeContract;
@@ -576,6 +590,8 @@ export const INVOKE_CHANNELS = [
   "modpacks:exportOptions",
   "modpacks:export",
   "worlds:list",
+  "profiles:playTargets",
+  "profiles:createShortcut",
   "worlds:move",
   "worlds:orphans",
   "worlds:openFolder",
@@ -673,6 +689,7 @@ export const EVENT_CHANNELS = [
   "backup:progress",
   "backup:state",
   "setup:moveProgress",
+  "app:openProfile",
 ] as const satisfies readonly EventChannel[];
 
 /** Errors cross the IPC boundary in this shape. */

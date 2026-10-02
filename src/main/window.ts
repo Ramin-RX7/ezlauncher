@@ -14,7 +14,10 @@ function openExternalSafely(url: string): void {
   }
 }
 
-export function createMainWindow(): BrowserWindow {
+/** `hash`: the page to open on, e.g. `/profiles/<id>` (a profile's desktop shortcut). */
+export function createMainWindow({
+  hash,
+}: { hash?: string } = {}): BrowserWindow {
   const log = getLogger().child("window");
 
   const win = new BrowserWindow({
@@ -61,9 +64,11 @@ export function createMainWindow(): BrowserWindow {
 
   const devUrl = process.env["ELECTRON_RENDERER_URL"];
   if (is.dev && devUrl) {
-    void win.loadURL(devUrl);
+    void win.loadURL(hash ? `${devUrl}#${hash}` : devUrl);
   } else {
-    void win.loadFile(join(__dirname, "../renderer/index.html"));
+    void win.loadFile(join(__dirname, "../renderer/index.html"), {
+      ...(hash && { hash }),
+    });
   }
 
   return win;

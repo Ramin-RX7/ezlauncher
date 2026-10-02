@@ -42,10 +42,23 @@ export interface InstalledVersionInfo extends VersionSummary {
   dependents: string[];
 }
 
+/** Start straight into one of the profile's worlds, or onto a server (`host[:port]`). */
+export type QuickPlay =
+  { kind: "world"; worldId: string } | { kind: "server"; address: string };
+
+/** What a profile can start straight into (before it's installed too). */
+export interface PlayTargets {
+  /** `needsNewer`: Minecraft before 1.20 can't start into a world. */
+  worlds: "yes" | "needsNewer";
+  /** The game's own server list (Multiplayer screen), read only. */
+  servers: { name: string; address: string; icon?: string }[];
+}
+
 /** Every launch is a profile played by an account. */
 export interface LaunchRequest {
   profileId: string;
   accountId: string;
+  quickPlay?: QuickPlay;
   /**
    * What to do about mod errors: `check` (default) stops and reports them,
    * `ignore` plays anyway, `disable` disables those mods first.
@@ -742,6 +755,8 @@ export interface RunningGame {
   accountId: string;
   versionId: string;
   pid: number;
+  /** Started straight into this world or onto this server. */
+  quickPlay?: QuickPlay;
 }
 
 export const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,16}$/;

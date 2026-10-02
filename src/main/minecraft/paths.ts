@@ -135,6 +135,9 @@ export function createPaths(dataDir: string) {
     /** A copy of `iris.properties` from before the launcher first changed it. */
     irisConfigBackup: (profileId: string) =>
       join(profiles, safeId(profileId), "config", "iris.properties.ezl-bak"),
+    /** The game's multiplayer server list (only ever read). */
+    serversFile: (profileId: string) =>
+      join(profiles, safeId(profileId), "servers.dat"),
     /** A world's link inside a profile's `saves/`. */
     saveLink: (profileId: string, worldId: string) =>
       join(profiles, safeId(profileId), "saves", safeFolderName(worldId)),
@@ -194,6 +197,9 @@ export function createPaths(dataDir: string) {
     /** A profile's own picture (a mod pack's icon). */
     profileIcon: (profileId: string) =>
       join(launcher, "profile-icons", `${safeId(profileId)}.png`),
+    /** The icon a profile's desktop shortcut shows (`.ico` on Windows, `.png` on Linux). */
+    shortcutIcon: (profileId: string, ext: "ico" | "png") =>
+      join(launcher, "shortcut-icons", `${safeId(profileId)}.${ext}`),
     /** Mod pack files downloaded from a site, kept until imported. */
     modpackDownload: (sha1: string) =>
       join(launcher, "modpack-downloads", `${sha1Name(sha1)}.mrpack`),

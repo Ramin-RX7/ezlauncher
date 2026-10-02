@@ -16,6 +16,7 @@ const info = {
   electron: "44",
   node: "22",
   totalMemoryMb: 8192,
+  canCreateShortcuts: true,
 };
 
 function renderPage(overrides: Partial<LauncherSettings> = {}) {

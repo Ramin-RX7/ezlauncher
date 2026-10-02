@@ -14,6 +14,12 @@ const gameSchema = z.object({
   accountId: z.string(),
   versionId: z.string(),
   pid: z.number(),
+  quickPlay: z
+    .union([
+      z.object({ kind: z.literal("world"), worldId: z.string() }),
+      z.object({ kind: z.literal("server"), address: z.string() }),
+    ])
+    .optional(),
   /** Epoch ms. */
   startedAt: z.number(),
 });

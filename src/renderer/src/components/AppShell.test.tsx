@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -171,5 +172,74 @@ describe("App", () => {
       await screen.findByRole("heading", { name: "Create profile" }),
     ).toBeInTheDocument();
     expect(await screen.findByText(/Version list from/)).toBeInTheDocument();
+  });
+
+  it("shows a profile when its desktop shortcut is opened, with Play, worlds and servers", async () => {
+    const api = mockApi({
+      "setup:getState": () => ({ dataDir: "/data", suggestedDir: "/data" }),
+      "profiles:list": () => [profile()],
+      "worlds:orphans": () => [],
+      "loaders:list": () => loaders,
+      "account:list": () => [steve],
+      "settings:get": () => settings({ selectedAccountId: "a1" }),
+      "game:running": () => [],
+      "versions:list": () => versionList,
+      "app:getInfo": () => ({
+        appName: "EZLauncher",
+        version: "0.2.0",
+        platform: "win32",
+        arch: "x64",
+        electron: "44",
+        node: "24",
+        totalMemoryMb: 8192,
+        canCreateShortcuts: true,
+      }),
+      "profiles:createShortcut": () => "C:/Users/me/Desktop/Survival.lnk",
+      "profiles:playTargets": () => ({
+        worlds: "yes",
+        servers: [{ name: "Friends", address: "friends.example.com" }],
+      }),
+      "game:launch": () => ({
+        status: "started",
+        game: {
+          launchId: "l",
+          profileId: "p1",
+          accountId: "a1",
+          versionId: "fabric-loader-0.19.5-1.18.2",
+          pid: 1,
+        },
+        warnings: 0,
+      }),
+    });
+    render(<App queryClient={createQueryClient()} />);
+    await screen.findByRole("link", { name: "Home" });
+    act(() => {
+      api.emit("app:openProfile", { profileId: "p1" });
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Survival" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Desktop shortcut" }),
+    );
+    expect(
+      await screen.findByText("Shortcut created on your desktop."),
+    ).toBeInTheDocument();
+    expect(api.invoke).toHaveBeenCalledWith("profiles:createShortcut", {
+      profileId: "p1",
+      description: "Open Survival in EZLauncher",
+    });
+
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Servers" }));
+    const join = await screen.findByRole("button", { name: "Join Friends" });
+    fireEvent.click(join);
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("game:launch", {
+        profileId: "p1",
+        accountId: "a1",
+        quickPlay: { kind: "server", address: "friends.example.com" },
+      });
+    });
   });
 });

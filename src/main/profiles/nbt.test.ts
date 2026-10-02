@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readDataPackState, readLevelInfo } from "./nbt";
+import { readDataPackState, readLevelInfo, readServerList } from "./nbt";
+import { makeServersDat } from "./testing/serversDat";
 import { makeLevelDat } from "./testing/levelDat";
 
 describe("readDataPackState", () => {
@@ -58,5 +59,34 @@ describe("readLevelInfo", () => {
     const bytes = makeLevelDat("World", 1);
     expect(() => readLevelInfo(bytes.subarray(0, bytes.length - 8))).toThrow();
     expect(() => readLevelInfo(new Uint8Array([10, 0]))).toThrow();
+  });
+});
+
+describe("readServerList", () => {
+  it("reads the game's server list, with icons and hidden entries", () => {
+    expect(
+      readServerList(
+        makeServersDat([
+          { name: "Hypixel", ip: "mc.hypixel.net", icon: "iVBORw0KGgo=" },
+          { name: "Friend", ip: "192.168.1.5:25566", hidden: false },
+          { name: "Hidden", ip: "secret.example", hidden: true },
+          { name: "No address", ip: "" },
+        ]),
+      ),
+    ).toEqual([
+      {
+        name: "Hypixel",
+        ip: "mc.hypixel.net",
+        icon: "iVBORw0KGgo=",
+        hidden: false,
+      },
+      { name: "Friend", ip: "192.168.1.5:25566", hidden: false },
+      { name: "Hidden", ip: "secret.example", hidden: true },
+    ]);
+  });
+
+  it("throws on damaged data", () => {
+    const bytes = makeServersDat([{ name: "A", ip: "a.b" }]);
+    expect(() => readServerList(bytes.subarray(0, bytes.length - 6))).toThrow();
   });
 });

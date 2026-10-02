@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ProfileInfo, WorldInfo } from "@shared/launcher";
 import { createQueryClient } from "../../lib/queryClient";
 import { profile } from "../../test/fixtures";
@@ -151,5 +151,56 @@ describe("WorldsTab backups", () => {
         backupId: "b1",
       });
     });
+  });
+});
+
+describe("WorldsTab Play", () => {
+  function renderPlay(
+    worldsSupport: "yes" | "needsNewer",
+    p: ProfileInfo = profile(),
+  ) {
+    mockApi({
+      "worlds:list": () => worlds,
+      "profiles:list": () => [p],
+      "profiles:playTargets": () => ({ worlds: worldsSupport, servers: [] }),
+    });
+    const onPlay = vi.fn();
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <WorldsTab profile={p} onPlay={onPlay} />
+      </QueryClientProvider>,
+    );
+    return onPlay;
+  }
+
+  it("starts the profile straight into a world", async () => {
+    const onPlay = renderPlay("yes");
+    const button = await screen.findByRole("button", { name: "Play Creative" });
+    await waitFor(() => {
+      expect(button).toBeEnabled();
+    });
+    fireEvent.click(button);
+    expect(onPlay).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "Creative" }),
+    );
+  });
+
+  it("can't start into a world before 1.20 or while the game runs", async () => {
+    renderPlay("needsNewer");
+    const button = await screen.findByRole("button", { name: "Play Survival" });
+    await waitFor(() => {
+      expect(button).toBeDisabled();
+    });
+    expect(button).toHaveAttribute(
+      "title",
+      expect.stringMatching(/1\.20 or newer/),
+    );
+  });
+
+  it("is off while a game of the profile runs", async () => {
+    renderPlay("yes", profile({ running: 1 }));
+    expect(
+      await screen.findByRole("button", { name: "Play Survival" }),
+    ).toBeDisabled();
   });
 });

@@ -5,10 +5,13 @@ import { ArrowLeft } from "lucide-react";
 import { ExportModpackDialog } from "../components/modpacks/ExportModpackDialog";
 import { UpdateModpackDialog } from "../components/modpacks/UpdateModpackDialog";
 import { ModsTab } from "../components/mods/ModsTab";
+import { PlayBar, type PlayRequest } from "../components/play/PlayBar";
 import { DeleteProfileDialog } from "../components/profiles/DeleteProfileDialog";
 import { DuplicateProfileDialog } from "../components/profiles/DuplicateProfileDialog";
 import { ProfileEditor } from "../components/profiles/ProfileEditor";
 import { ProfileIcon } from "../components/profiles/ProfileIcon";
+import { ServersTab } from "../components/profiles/ServersTab";
+import { ShortcutButton } from "../components/profiles/ShortcutButton";
 import { WorldsTab } from "../components/profiles/WorldsTab";
 import { ResourcePacksTab } from "../components/resourcepacks/ResourcePacksTab";
 import { ShadersTab } from "../components/shaders/ShadersTab";
@@ -16,10 +19,12 @@ import { Button } from "../components/ui/Button";
 import { TabBar } from "../components/ui/Tabs";
 import { useProfiles } from "../state/queries";
 
-type Tab = "settings" | "worlds" | "mods" | "resourcePacks" | "shaders";
+type Tab =
+  "settings" | "worlds" | "servers" | "mods" | "resourcePacks" | "shaders";
 const TABS: readonly Tab[] = [
   "settings",
   "worlds",
+  "servers",
   "mods",
   "resourcePacks",
   "shaders",
@@ -35,10 +40,20 @@ export function ProfilePage() {
   const [duplicating, setDuplicating] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [playRequest, setPlayRequest] = useState<PlayRequest>();
   const list = profiles.data ?? [];
   const profile = list.find((p) => p.id === id);
 
   if (profiles.isPending) return null;
+
+  const play = (request: Omit<PlayRequest, "seq" | "profileId">) => {
+    if (!profile) return;
+    setPlayRequest((r) => ({
+      ...request,
+      profileId: profile.id,
+      seq: (r?.seq ?? 0) + 1,
+    }));
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
@@ -90,6 +105,7 @@ export function ProfilePage() {
               >
                 {t("modpacks.export.open")}
               </Button>
+              <ShortcutButton profile={profile} />
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -110,6 +126,11 @@ export function ProfilePage() {
               </Button>
             </div>
           </div>
+          <PlayBar
+            profile={profile}
+            profiles={list}
+            {...(playRequest && { request: playRequest })}
+          />
           <TabBar
             label={profile.name}
             items={TABS.map((value) => ({
@@ -127,7 +148,25 @@ export function ProfilePage() {
               onSaved={() => undefined}
             />
           )}
-          {tab === "worlds" && <WorldsTab profile={profile} />}
+          {tab === "worlds" && (
+            <WorldsTab
+              profile={profile}
+              onPlay={(w) => {
+                play({
+                  quickPlay: { kind: "world", worldId: w.id },
+                  target: w.name,
+                });
+              }}
+            />
+          )}
+          {tab === "servers" && (
+            <ServersTab
+              profile={profile}
+              onJoin={(address, name) => {
+                play({ quickPlay: { kind: "server", address }, target: name });
+              }}
+            />
+          )}
           {tab === "mods" && <ModsTab profile={profile} />}
           {tab === "resourcePacks" && <ResourcePacksTab profile={profile} />}
           {tab === "shaders" && <ShadersTab profile={profile} />}

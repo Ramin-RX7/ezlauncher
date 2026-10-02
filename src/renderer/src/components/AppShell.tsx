@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
-import { NavLink, Outlet } from "react-router";
+import { NavLink, Outlet, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
+import { useIpcEvent } from "../lib/useIpcEvent";
 import { AccountPicker } from "./accounts/AccountPicker";
 import { BackupIndicator } from "./backups/BackupIndicator";
 import {
@@ -27,6 +28,11 @@ const NAV: NavItem[] = [
 /** App name and a row of tabs on top; the page below. */
 export function AppShell() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  // A profile's desktop shortcut opened while the launcher runs: show that profile.
+  useIpcEvent("app:openProfile", ({ profileId }) => {
+    void navigate(`/profiles/${encodeURIComponent(profileId)}`);
+  });
   return (
     // overflow-hidden: only <main> scrolls; the top bar never moves.
     <div className="flex h-full flex-col overflow-hidden">

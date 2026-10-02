@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { LaunchIdentity } from "../auth/types";
-import { buildLaunchCommand, substitute } from "./arguments";
+import { buildLaunchCommand, quickPlaySupport, substitute } from "./arguments";
 import type { InstalledVersion } from "./installer";
 import { createPaths } from "./paths";
 import { detectPlatform, type Platform } from "./platform";
@@ -224,5 +224,102 @@ describe("buildLaunchCommand", () => {
       "/data/libraries/a.jar;/data/libraries/b.jar;/data/versions/v/v.jar",
     );
     expect(command(legacy, mac).args[1]).toBe("-XstartOnFirstThread");
+  });
+});
+
+describe("Quick Play", () => {
+  /** The game arguments of a 1.20+ version (as in 26.3's JSON). */
+  const modern: InstalledVersion["version"] = {
+    id: "26.3",
+    chain: ["26.3"],
+    mainClass: "net.minecraft.client.main.Main",
+    arguments: {
+      jvm: ["-cp", "${classpath}"],
+      game: [
+        "--username",
+        "${auth_player_name}",
+        {
+          rules: [
+            { action: "allow", features: { has_quick_plays_support: true } },
+          ],
+          value: ["--quickPlayPath", "${quickPlayPath}"],
+        },
+        {
+          rules: [
+            { action: "allow", features: { is_quick_play_singleplayer: true } },
+          ],
+          value: ["--quickPlaySingleplayer", "${quickPlaySingleplayer}"],
+        },
+        {
+          rules: [
+            { action: "allow", features: { is_quick_play_multiplayer: true } },
+          ],
+          value: ["--quickPlayMultiplayer", "${quickPlayMultiplayer}"],
+        },
+      ],
+    },
+  };
+  const legacy: InstalledVersion["version"] = {
+    id: "1.12.2",
+    chain: ["1.12.2"],
+    mainClass: "net.minecraft.client.main.Main",
+    minecraftArguments:
+      "--username ${auth_player_name} --version ${version_name}",
+  };
+  const run = (
+    version: InstalledVersion["version"],
+    quickPlay?: Parameters<typeof buildLaunchCommand>[0]["quickPlay"],
+  ) =>
+    buildLaunchCommand({
+      installed: installed(version),
+      identity,
+      paths,
+      platform: linux,
+      gameDir: "/g",
+      memoryMaxMb: 1024,
+      launcherName: "ezlauncher",
+      launcherVersion: "1.0",
+      ...(quickPlay && { quickPlay }),
+    }).args;
+
+  it("adds no Quick Play arguments for a normal start", () => {
+    expect(run(modern).join(" ")).not.toContain("quickPlay");
+  });
+
+  it("starts into a world or onto a server on 1.20+", () => {
+    const world = run(modern, { kind: "world", worldId: "New World (1)" });
+    expect(world.slice(-2)).toEqual([
+      "--quickPlaySingleplayer",
+      "New World (1)",
+    ]);
+    expect(world.join(" ")).not.toContain("quickPlayPath");
+    const server = run(modern, {
+      kind: "server",
+      address: { host: "play.example.com", port: 25566 },
+    });
+    expect(server.slice(-2)).toEqual([
+      "--quickPlayMultiplayer",
+      "play.example.com:25566",
+    ]);
+  });
+
+  it("joins a server with --server/--port on old versions; worlds need 1.20", () => {
+    expect(
+      run(legacy, {
+        kind: "server",
+        address: { host: "mc.example.com" },
+      }).slice(-4),
+    ).toEqual(["--server", "mc.example.com", "--port", "25565"]);
+    expect(() => run(legacy, { kind: "world", worldId: "W" })).toThrow(
+      expect.objectContaining({ code: "QUICKPLAY_UNSUPPORTED" }),
+    );
+    expect(quickPlaySupport(legacy)).toEqual({
+      worlds: false,
+      servers: "legacy",
+    });
+    expect(quickPlaySupport(modern)).toEqual({
+      worlds: true,
+      servers: "quickPlay",
+    });
   });
 });

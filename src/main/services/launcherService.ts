@@ -35,6 +35,8 @@ import type {
   LoaderInfo,
   LoaderBuildInfo,
   OrphanWorld,
+  PlayTargets,
+  QuickPlay,
   Profile,
   ProfileInfo,
   RemoteMatchCard,
@@ -52,7 +54,15 @@ import type { Account } from "../auth/types";
 import { AppError } from "../core/errors";
 import type { Logger } from "../core/logger";
 import { broadcast } from "../ipc/register";
-import { buildLaunchCommand } from "../minecraft/arguments";
+import {
+  buildLaunchCommand,
+  quickPlaySupport,
+  type QuickPlayTarget,
+} from "../minecraft/arguments";
+import { readJson } from "../core/fsAtomic";
+import { versionJsonSchema } from "../minecraft/schemas";
+import { readServerList } from "../profiles/nbt";
+import { formatServerAddress, parseServerAddress } from "@shared/serverAddress";
 import { applyLegacyAssets } from "../minecraft/assets";
 import { createDownloader } from "../minecraft/downloader";
 import { launchGame } from "../minecraft/gameProcess";
@@ -161,6 +171,7 @@ import {
   worldsOwnedBy,
 } from "../profiles/worlds";
 import { createModpackService } from "./modpacks";
+import { createProfileShortcut } from "../shortcuts";
 import { resolveLaunchSettings } from "../settings/launchSettings";
 import { createSettingsStore } from "../settings/settings";
 import { collectInput } from "../validation/collect";
@@ -876,6 +887,61 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       throw new AppError("GAME_RUNNING", "Close the game first.");
   }
 
+  // ---- Quick Play ----
+
+  /** The day Quick Play arrived (23w14a, on the way to 1.20). */
+  const QUICK_PLAY_SINCE = "2023-04-05";
+
+  /** Can this profile's Minecraft version start straight into a world? */
+  async function worldsQuickPlay(profile: Profile): Promise<boolean> {
+    // The version's own JSON says best (it's there once the version is installed).
+    const json = await readJson(
+      paths.versionJson(profile.gameVersion),
+      versionJsonSchema,
+    ).catch(() => undefined);
+    if (json) return quickPlaySupport(json).worlds;
+    const entry = (await getManifest(deps)).cached?.manifest.versions.find(
+      (v) => v.id === profile.gameVersion,
+    );
+    return entry ? entry.releaseTime >= QUICK_PLAY_SINCE : true;
+  }
+
+  /** Check a launch's Quick Play target; resolves to what the command needs. */
+  async function checkQuickPlay(
+    profileId: string,
+    quickPlay: unknown,
+  ): Promise<
+    | { kind: "world" | "server"; core: QuickPlayTarget; shared: QuickPlay }
+    | undefined
+  > {
+    if (quickPlay === undefined || quickPlay === null) return undefined;
+    const q = quickPlay as Partial<Record<string, unknown>>;
+    if (q.kind === "world" && typeof q.worldId === "string") {
+      const worldId = q.worldId;
+      if (!(await listWorlds(paths, profileId)).some((w) => w.id === worldId))
+        throw new AppError("WORLD_NOT_FOUND", "World not found.");
+      // Another game of the profile may have it open: the game would refuse it.
+      if (isRunning(profileId))
+        throw new AppError("WORLD_IN_USE", "Close the game first.");
+      return {
+        kind: "world",
+        core: { kind: "world", worldId },
+        shared: { kind: "world", worldId },
+      };
+    }
+    if (q.kind === "server" && typeof q.address === "string") {
+      const address = parseServerAddress(q.address);
+      if (!address)
+        throw new AppError("INVALID_ADDRESS", "That isn't a server address.");
+      return {
+        kind: "server",
+        core: { kind: "server", address },
+        shared: { kind: "server", address: formatServerAddress(address) },
+      };
+    }
+    throw new AppError("INVALID_ADDRESS", "Unknown Quick Play target.");
+  }
+
   // ---- Installs ----
 
   /** A Java runtime install from Settings; version installs wait for it (same files). */
@@ -1508,12 +1574,33 @@ export function createLauncherService(dataDir: string, logger: Logger) {
         await packs.forgetProfile(id);
         await shaders.forgetProfile(id);
         await modpacks.forgetProfile(id);
+        // Its desktop shortcut stays (it opens a "doesn't exist" page); its icon goes.
+        for (const ext of ["ico", "png"] as const)
+          await rm(paths.shortcutIcon(id, ext), { force: true });
       });
       if (moveTo) await sync([moveTo]);
       const current = await settings.load();
       if (current.selectedProfileId === id)
         await settings.update({ selectedProfileId: null });
       changed();
+    },
+
+    /** A desktop shortcut that opens the launcher on this profile; resolves to its path. */
+    async createShortcut(
+      id: string,
+      options: { iconPng?: unknown; description?: unknown },
+    ): Promise<string> {
+      const profile = await requireProfile(id);
+      const description =
+        typeof options.description === "string" ? options.description : "";
+      const path = await createProfileShortcut({
+        paths,
+        profile,
+        iconPng: options.iconPng,
+        description,
+      });
+      log.info(`made a desktop shortcut for ${profile.id}: ${path}`);
+      return path;
     },
 
     /** A profile's own picture (a mod pack's icon) as a `data:` URL, or null. */
@@ -2834,14 +2921,40 @@ export function createLauncherService(dataDir: string, logger: Logger) {
 
     runningGames: (): RunningGame[] => [...running.values()],
 
+    /** What a profile can start straight into: its worlds (1.20+) and the game's server list. */
+    async playTargets(profileId: string): Promise<PlayTargets> {
+      const profile = await requireProfile(profileId);
+      let servers: PlayTargets["servers"] = [];
+      try {
+        servers = readServerList(await readFile(paths.serversFile(profile.id)))
+          .filter((s) => !s.hidden)
+          .map((s) => ({
+            name: s.name || s.ip,
+            address: s.ip,
+            ...(s.icon &&
+              /^[A-Za-z0-9+/=\r\n]{1,200000}$/.test(s.icon) && {
+                icon: `data:image/png;base64,${s.icon.replace(/\s/g, "")}`,
+              }),
+          }));
+      } catch {
+        // No server list yet (never opened Multiplayer), or one the game left damaged.
+      }
+      return {
+        worlds: (await worldsQuickPlay(profile)) ? "yes" : "needsNewer",
+        servers,
+      };
+    },
+
     /** Install or check the profile's version, sync its worlds, and start it as the account. */
     async launch({
       profileId,
       accountId,
+      quickPlay,
       problems = "check",
     }: LaunchRequest): Promise<LaunchResult> {
       let profile = await requireProfile(profileId);
       if (moving) throw new AppError("BUSY", "The data folder is being moved.");
+      const target = await checkQuickPlay(profile.id, quickPlay);
       const account =
         typeof accountId === "string"
           ? await accounts.get(accountId)
@@ -2917,9 +3030,10 @@ export function createLauncherService(dataDir: string, logger: Logger) {
           launcherName: "ezlauncher",
           launcherVersion: app.getVersion(),
           logger: log,
+          ...(target && { quickPlay: target.core }),
         });
         log.info(
-          `launching profile ${profile.id} (${versionId}) as ${identity.username}`,
+          `launching profile ${profile.id} (${versionId}) as ${identity.username}${target ? ` into ${target.kind}` : ""}`,
         );
         log.debug([command.javaPath, ...command.args].join(" "));
 
@@ -2937,6 +3051,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
           accountId: account.id,
           versionId,
           pid: handle.pid,
+          ...(target && { quickPlay: target.shared }),
         };
         running.set(game.launchId, game);
         startedAt.set(game.launchId, Date.now());

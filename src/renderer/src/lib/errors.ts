@@ -76,6 +76,11 @@ const KNOWN = [
   "MODPACK_NO_MANIFEST",
   "MODPACK_LOADER_UNKNOWN",
   "INVALID_INPUT",
+  "QUICKPLAY_UNSUPPORTED",
+  "INVALID_ADDRESS",
+  "WORLD_IN_USE",
+  "SHORTCUT_UNSUPPORTED",
+  "SHORTCUT_FAILED",
 ] as const;
 
 /** A user-facing message for an error code from the main process. */

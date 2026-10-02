@@ -1,7 +1,13 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Archive, FolderOpen, Package, TriangleAlert } from "lucide-react";
+import {
+  Archive,
+  FolderOpen,
+  Package,
+  Play,
+  TriangleAlert,
+} from "lucide-react";
 import type { BackupResult, ProfileInfo, WorldInfo } from "@shared/launcher";
 import { invoke } from "../../lib/api";
 import { errorMessage } from "../../lib/errors";
@@ -15,8 +21,15 @@ import { ContextMenuArea, type MenuItem } from "../ui/Menu";
 import { Select } from "../ui/Select";
 import { isRiskyMove } from "./moveRisk";
 
-/** A profile's worlds, with backups, Open folder and Move to another profile. */
-export function WorldsTab({ profile }: { profile: ProfileInfo }) {
+/** A profile's worlds, with Play, backups, Open folder and Move to another profile. */
+export function WorldsTab({
+  profile,
+  onPlay,
+}: {
+  profile: ProfileInfo;
+  /** Start the profile straight into this world (from the page's Play bar). */
+  onPlay?: (world: WorldInfo) => void;
+}) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const worlds = useQuery({
@@ -37,6 +50,18 @@ export function WorldsTab({ profile }: { profile: ProfileInfo }) {
     [i18n.language],
   );
   const running = profile.running > 0;
+  const targets = useQuery({
+    queryKey: ["profiles", "playTargets", profile.id],
+    queryFn: () => invoke("profiles:playTargets", profile.id),
+    enabled: onPlay !== undefined,
+  });
+  const needsNewer = targets.data?.worlds === "needsNewer";
+  /** Why a world can't be started into right now, if it can't. */
+  const playBlocked = running
+    ? t("worlds.playRunning")
+    : needsNewer
+      ? t("worlds.playNeedsNewer")
+      : undefined;
 
   /** What a backup job did, in one line. */
   const describe = (r: BackupResult) =>
@@ -124,6 +149,17 @@ export function WorldsTab({ profile }: { profile: ProfileInfo }) {
         <ul className="overflow-hidden rounded-ezl border border-border bg-surface">
           {list.map((w) => {
             const items: MenuItem[] = [
+              ...(onPlay
+                ? [
+                    {
+                      label: t("worlds.play"),
+                      disabled: playBlocked !== undefined,
+                      onSelect: () => {
+                        onPlay(w);
+                      },
+                    },
+                  ]
+                : []),
               {
                 label: t("backups.backUp"),
                 disabled: running || backUp.isPending,
@@ -190,6 +226,20 @@ export function WorldsTab({ profile }: { profile: ProfileInfo }) {
                       </span>
                     )}
                   </div>
+                  {onPlay && (
+                    <Button
+                      variant="primary"
+                      disabled={playBlocked !== undefined}
+                      title={playBlocked}
+                      aria-label={t("worlds.playLabel", { name: w.name })}
+                      onClick={() => {
+                        onPlay(w);
+                      }}
+                    >
+                      <Play size={16} aria-hidden />
+                      {t("worlds.play")}
+                    </Button>
+                  )}
                   <Button
                     disabled={running || backUp.isPending}
                     title={running ? t("backups.runningBlocked") : undefined}

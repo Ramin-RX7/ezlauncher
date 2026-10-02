@@ -1,11 +1,13 @@
+import { formatServerAddress, type ServerAddress } from "@shared/serverAddress";
 import type { LaunchIdentity } from "../auth/types";
+import { AppError } from "../core/errors";
 import type { Logger } from "../core/logger";
 import { gameAssetsDir } from "./assets";
 import type { InstalledVersion } from "./installer";
 import type { Paths } from "./paths";
 import type { Platform } from "./platform";
 import { rulesAllow, type RuleEnv } from "./rules";
-import type { Argument } from "./schemas";
+import type { Argument, VersionJson } from "./schemas";
 
 export interface LaunchContext {
   installed: InstalledVersion;
@@ -21,7 +23,15 @@ export interface LaunchContext {
   launcherName: string;
   launcherVersion: string;
   logger?: Logger;
+  /** Start straight into a world (its folder in `saves/`) or onto a server. */
+  quickPlay?: QuickPlayTarget;
 }
+
+export type QuickPlayTarget =
+  | { kind: "world"; worldId: string }
+  | { kind: "server"; address: ServerAddress };
+
+const DEFAULT_PORT = 25565;
 
 export interface LaunchCommand {
   javaPath: string;
@@ -29,8 +39,8 @@ export interface LaunchCommand {
   cwd: string;
 }
 
-/** Launcher features referenced by `features` rules. None are supported yet. */
-const FEATURES: Record<string, boolean> = {
+/** Launcher features referenced by `features` rules; Quick Play is turned on per launch. */
+const FEATURES: Readonly<Record<string, boolean>> = {
   is_demo_user: false,
   has_custom_resolution: false,
   has_quick_plays_support: false,
@@ -83,10 +93,60 @@ export function substitute(
   });
 }
 
+/** Does a version's argument list name this feature (i.e. the game understands it)? */
+function namesFeature(version: VersionJson, feature: string): boolean {
+  return (version.arguments?.game ?? []).some(
+    (a) =>
+      typeof a !== "string" &&
+      (a.rules ?? []).some((r) => r.features?.[feature] !== undefined),
+  );
+}
+
+/**
+ * What Quick Play a (merged) version supports: worlds only through Quick Play
+ * (1.20+); servers through Quick Play, or the old `--server`/`--port` arguments.
+ */
+export function quickPlaySupport(version: VersionJson): {
+  worlds: boolean;
+  servers: "quickPlay" | "legacy";
+} {
+  return {
+    worlds: namesFeature(version, "is_quick_play_singleplayer"),
+    servers: namesFeature(version, "is_quick_play_multiplayer")
+      ? "quickPlay"
+      : "legacy",
+  };
+}
+
 export function buildLaunchCommand(ctx: LaunchContext): LaunchCommand {
-  const { installed, identity, paths, platform, gameDir } = ctx;
+  const { installed, identity, paths, platform, gameDir, quickPlay } = ctx;
   const { version, libraries, clientJar, assetIndex, assetIndexId } = installed;
-  const env: RuleEnv = { platform, features: FEATURES };
+  const support = quickPlay ? quickPlaySupport(version) : undefined;
+  if (quickPlay?.kind === "world" && !support?.worlds)
+    throw new AppError(
+      "QUICKPLAY_UNSUPPORTED",
+      "Starting straight into a world needs Minecraft 1.20 or newer.",
+    );
+  const quickServer =
+    quickPlay?.kind === "server" && support?.servers === "quickPlay";
+  const env: RuleEnv = {
+    platform,
+    features: {
+      ...FEATURES,
+      is_quick_play_singleplayer: quickPlay?.kind === "world",
+      is_quick_play_multiplayer: quickServer,
+    },
+  };
+  // Old versions take a server as two plain arguments.
+  const legacyServer =
+    quickPlay?.kind === "server" && !quickServer
+      ? [
+          "--server",
+          quickPlay.address.host,
+          "--port",
+          String(quickPlay.address.port ?? DEFAULT_PORT),
+        ]
+      : [];
 
   const classpath = [...libraries.classpath.map((t) => t.dest), clientJar].join(
     platform.classpathSeparator,
@@ -113,6 +173,12 @@ export function buildLaunchCommand(ctx: LaunchContext): LaunchCommand {
     classpath_separator: platform.classpathSeparator,
     launcher_name: ctx.launcherName,
     launcher_version: ctx.launcherVersion,
+    ...(quickPlay?.kind === "world" && {
+      quickPlaySingleplayer: quickPlay.worldId,
+    }),
+    ...(quickPlay?.kind === "server" && {
+      quickPlayMultiplayer: formatServerAddress(quickPlay.address),
+    }),
   };
   const unknown = new Set<string>();
   const fill = (a: string) => substitute(a, values, (n) => unknown.add(n));
@@ -139,6 +205,7 @@ export function buildLaunchCommand(ctx: LaunchContext): LaunchCommand {
     ...(version.minecraftArguments?.split(/\s+/).filter(Boolean) ?? []),
     ...flattenArguments(version.arguments?.game ?? [], env),
   ].map(fill);
+  game.push(...legacyServer);
 
   if (unknown.size > 0) {
     ctx.logger?.warn(`unknown launch placeholders: ${[...unknown].join(", ")}`);

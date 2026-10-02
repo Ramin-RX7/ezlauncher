@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Play a world straight from its profile: each world on the Worlds tab has a Play button that starts the game right into it (Minecraft 1.20 and newer)
+- Join a server straight from a profile: the new Servers tab lists the game's own server list and takes any address (works on old versions too)
+- Profile pages have their own Play bar
+- Desktop shortcuts for profiles (Windows and the Linux AppImage): a shortcut with the profile's icon that opens the launcher on that profile, or switches an open launcher to it
+
 ## [0.2.0] - 2026-10-02
 
 ### Added

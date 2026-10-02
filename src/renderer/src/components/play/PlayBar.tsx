@@ -5,6 +5,7 @@ import { Play, TriangleAlert } from "lucide-react";
 import type {
   LaunchRequest,
   ProfileInfo,
+  QuickPlay,
   ValidationReport,
 } from "@shared/launcher";
 import { invoke } from "../../lib/api";
@@ -20,6 +21,10 @@ import { LaunchProblemsDialog } from "./LaunchProblemsDialog";
 export interface PlayRequest {
   profileId: string;
   seq: number;
+  /** Start straight into a world or onto a server. */
+  quickPlay?: QuickPlay;
+  /** What `quickPlay` is called (a world's name, a server's name), for the bar. */
+  target?: string;
 }
 
 /** Play for the selected profile (the account is picked in the top bar), with install progress. */
@@ -100,9 +105,22 @@ export function PlayBar({
     if (!request || request.seq === handled.current) return;
     if (request.profileId !== profile?.id) return; // not selected yet
     handled.current = request.seq;
-    if (account && !busy && !accountPlaying)
-      play.mutate({ profileId: profile.id, accountId: account.id });
+    if (account && !busy && !accountPlaying) {
+      const quickPlay = request.quickPlay;
+      play.mutate({
+        profileId: profile.id,
+        accountId: account.id,
+        ...(quickPlay && { quickPlay }),
+      });
+    }
   }, [request, profile, account, busy, accountPlaying, play]);
+  // The world or server this start goes to, named as its row named it.
+  const pendingQuickPlay = play.isPending
+    ? play.variables.quickPlay
+    : undefined;
+  const quickPlayName = (q: QuickPlay) =>
+    (request?.quickPlay === q ? request.target : undefined) ??
+    (q.kind === "world" ? q.worldId : q.address);
   let label = profile?.installedVersionId
     ? t("play.play")
     : t("play.installAndPlay");
@@ -112,6 +130,11 @@ export function PlayBar({
   );
   if (installing) label = t("play.installing");
   else if (play.isPending && backingUp) label = t("play.backingUp");
+  else if (play.isPending && pendingQuickPlay)
+    label =
+      pendingQuickPlay.kind === "world"
+        ? t("play.toWorld", { name: quickPlayName(pendingQuickPlay) })
+        : t("play.toServer", { name: quickPlayName(pendingQuickPlay) });
   else if (play.isPending) label = t("play.starting");
   else if (running) label = t("play.playAnother");
 
@@ -151,8 +174,8 @@ export function PlayBar({
           disabled={!profile || !account || busy || accountPlaying}
           aria-describedby={hint ? "play-hint" : undefined}
           onClick={() => {
-            if (profile && account)
-              play.mutate({ profileId: profile.id, accountId: account.id });
+            if (!profile || !account) return;
+            play.mutate({ profileId: profile.id, accountId: account.id });
           }}
         >
           <Play size={18} aria-hidden />

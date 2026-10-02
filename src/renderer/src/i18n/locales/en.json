@@ -66,6 +66,8 @@
     "installAndPlay": "Install & Play",
     "installing": "Installing…",
     "starting": "Starting…",
+    "toWorld": "Starting {{name}}…",
+    "toServer": "Joining {{name}}…",
     "running": "Running",
     "cancel": "Cancel",
     "steps": {
@@ -283,7 +285,12 @@
     "MODPACK_NO_SOURCE": "This profile's mod pack didn't come from a site. Update it from a file instead.",
     "MODPACK_NO_MANIFEST": "This profile doesn't come from a mod pack.",
     "MODPACK_LOADER_UNKNOWN": "The profile's loader build isn't known yet. Play it once, or pin a build in its settings.",
-    "INVALID_INPUT": "Fill in every field."
+    "INVALID_INPUT": "Fill in every field.",
+    "QUICKPLAY_UNSUPPORTED": "Starting straight into a world needs Minecraft 1.20 or newer.",
+    "INVALID_ADDRESS": "That isn't a server address. Use a name like play.example.com, optionally with :port.",
+    "WORLD_IN_USE": "This world may be open in the game that's running. Close it first.",
+    "SHORTCUT_UNSUPPORTED": "Shortcuts can't be made for this copy of the launcher.",
+    "SHORTCUT_FAILED": "The shortcut couldn't be made."
   },
   "error": {
     "title": "Something went wrong",
@@ -318,6 +325,7 @@
     "tabs": {
       "settings": "Settings",
       "worlds": "Worlds",
+      "servers": "Servers",
       "mods": "Mods",
       "resourcePacks": "Resource packs",
       "shaders": "Shaders"
@@ -406,7 +414,25 @@
     "unassignedBody": "These worlds belong to profiles that no longer exist. Give each one a profile to see it again.",
     "assign": "Assign to…",
     "assignConfirm": "Assign",
-    "olderWarning": "The other profile uses an older version or a different loader."
+    "olderWarning": "The other profile uses an older version or a different loader.",
+    "play": "Play",
+    "playLabel": "Play {{name}}",
+    "playRunning": "Close the game first: the world may be open in it.",
+    "playNeedsNewer": "Starting straight into a world needs Minecraft 1.20 or newer."
+  },
+  "servers": {
+    "address": "Server address",
+    "join": "Join",
+    "joinLabel": "Join {{name}}",
+    "badAddress": "Not a server address.",
+    "empty": "No saved servers yet. Servers added on the game's Multiplayer screen show up here.",
+    "hint": "The game opens straight onto the server. The list is edited in game, on the Multiplayer screen."
+  },
+  "shortcut": {
+    "create": "Desktop shortcut",
+    "hint": "Make a shortcut on your desktop that opens the launcher on this profile.",
+    "created": "Shortcut created on your desktop.",
+    "description": "Open {{name}} in EZLauncher"
   },
   "accounts": {
     "label": "Account",

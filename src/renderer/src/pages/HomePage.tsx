@@ -8,6 +8,7 @@ import { DeleteProfileDialog } from "../components/profiles/DeleteProfileDialog"
 import { DuplicateProfileDialog } from "../components/profiles/DuplicateProfileDialog";
 import { OrphanWorlds } from "../components/profiles/OrphanWorlds";
 import { ProfileList } from "../components/profiles/ProfileList";
+import { useCreateShortcut } from "../components/profiles/useCreateShortcut";
 import { Input } from "../components/ui/Input";
 import { invoke } from "../lib/api";
 import { errorMessage } from "../lib/errors";
@@ -34,6 +35,7 @@ export function HomePage() {
   const [deleting, setDeleting] = useState<string>();
   const [duplicating, setDuplicating] = useState<string>();
   const [actionError, setActionError] = useState<string>();
+  const shortcut = useCreateShortcut();
 
   // First start (or every profile deleted): go straight to creating one.
   useEffect(() => {
@@ -107,6 +109,16 @@ export function HomePage() {
           {actionError}
         </p>
       )}
+      {shortcut.create.isSuccess && (
+        <p role="status" className="text-sm text-success">
+          {t("shortcut.created")}
+        </p>
+      )}
+      {shortcut.create.isError && (
+        <p role="alert" className="text-sm text-danger">
+          {errorMessage(t, shortcut.create.error)}
+        </p>
+      )}
 
       <div className="min-h-0 flex-1 overflow-auto">
         {list.length > 0 && shown.length === 0 && (
@@ -149,6 +161,12 @@ export function HomePage() {
                 },
               );
             }}
+            {...(shortcut.available && {
+              onShortcut: (id: string) => {
+                const p = list.find((x) => x.id === id);
+                if (p) shortcut.create.mutate(p);
+              },
+            })}
             onDelete={setDeleting}
           />
         )}

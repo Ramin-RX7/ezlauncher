@@ -42,6 +42,15 @@ export function useAccounts() {
   });
 }
 
+/** The app's version and what this computer allows (fixed while it runs). */
+export function useAppInfo() {
+  return useQuery({
+    queryKey: ["app", "info"],
+    queryFn: () => invoke("app:getInfo"),
+    staleTime: Infinity,
+  });
+}
+
 export function useSettings() {
   return useQuery({
     queryKey: keys.settings,

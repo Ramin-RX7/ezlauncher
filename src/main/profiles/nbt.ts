@@ -2,8 +2,9 @@ import { gunzipSync } from "fflate";
 
 /*
  * Just enough NBT (Minecraft's binary format) to read a world's name, last played
- * time and data pack lists from `level.dat`: a gzipped root compound with a `Data`
- * compound. Every other tag is skipped. Read only: nothing here writes NBT. Bad
+ * time and data pack lists from `level.dat` (a gzipped root compound with a `Data`
+ * compound), and a profile's server list from `servers.dat` (not gzipped). Every
+ * other tag is skipped. Read only: nothing here writes NBT. Bad
  * input throws; callers fall back to the folder name or "unknown".
  */
 
@@ -176,6 +177,60 @@ export interface DataPackState {
   disabled: string[];
   /** The world's experimental features (`Data.enabled_features`), e.g. `minecraft:vanilla`. */
   features: string[];
+}
+
+export interface SavedServer {
+  name: string;
+  /** As typed in game: `host`, `host:port`, … */
+  ip: string;
+  /** The server's icon, base64 PNG, as the game cached it. */
+  icon?: string;
+  hidden: boolean;
+}
+
+const BYTE = 1;
+const MAX_SERVERS = 1000;
+
+/**
+ * The game's multiplayer list, from the bytes of a profile's `servers.dat`: a root
+ * compound with `servers`, a list of compounds (`name`, `ip`, `icon`, `hidden`).
+ */
+export function readServerList(file: Uint8Array): SavedServer[] {
+  const isGzip = file[0] === 0x1f && file[1] === 0x8b;
+  const r = new Reader(isGzip ? gunzipSync(file) : file);
+  if (r.u8() !== COMPOUND) throw new Error("servers.dat has no root compound");
+  r.string(); // root name
+  const servers: SavedServer[] = [];
+  for (;;) {
+    const type = r.u8();
+    if (type === END) return servers;
+    const name = r.string();
+    if (type !== LIST || name !== "servers") {
+      skipPayload(r, type, 1);
+      continue;
+    }
+    const itemType = r.u8();
+    const count = r.i32();
+    if (count < 0) throw new Error("bad NBT list");
+    for (let i = 0; i < count; i++) {
+      if (itemType !== COMPOUND) {
+        skipPayload(r, itemType, 2);
+        continue;
+      }
+      const server: SavedServer = { name: "", ip: "", hidden: false };
+      for (;;) {
+        const t = r.u8();
+        if (t === END) break;
+        const key = r.string();
+        if (t === STRING && key === "name") server.name = r.string();
+        else if (t === STRING && key === "ip") server.ip = r.string();
+        else if (t === STRING && key === "icon") server.icon = r.string();
+        else if (t === BYTE && key === "hidden") server.hidden = r.u8() !== 0;
+        else skipPayload(r, t, 3);
+      }
+      if (server.ip && servers.length < MAX_SERVERS) servers.push(server);
+    }
+  }
 }
 
 /** The data pack lists of a world, from the bytes of its `level.dat`. */

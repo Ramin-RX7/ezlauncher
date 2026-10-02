@@ -18,6 +18,8 @@ export interface ProfileListProps {
   /** Why this profile can't be played right now (no account, busy…), if it can't. */
   playBlocked?: (profile: ProfileInfo) => string | undefined;
   onOpenFolder: (id: string, folder: "game" | "mods") => void;
+  /** Make a desktop shortcut to the profile (missing = not offered here). */
+  onShortcut?: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
@@ -32,6 +34,7 @@ export function ProfileList({
   onPlay,
   playBlocked,
   onOpenFolder,
+  onShortcut,
   onDelete,
 }: ProfileListProps) {
   const { t, i18n } = useTranslation();
@@ -83,6 +86,16 @@ export function ProfileList({
                   label: t("mods.openFolder"),
                   onSelect: () => {
                     onOpenFolder(p.id, "mods");
+                  },
+                },
+              ]
+            : []),
+          ...(onShortcut
+            ? [
+                {
+                  label: t("shortcut.create"),
+                  onSelect: () => {
+                    onShortcut(p.id);
                   },
                 },
               ]

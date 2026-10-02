@@ -1,20 +1,25 @@
 import { app, BrowserWindow } from "electron";
 import { electronApp } from "@electron-toolkit/utils";
 import { registerIpc } from "./ipc";
+import { broadcast } from "./ipc/register";
 import { initFromBootstrap } from "./services/current";
 import { getLogger } from "./log";
+import { profileFromArgv, profileRoute } from "./startup";
 import { createMainWindow } from "./window";
 
 let mainWindow: BrowserWindow | undefined;
 
-// Only one launcher at a time: a second start focuses the running one.
+// Only one launcher at a time: a second start focuses the running one (and opens
+// the profile its shortcut names).
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
     if (!mainWindow) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
+    const profileId = profileFromArgv(argv);
+    if (profileId) broadcast("app:openProfile", { profileId });
   });
 
   void app.whenReady().then(async () => {
@@ -27,7 +32,10 @@ if (!app.requestSingleInstanceLock()) {
     await initFromBootstrap();
     registerIpc();
 
-    mainWindow = createMainWindow();
+    const profileId = profileFromArgv(process.argv);
+    mainWindow = createMainWindow(
+      profileId ? { hash: profileRoute(profileId) } : {},
+    );
     mainWindow.on("closed", () => {
       mainWindow = undefined;
     });
