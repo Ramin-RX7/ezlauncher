@@ -67,6 +67,44 @@ describe("profile store", () => {
     ).toBeUndefined();
   });
 
+  it("pins a loader build; changing it forgets the install", async () => {
+    const s = store();
+    const p = await s.create({
+      ...base,
+      loader: { id: "fabric", version: "0.19.5" },
+    });
+    expect(p.loader).toEqual({ id: "fabric", version: "0.19.5" });
+    await s.setInstalled(p.id, "fabric-loader-0.19.5-1.18.2");
+    const newest = await s.update(p.id, { loader: { id: "fabric" } });
+    expect(newest.loader).toEqual({ id: "fabric" });
+    expect(newest.installedVersionId).toBeUndefined();
+    await expect(
+      s.update(p.id, { loader: { id: "fabric", version: "../x" } }),
+    ).rejects.toMatchObject({ code: "INVALID_PROFILE" });
+  });
+
+  it("sets the mod pack link and custom icon (launcher-only fields)", async () => {
+    const s = store();
+    const p = await s.create(base);
+    await s.setInstalled(p.id, "fabric-loader-0.19.5-1.18.2");
+    const pack = { name: "FO", versionNumber: "1.0", projectId: "abc" };
+    const linked = await s.setPack(p.id, { modpack: pack, customIcon: true });
+    expect(linked).toMatchObject({ modpack: pack, customIcon: true });
+    expect(linked.installedVersionId).toBe("fabric-loader-0.19.5-1.18.2");
+    const moved = await s.setPack(p.id, {
+      gameVersion: "1.20.1",
+      loader: { id: "fabric", version: "0.16.0" },
+    });
+    expect(moved.installedVersionId).toBeUndefined();
+    const plain = await s.setPack(p.id, { modpack: null, customIcon: false });
+    expect(plain.modpack).toBeUndefined();
+    expect(plain.customIcon).toBeUndefined();
+    // The renderer can't set them.
+    await expect(s.update(p.id, { modpack: pack })).rejects.toMatchObject({
+      code: "INVALID_PROFILE",
+    });
+  });
+
   it("sets and clears optional settings", async () => {
     const s = store();
     const p = await s.create({

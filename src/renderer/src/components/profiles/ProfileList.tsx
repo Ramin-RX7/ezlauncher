@@ -114,17 +114,26 @@ export function ProfileList({
                 className="flex min-w-0 flex-1 items-center gap-3 py-3 text-start"
               >
                 <ProfileIcon
-                  iconId={p.iconId}
+                  profile={p}
                   className={selected ? "ring-2 ring-accent" : ""}
                 />
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate font-medium">{p.name}</span>
-                  <span className="text-xs text-muted">
-                    {p.lastPlayedAt
-                      ? t("profiles.lastPlayed", {
-                          date: dateFormat.format(new Date(p.lastPlayedAt)),
-                        })
-                      : t("profiles.neverPlayed")}
+                  <span className="truncate text-xs text-muted">
+                    {[
+                      p.modpack &&
+                        t("modpacks.badge", {
+                          name: p.modpack.name,
+                          version: p.modpack.versionNumber,
+                        }),
+                      p.lastPlayedAt
+                        ? t("profiles.lastPlayed", {
+                            date: dateFormat.format(new Date(p.lastPlayedAt)),
+                          })
+                        : t("profiles.neverPlayed"),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </span>
                 </span>
                 <span className="ms-auto flex shrink-0 items-center gap-2">

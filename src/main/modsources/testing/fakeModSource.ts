@@ -122,6 +122,19 @@ export function createFakeModSource(
         list.find((v) => v.channel === "alpha");
       return Promise.resolve(pick ? version(pick) : null);
     },
+    listVersions(projectId, { loaders } = {}) {
+      calls.push(`listVersions ${projectId}`);
+      return Promise.resolve(
+        versions
+          .filter(
+            (v) =>
+              v.projectId === projectId &&
+              (!loaders ||
+                (v.loaders ?? ["fabric"]).some((l) => loaders.includes(l))),
+          )
+          .map(version),
+      );
+    },
     getVersion(versionId) {
       calls.push(`getVersion ${versionId}`);
       const v = versions.find((x) => x.versionId === versionId);

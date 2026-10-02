@@ -28,6 +28,13 @@ export function createFabricProvider({
   downloader: Downloader;
 }): LoaderProvider {
   const seg = encodeURIComponent;
+  const fetchBuilds = (gameVersion: string, signal?: AbortSignal) =>
+    fetchJson(
+      downloader,
+      `${FABRIC_META_URL}/versions/loader/${seg(gameVersion)}`,
+      loaderBuildsSchema,
+      signal,
+    );
   return {
     id: "fabric",
     displayName: "Fabric",
@@ -42,14 +49,16 @@ export function createFabricProvider({
       return list.map((v) => v.version);
     },
 
+    async listLoaderVersions(gameVersion, signal) {
+      const builds = await fetchBuilds(gameVersion, signal);
+      return builds.map((b) => ({
+        version: b.loader.version,
+        stable: b.loader.stable,
+      }));
+    },
+
     async getLatestLoaderVersion(gameVersion, signal) {
-      const builds = await fetchJson(
-        downloader,
-        `${FABRIC_META_URL}/versions/loader/${seg(gameVersion)}`,
-        loaderBuildsSchema,
-        signal,
-      );
-      const version = pickFabricLoader(builds);
+      const version = pickFabricLoader(await fetchBuilds(gameVersion, signal));
       if (!version) {
         throw new AppError(
           "LOADER_UNSUPPORTED",

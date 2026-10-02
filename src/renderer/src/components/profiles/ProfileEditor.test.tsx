@@ -56,6 +56,42 @@ describe("ProfileEditor", () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
+  it("pins a loader build from the loader's list", async () => {
+    const api = setup({
+      "loaders:builds": () => [
+        { version: "0.20.0-beta.1", stable: false },
+        { version: "0.19.5", stable: true },
+      ],
+      "profiles:create": (input) => ({ ...profile(), ...(input as object) }),
+    });
+    renderEditor();
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Pinned" },
+    });
+    fireEvent.click(await screen.findByText("1.18.2"));
+    fireEvent.change(screen.getByLabelText("Mod loader"), {
+      target: { value: "fabric" },
+    });
+    const build = screen.getByLabelText("Loader build");
+    expect(
+      await screen.findByRole("option", { name: "0.20.0-beta.1 (beta)" }),
+    ).toBeInTheDocument();
+    fireEvent.change(build, { target: { value: "0.19.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create profile" }));
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith(
+        "profiles:create",
+        expect.objectContaining({
+          loader: { id: "fabric", version: "0.19.5" },
+        }),
+      );
+    });
+    expect(api.invoke).toHaveBeenCalledWith("loaders:builds", {
+      loaderId: "fabric",
+      gameVersion: "1.18.2",
+    });
+  });
+
   it("replaces global memory and arguments with the profile's own", async () => {
     const api = setup({
       "profiles:update": (_id, patch) => ({

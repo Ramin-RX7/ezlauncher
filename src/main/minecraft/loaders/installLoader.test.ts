@@ -130,6 +130,35 @@ describe("prepareLoader", () => {
       versionId: FABRIC_ID,
     });
   });
+
+  it("uses a pinned build without asking for the latest", async () => {
+    const { deps, fake } = setup();
+    const request = await prepareLoader(deps, "quilt", "1.0", {
+      loaderVersion: "0.3.0",
+    });
+    expect(request).toMatchObject({
+      loaderVersion: "0.3.0",
+      versionId: QUILT_ID,
+    });
+    expect(fake.requests).not.toContain(
+      `${QUILT_META_URL}/versions/loader/1.0`,
+    );
+  });
+});
+
+describe("listLoaderVersions", () => {
+  it("lists builds newest first with their stability", async () => {
+    const { deps } = setup();
+    expect(await deps.loaders.get("fabric").listLoaderVersions("1.0")).toEqual([
+      { version: "0.3.0-beta", stable: false },
+      { version: "0.2.0", stable: true },
+    ]);
+    expect(await deps.loaders.get("quilt").listLoaderVersions("1.0")).toEqual([
+      { version: "0.4.0-beta.1", stable: false },
+      { version: "0.3.0", stable: true },
+      { version: "0.2.9", stable: true },
+    ]);
+  });
 });
 
 describe("installLoader", () => {

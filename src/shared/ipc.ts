@@ -19,6 +19,13 @@ import type {
   DataPackInstallResult,
   DataPackWorld,
   WorldDataPacks,
+  ModpackExportOptions,
+  ModpackExportResult,
+  ModpackPreview,
+  ModpackProgress,
+  ModpackUpdatePlan,
+  ModpackUpdateResult,
+  ModpackVersion,
   ApplyModsResult,
   BackupProgress,
   BackupResult,
@@ -46,6 +53,7 @@ import type {
   LauncherSettings,
   LaunchRequest,
   LoaderInfo,
+  LoaderBuildInfo,
   OrphanWorld,
   Profile,
   ProfileInfo,
@@ -135,6 +143,71 @@ export interface IpcInvokeContract {
     result: void;
   };
 
+  /** A profile's own picture (a mod pack's icon) as a `data:` URL, or null. */
+  "profiles:icon": { args: [id: string]; result: string | null };
+
+  /** Opens a file picker for a `.mrpack`; null when cancelled. */
+  "modpacks:pickFile": { args: []; result: ModpackPreview | null };
+  /** Reads a dropped `.mrpack` by path. */
+  "modpacks:inspectFile": { args: [path: string]; result: ModpackPreview };
+  /** Mod packs on the site (every loader; `loaders` says which), 20 at a time. */
+  "modpacks:search": {
+    args: [options: { query: string; offset: number }];
+    result: PackSearchResult;
+  };
+  /** A pack's versions on its site, newest first. */
+  "modpacks:versions": {
+    args: [options: { sourceId: string; projectId: string }];
+    result: ModpackVersion[];
+  };
+  /** Downloads a pack version and reads it; progress on `modpacks:progress` (token = version id). */
+  "modpacks:inspectRemote": {
+    args: [options: { sourceId: string; projectId: string; versionId: string }];
+    result: ModpackPreview;
+  };
+  /** Imports a read pack as a new profile; `skip` = optional files left out. */
+  "modpacks:import": {
+    args: [options: { token: string; name: string; skip: string[] }];
+    result: Profile;
+  };
+  /** Stops a download, import or update (by token, or version id while fetching). */
+  "modpacks:cancel": { args: [token: string]; result: boolean };
+  /** Puts away a read pack that wasn't imported. */
+  "modpacks:discard": { args: [token: string]; result: void };
+  /** The versions a pack profile can be updated to. */
+  "modpacks:updateVersions": {
+    args: [profileId: string];
+    result: ModpackVersion[];
+  };
+  /** Works out an update (to a site version, or a picked file's token); changes nothing. */
+  "modpacks:planUpdate": {
+    args: [options: { profileId: string; versionId?: string; token?: string }];
+    result: ModpackUpdatePlan;
+  };
+  /** Carries out a planned update; `replace` = files changed by the user to replace anyway. */
+  "modpacks:applyUpdate": {
+    args: [options: { token: string; replace: string[] }];
+    result: ModpackUpdateResult;
+  };
+  "modpacks:discardUpdate": { args: [token: string]; result: void };
+  "modpacks:exportOptions": {
+    args: [profileId: string];
+    result: ModpackExportOptions;
+  };
+  /** Asks where to save, then writes the profile as a `.mrpack`; null when cancelled. */
+  "modpacks:export": {
+    args: [
+      options: {
+        profileId: string;
+        name: string;
+        versionNumber: string;
+        summary?: string;
+        include: string[];
+      },
+    ];
+    result: ModpackExportResult | null;
+  };
+
   "worlds:list": { args: [profileId: string]; result: WorldInfo[] };
   "worlds:move": {
     args: [options: { worldId: string; toProfileId: string }];
@@ -151,6 +224,11 @@ export interface IpcInvokeContract {
   "loaders:list": {
     args: [options: { refresh?: boolean }];
     result: LoaderInfo[];
+  };
+  /** A loader's builds for a Minecraft version, newest first (asks the loader's server). */
+  "loaders:builds": {
+    args: [options: { loaderId: string; gameVersion: string }];
+    result: LoaderBuildInfo[];
   };
 
   /** Every library mod; with `profileId`, also its state and compatibility there. Runs mod sync first. */
@@ -444,6 +522,7 @@ export interface IpcEventContract {
   "resourcePacks:download": PackDownloadProgress;
   "shaders:download": PackDownloadProgress;
   "dataPacks:download": PackDownloadProgress;
+  "modpacks:progress": ModpackProgress;
   "java:progress": JavaInstallProgress;
   "backup:progress": BackupProgress;
   "backup:state": BackupStateEvent;
@@ -474,12 +553,28 @@ export const INVOKE_CHANNELS = [
   "versions:delete",
   "versions:patchNotes",
   "loaders:list",
+  "loaders:builds",
   "profiles:list",
   "profiles:create",
   "profiles:duplicate",
   "profiles:update",
   "profiles:delete",
   "profiles:openFolder",
+  "profiles:icon",
+  "modpacks:pickFile",
+  "modpacks:inspectFile",
+  "modpacks:search",
+  "modpacks:versions",
+  "modpacks:inspectRemote",
+  "modpacks:import",
+  "modpacks:cancel",
+  "modpacks:discard",
+  "modpacks:updateVersions",
+  "modpacks:planUpdate",
+  "modpacks:applyUpdate",
+  "modpacks:discardUpdate",
+  "modpacks:exportOptions",
+  "modpacks:export",
   "worlds:list",
   "worlds:move",
   "worlds:orphans",
@@ -573,6 +668,7 @@ export const EVENT_CHANNELS = [
   "resourcePacks:download",
   "shaders:download",
   "dataPacks:download",
+  "modpacks:progress",
   "java:progress",
   "backup:progress",
   "backup:state",

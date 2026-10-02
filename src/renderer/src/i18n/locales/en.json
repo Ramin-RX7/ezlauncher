@@ -272,7 +272,18 @@
     "DATAPACK_NOT_FOUND": "This data pack isn't in the library.",
     "DATAPACK_IN_USE": "Worlds still have this data pack.",
     "DATAPACKS_UNSUPPORTED": "This world's Minecraft version has no data packs (they came in 1.13).",
-    "DATAPACK_NO_VERSION": "This project has no data pack to download."
+    "DATAPACK_NO_VERSION": "This project has no data pack to download.",
+    "MODPACK_INVALID": "This isn't a Modrinth mod pack (.mrpack), or it's damaged.",
+    "MODPACK_UNSAFE_PATH": "This mod pack tries to write files outside its profile, so it wasn't opened.",
+    "MODPACK_BAD_HOST": "This mod pack downloads files from a site mod packs may not use, so it wasn't opened.",
+    "MODPACK_LOADER_UNSUPPORTED": "This mod pack needs Forge or NeoForge, which aren't supported yet.",
+    "MODPACK_FORMAT_UNSUPPORTED": "This mod pack uses a format version this launcher doesn't know.",
+    "MODPACK_TOO_BIG": "This mod pack is too big to unpack.",
+    "MODPACK_GONE": "That mod pack was put away. Open it again.",
+    "MODPACK_NO_SOURCE": "This profile's mod pack didn't come from a site. Update it from a file instead.",
+    "MODPACK_NO_MANIFEST": "This profile doesn't come from a mod pack.",
+    "MODPACK_LOADER_UNKNOWN": "The profile's loader build isn't known yet. Play it once, or pin a build in its settings.",
+    "INVALID_INPUT": "Fill in every field."
   },
   "error": {
     "title": "Something went wrong",
@@ -318,6 +329,10 @@
       "namePlaceholder": "My survival world",
       "version": "Minecraft version",
       "loader": "Mod loader",
+      "loaderBuild": "Loader build",
+      "loaderNewest": "Newest (recommended)",
+      "loaderUnstable": "{{version}} (beta)",
+      "loaderBuildsOffline": "The list of builds couldn't be loaded.",
       "icon": "Icon",
       "versionAndLoader": "Minecraft version and loader",
       "changeVersion": "Change version or loader",
@@ -345,7 +360,8 @@
       "title": "Change version or loader?",
       "body": "Changing the version or loader can break this profile. Worlds opened in an older version can be corrupted, and mods only work with the loader and version they were made for. Back up your worlds first.",
       "confirm": "Change it",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "modpack": "This profile comes from a mod pack: updating the pack sets its version and loader back to the pack's."
     },
     "applyMods": {
       "title": "Update mods for the new version?",
@@ -643,6 +659,97 @@
       "resourcePacks": "Resource packs",
       "shaders": "Shaders",
       "dataPacks": "Data packs"
+    }
+  },
+  "modpacks": {
+    "badge": "{{name}} {{version}}",
+    "cancel": "Cancel",
+    "needsLoader": "This mod pack needs {{loader}}, which isn't supported yet.",
+    "unsupportedVersion": "{{label}} (not supported)",
+    "newProfile": {
+      "empty": "Empty profile",
+      "fromPack": "From a mod pack"
+    },
+    "import": {
+      "intro": "A mod pack becomes a new profile with all its mods, resource packs, shaders and settings. Import the same pack twice to get two separate profiles.",
+      "find": "Find on Modrinth",
+      "pick": "Choose a .mrpack file…",
+      "drop": "or drop a .mrpack file here",
+      "dropArea": "Drop a Modrinth mod pack (.mrpack) here",
+      "reading": "Reading the mod pack…",
+      "back": "Back",
+      "version": "Version",
+      "noVersions": "This project has no mod pack files.",
+      "downloadingPack": "Downloading the mod pack…",
+      "next": "Next",
+      "minecraft": "Minecraft",
+      "loader": "Loader",
+      "contents": "Contents",
+      "counts": "{{files}} files to download ({{size}}), {{included}} files inside ({{includedSize}})",
+      "optional": "Optional files",
+      "optionalHint": "The pack marks these optional. Untick the ones you don't want.",
+      "downloading": "Downloading the pack's files…",
+      "unpacking": "Unpacking the pack's settings and files…",
+      "gameLater": "Minecraft and the loader download when you first press Play.",
+      "import": "Import"
+    },
+    "find": {
+      "title": "Find mod packs",
+      "search": "Search mod packs",
+      "hint": "Packs for Forge or NeoForge are listed but can't be imported yet.",
+      "noResults": "No mod packs found.",
+      "loadMore": "Load more",
+      "choose": "Choose",
+      "chooseLabel": "Choose {{name}}",
+      "unsupported": "Needs {{loader}} (not supported)"
+    },
+    "update": {
+      "open": "Update pack…",
+      "title": "Update {{name}}",
+      "current": "Installed: {{version}}",
+      "noSite": "This pack didn't come from a site. Choose a newer .mrpack file of it.",
+      "installed": "installed",
+      "check": "See what changes",
+      "fromFile": "Use a .mrpack file…",
+      "checking": "Getting the new version…",
+      "fromTo": "{{from}} → {{to}}",
+      "versionChange": "This moves the profile from {{from}} to {{to}}. Back up your worlds first: opening them in another version can change them for good.",
+      "nothing": "Nothing changes: the profile already matches this version.",
+      "groups": {
+        "add_one": "{{count}} new file",
+        "add_other": "{{count}} new files",
+        "update_one": "{{count}} updated file",
+        "update_other": "{{count}} updated files",
+        "remove_one": "{{count}} file removed",
+        "remove_other": "{{count}} files removed",
+        "keepRemoved_one": "{{count}} file the pack dropped, kept because you changed it",
+        "keepRemoved_other": "{{count}} files the pack dropped, kept because you changed them",
+        "changed_one": "{{count}} file you changed that the pack also changed",
+        "changed_other": "{{count}} files you changed that the pack also changed"
+      },
+      "changedHint": "Your version is kept unless you tick it.",
+      "replaceMine": "Replace my {{path}}",
+      "safety": "Mods you added yourself and your worlds aren't touched. Every file that's replaced or removed is zipped first.",
+      "apply": "Update",
+      "applying": "Updating…",
+      "result": "Updated: {{added}} added, {{updated}} replaced, {{removed}} removed.",
+      "backupAt": "The replaced and removed files are saved in {{path}}",
+      "done": "Done"
+    },
+    "export": {
+      "open": "Export as mod pack…",
+      "title": "Export {{name}} as a mod pack",
+      "body": "Saves a Modrinth mod pack (.mrpack) others can import. Mods and packs from Modrinth are linked, not copied; everything else you choose goes inside the file. Worlds aren't exported.",
+      "name": "Pack name",
+      "version": "Version",
+      "summary": "Summary (optional)",
+      "include": "Include",
+      "includeHint": "Logs, screenshots and personal files start unticked.",
+      "working": "Exporting…",
+      "save": "Export…",
+      "done": "Exported: {{downloads}} linked from Modrinth, {{included}} inside the file.",
+      "unknown_one": "{{count}} mod or pack isn't on Modrinth, so it's inside the file (check its license before sharing):",
+      "unknown_other": "{{count}} mods or packs aren't on Modrinth, so they're inside the file (check their licenses before sharing):"
     }
   },
   "dataPacks": {

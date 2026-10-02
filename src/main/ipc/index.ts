@@ -3,6 +3,7 @@ import { registerBackupsIpc } from "./backups";
 import { registerDataPacksIpc } from "./dataPacks";
 import { registerJavaIpc } from "./java";
 import { registerLauncherIpc } from "./launcher";
+import { registerModpacksIpc } from "./modpacks";
 import { registerModsIpc } from "./mods";
 import { registerProfilesIpc } from "./profiles";
 import { registerResourcePacksIpc } from "./resourcePacks";
@@ -19,6 +20,7 @@ export function registerIpc(): void {
   registerResourcePacksIpc();
   registerShadersIpc();
   registerDataPacksIpc();
+  registerModpacksIpc();
   registerJavaIpc();
   registerBackupsIpc();
 }

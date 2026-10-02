@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft } from "lucide-react";
+import { ExportModpackDialog } from "../components/modpacks/ExportModpackDialog";
+import { UpdateModpackDialog } from "../components/modpacks/UpdateModpackDialog";
 import { ModsTab } from "../components/mods/ModsTab";
 import { DeleteProfileDialog } from "../components/profiles/DeleteProfileDialog";
 import { DuplicateProfileDialog } from "../components/profiles/DuplicateProfileDialog";
@@ -31,6 +33,8 @@ export function ProfilePage() {
   const [tab, setTab] = useState<Tab>("settings");
   const [deleting, setDeleting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const list = profiles.data ?? [];
   const profile = list.find((p) => p.id === id);
 
@@ -51,10 +55,41 @@ export function ProfilePage() {
         <>
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
-              <ProfileIcon iconId={profile.iconId} />
-              <h1 className="truncate text-lg font-semibold">{profile.name}</h1>
+              <ProfileIcon profile={profile} />
+              <div className="flex min-w-0 flex-col">
+                <h1 className="truncate text-lg font-semibold">
+                  {profile.name}
+                </h1>
+                {profile.modpack && (
+                  <span className="truncate text-xs text-muted">
+                    {t("modpacks.badge", {
+                      name: profile.modpack.name,
+                      version: profile.modpack.versionNumber,
+                    })}
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              {profile.modpack && (
+                <Button
+                  variant="ghost"
+                  disabled={profile.running > 0}
+                  onClick={() => {
+                    setUpdating(true);
+                  }}
+                >
+                  {t("modpacks.update.open")}
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setExporting(true);
+                }}
+              >
+                {t("modpacks.export.open")}
+              </Button>
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -96,6 +131,22 @@ export function ProfilePage() {
           {tab === "mods" && <ModsTab profile={profile} />}
           {tab === "resourcePacks" && <ResourcePacksTab profile={profile} />}
           {tab === "shaders" && <ShadersTab profile={profile} />}
+          {updating && (
+            <UpdateModpackDialog
+              profile={profile}
+              onClose={() => {
+                setUpdating(false);
+              }}
+            />
+          )}
+          {exporting && (
+            <ExportModpackDialog
+              profile={profile}
+              onClose={() => {
+                setExporting(false);
+              }}
+            />
+          )}
           {duplicating && (
             <DuplicateProfileDialog
               profile={profile}

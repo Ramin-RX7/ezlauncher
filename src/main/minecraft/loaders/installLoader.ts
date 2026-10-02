@@ -31,20 +31,22 @@ export interface LoaderInstallRequest {
 }
 
 /**
- * Work out what a new loader install will be: its latest stable build and
- * version JSON (whose `id` becomes the install's version id). Needs the network.
+ * Work out what a new loader install will be: the given build (or the latest
+ * stable one) and its version JSON (whose `id` becomes the install's version id).
+ * Needs the network.
  */
 export async function prepareLoader(
   deps: Pick<LoaderInstallDeps, "loaders">,
   providerId: string,
   gameVersion: string,
-  signal?: AbortSignal,
+  {
+    signal,
+    loaderVersion: pinned,
+  }: { signal?: AbortSignal; loaderVersion?: string } = {},
 ): Promise<Required<LoaderInstallRequest>> {
   const provider = deps.loaders.get(providerId);
-  const loaderVersion = await provider.getLatestLoaderVersion(
-    gameVersion,
-    signal,
-  );
+  const loaderVersion =
+    pinned ?? (await provider.getLatestLoaderVersion(gameVersion, signal));
   const versionJson = await provider.getVersionJson(
     gameVersion,
     loaderVersion,

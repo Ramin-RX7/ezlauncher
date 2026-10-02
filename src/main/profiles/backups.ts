@@ -1,11 +1,10 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { lstat, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { once } from "node:events";
 import { finished } from "node:stream/promises";
 import { dirname, join } from "node:path";
-import { Unzip, UnzipInflate, Zip, ZipDeflate, ZipPassThrough } from "fflate";
+import { Zip, ZipDeflate, ZipPassThrough } from "fflate";
 import { z } from "zod";
 import type {
   BackupAuto,
@@ -15,6 +14,7 @@ import type {
 } from "@shared/launcher";
 import { AppError } from "../core/errors";
 import { readJson, writeJsonAtomic } from "../core/fsAtomic";
+import { unzipEntries } from "../core/unzip";
 import { safeJoin, type Paths } from "../minecraft/paths";
 import { uniqueWorldId, WORLD_FLAG, writeOwner } from "./worlds";
 
@@ -351,56 +351,16 @@ function localDate(iso: string): string {
 
 /** Unpack a zip into `dir`. Every entry must stay inside it. */
 async function unzipTo(zipFile: string, dir: string): Promise<void> {
-  let failure: unknown;
-  const unzip = new Unzip((file) => {
-    if (failure) return;
-    try {
-      const isDir = file.name.endsWith("/");
-      let target: string;
+  await unzipEntries(zipFile, {
+    code: "BACKUP_DAMAGED",
+    target: (name) => {
       try {
-        target = safeJoin(dir, isDir ? file.name.slice(0, -1) : file.name);
+        return safeJoin(dir, name);
       } catch {
-        throw new AppError(
-          "BACKUP_DAMAGED",
-          `Unsafe path in backup: ${file.name}`,
-        );
+        throw new AppError("BACKUP_DAMAGED", `Unsafe path in backup: ${name}`);
       }
-      if (isDir) {
-        mkdirSync(target, { recursive: true });
-        return;
-      }
-      mkdirSync(dirname(target), { recursive: true });
-      const fd = openSync(target, "wx");
-      file.ondata = (err, data, final) => {
-        if (failure) return;
-        try {
-          if (err) throw err;
-          writeSync(fd, data);
-          if (final) closeSync(fd);
-        } catch (e) {
-          failure = e;
-          try {
-            closeSync(fd);
-          } catch {
-            // already closed
-          }
-        }
-      };
-      file.start();
-    } catch (e) {
-      failure = e;
-    }
+    },
   });
-  unzip.register(UnzipInflate);
-  for await (const chunk of createReadStream(zipFile)) {
-    unzip.push(chunk as Buffer);
-    if (failure) break;
-  }
-  if (!failure) unzip.push(new Uint8Array(0), true);
-  if (failure)
-    throw failure instanceof Error
-      ? failure
-      : new AppError("BACKUP_DAMAGED", "The backup can't be read.");
 }
 
 /**

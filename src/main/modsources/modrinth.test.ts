@@ -240,6 +240,70 @@ describe("shader packs", () => {
   });
 });
 
+describe("mod packs", () => {
+  it("searches mod packs with their loaders and Minecraft versions", async () => {
+    const { source, seen } = fakeModrinth({
+      "/search": {
+        json: {
+          hits: [
+            {
+              project_id: "fo",
+              slug: "fabulously-optimized",
+              title: "Fabulously Optimized",
+              project_type: "modpack",
+              categories: ["fabric", "optimization"],
+              versions: ["1.21.1", "26.3"],
+            },
+            {
+              project_id: "z",
+              slug: "zombies",
+              title: "Zombies",
+              project_type: "modpack",
+              categories: ["forge", "combat"],
+            },
+          ],
+          total_hits: 2,
+        },
+      },
+    });
+    const { hits } = await source.search("", {
+      projectType: "modpack",
+      offset: 0,
+      limit: 20,
+    });
+    expect(decodeURIComponent(seen[0]!.url)).toContain(
+      '[["project_type:modpack"]]',
+    );
+    expect(hits.map((h) => [h.pageUrl, h.loaders, h.gameVersions])).toEqual([
+      [
+        "https://modrinth.com/modpack/fabulously-optimized",
+        ["fabric"],
+        ["1.21.1", "26.3"],
+      ],
+      ["https://modrinth.com/modpack/zombies", ["forge"], undefined],
+    ]);
+  });
+
+  it("lists every version of a project, newest first", async () => {
+    const { source, seen } = fakeModrinth({
+      "/project/fo/version": {
+        json: [
+          version("old", "release", "2024-01-01"),
+          version("new", "beta", "2025-01-01"),
+        ],
+      },
+    });
+    const list = await source.listVersions("fo", { loaders: ["fabric"] });
+    expect(
+      list.map((v) => [v.versionId, v.published, v.file.fileName]),
+    ).toEqual([
+      ["new", "2025-01-01", "new.jar"],
+      ["old", "2024-01-01", "old.jar"],
+    ]);
+    expect(decodeURIComponent(seen[0]!.url)).toContain('loaders=["fabric"]');
+  });
+});
+
 describe("resource packs", () => {
   it("searches one kind of project for a version, a page at a time", async () => {
     const { source, seen } = fakeModrinth({

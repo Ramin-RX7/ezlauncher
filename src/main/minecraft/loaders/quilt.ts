@@ -24,11 +24,13 @@ export function compareLoaderVersions(a: string, b: string): number {
   return 0;
 }
 
+const isQuiltPreRelease = (v: string) => /-(beta|pre)/i.test(v);
+
 /** Quilt's list is unsorted and has betas: drop pre-releases, then take the highest. */
 export function pickQuiltLoader(
   versions: readonly string[],
 ): string | undefined {
-  const stable = versions.filter((v) => !/-(beta|pre)/i.test(v));
+  const stable = versions.filter((v) => !isQuiltPreRelease(v));
   return stable.sort(compareLoaderVersions).at(-1);
 }
 
@@ -38,6 +40,15 @@ export function createQuiltProvider({
   downloader: Downloader;
 }): LoaderProvider {
   const seg = encodeURIComponent;
+  const fetchBuilds = async (gameVersion: string, signal?: AbortSignal) =>
+    (
+      await fetchJson(
+        downloader,
+        `${QUILT_META_URL}/versions/loader/${seg(gameVersion)}`,
+        loaderBuildsSchema,
+        signal,
+      )
+    ).map((b) => b.loader.version);
   return {
     id: "quilt",
     displayName: "Quilt",
@@ -52,14 +63,15 @@ export function createQuiltProvider({
       return list.map((v) => v.version);
     },
 
+    async listLoaderVersions(gameVersion, signal) {
+      const versions = await fetchBuilds(gameVersion, signal);
+      return [...versions]
+        .sort((a, b) => compareLoaderVersions(b, a))
+        .map((version) => ({ version, stable: !isQuiltPreRelease(version) }));
+    },
+
     async getLatestLoaderVersion(gameVersion, signal) {
-      const builds = await fetchJson(
-        downloader,
-        `${QUILT_META_URL}/versions/loader/${seg(gameVersion)}`,
-        loaderBuildsSchema,
-        signal,
-      );
-      const version = pickQuiltLoader(builds.map((b) => b.loader.version));
+      const version = pickQuiltLoader(await fetchBuilds(gameVersion, signal));
       if (!version) {
         throw new AppError(
           "LOADER_UNSUPPORTED",

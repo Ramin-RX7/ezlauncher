@@ -19,6 +19,11 @@ export interface LoaderProvider {
     gameVersion: string,
     signal?: AbortSignal,
   ): Promise<string>;
+  /** Every loader build for a Minecraft version, newest first. */
+  listLoaderVersions(
+    gameVersion: string,
+    signal?: AbortSignal,
+  ): Promise<LoaderBuild[]>;
   /** The loader's version JSON; it has `inheritsFrom` pointing at the game version. */
   getVersionJson(
     gameVersion: string,
@@ -27,6 +32,12 @@ export interface LoaderProvider {
   ): Promise<VersionJson>;
   /** Extra install steps (e.g. Forge processors). Not used by Fabric or Quilt. */
   postInstall?(ctx: LoaderInstallContext): Promise<void>;
+}
+
+export interface LoaderBuild {
+  version: string;
+  /** false = a beta or pre-release build. */
+  stable: boolean;
 }
 
 export interface LoaderInstallContext {

@@ -28,6 +28,12 @@ export interface LoaderInfo {
   gameVersions: string[] | null;
 }
 
+export interface LoaderBuildInfo {
+  version: string;
+  /** false = a beta or pre-release build. */
+  stable: boolean;
+}
+
 /** An installed version as shown on the Versions page. */
 export interface InstalledVersionInfo extends VersionSummary {
   /** Ids of the profiles that play this version (directly or through a loader install). */
@@ -66,10 +72,14 @@ export interface Profile {
   /** 1–32 characters. Renaming is always safe. */
   name: string;
   gameVersion: string;
-  /** null = Vanilla. The loader build is the latest one at install time. */
-  loader: { id: string } | null;
+  /** null = Vanilla. No `version` = the latest stable build at install time. */
+  loader: ProfileLoader | null;
   /** A built-in profile icon id (renderer asset). Missing = the default icon. */
   iconId?: string;
+  /** Its own picture (a mod pack's icon), shown instead of `iconId`. */
+  customIcon?: boolean;
+  /** Made from this mod pack (see `modpacks:*`). */
+  modpack?: ProfileModpack;
   /** The version actually installed for this profile, e.g. `fabric-loader-0.19.5-1.18.2`. */
   installedVersionId?: string;
   /** Missing = use the global setting. */
@@ -82,11 +92,26 @@ export interface Profile {
   lastPlayedAt?: string;
 }
 
+export interface ProfileLoader {
+  id: string;
+  /** A pinned loader build, e.g. `0.19.5`. */
+  version?: string;
+}
+
+export interface ProfileModpack {
+  name: string;
+  versionNumber: string;
+  /** Set when it came from a mod site, so it can be updated. */
+  sourceId?: string;
+  projectId?: string;
+  versionId?: string;
+}
+
 /** What the user edits. `null` clears an optional value. */
 export interface ProfileInput {
   name: string;
   gameVersion: string;
-  loader: { id: string } | null;
+  loader: ProfileLoader | null;
   /** A built-in icon id, or `null` to clear it. */
   iconId?: string | null;
   memoryMaxMb?: number | null;
@@ -384,8 +409,10 @@ export interface RemotePack {
   iconUrl?: string;
   downloads?: number;
   pageUrl: string;
-  /** Shaders: what runs them (`iris`, `optifine`, `canvas`, `vanilla`). */
+  /** Shaders: what runs them (`iris`, `optifine`, `canvas`, `vanilla`); mod packs: their loaders. */
   loaders?: string[];
+  /** Mod packs: the Minecraft versions it has versions for. */
+  gameVersions?: string[];
 }
 
 export interface PackSearchResult {
@@ -419,6 +446,89 @@ export interface PackDownloadProgress {
   projectId: string;
   bytes: number;
   totalBytes: number;
+}
+
+// ---- Mod packs ----
+
+/** A mod pack file, read and ready to import (`token` names it in later calls). */
+export interface ModpackPreview {
+  token: string;
+  name: string;
+  versionNumber: string;
+  summary?: string;
+  gameVersion: string;
+  /** null = vanilla. `fabric`, `quilt`, `forge`, `neoforge`. */
+  loader: string | null;
+  loaderVersion?: string;
+  /** false: its loader isn't supported (Forge, NeoForge); it can't be imported. */
+  supported: boolean;
+  /** Files it downloads, and how much. */
+  files: number;
+  downloadBytes: number;
+  /** Files inside the pack (configs, resource packs, …). */
+  included: number;
+  includedBytes: number;
+  /** Files the pack marks optional, all chosen at first. */
+  optional: { path: string; size: number }[];
+  /** From a site: where (for the profile's icon and updates). */
+  iconUrl?: string;
+}
+
+/** One version of a mod pack on a site. */
+export interface ModpackVersion {
+  versionId: string;
+  versionNumber: string;
+  channel: "release" | "beta" | "alpha";
+  gameVersions: string[];
+  loaders: string[];
+  published?: string;
+  size: number;
+}
+
+export interface ModpackProgress {
+  token: string;
+  step: "fetch" | "download" | "overrides" | "finish";
+  files: number;
+  totalFiles: number;
+  bytes: number;
+  totalBytes: number;
+}
+
+export type ModpackUpdateAction =
+  "add" | "update" | "changed" | "remove" | "keepRemoved";
+
+export interface ModpackUpdatePlan {
+  token: string;
+  from: string;
+  to: string;
+  gameVersion: { from: string; to: string };
+  loader: { from: string | null; to: string | null };
+  items: { path: string; action: ModpackUpdateAction }[];
+  supported: boolean;
+}
+
+export interface ModpackUpdateResult {
+  added: number;
+  updated: number;
+  removed: number;
+  /** The zip of the replaced and removed files, when there were any. */
+  backup?: string;
+}
+
+export interface ModpackExportOptions {
+  /** Top-level files and folders of the profile; `suggested` ones start ticked. */
+  entries: { name: string; folder: boolean; suggested: boolean }[];
+  name: string;
+  versionNumber: string;
+}
+
+export interface ModpackExportResult {
+  /** Files linked to their site. */
+  downloads: number;
+  /** Files put inside the pack. */
+  included: number;
+  /** Mods and packs no site knows, put inside the pack. */
+  unknown: string[];
 }
 
 // ---- Data packs ----

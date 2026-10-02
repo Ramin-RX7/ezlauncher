@@ -39,12 +39,20 @@ const searchSchema = z.looseObject({
       downloads: z.number().optional(),
       /** Includes the loaders its versions are tagged with. */
       categories: z.array(z.string()).optional(),
+      /** Minecraft versions it has versions for. */
+      versions: z.array(z.string()).optional(),
     }),
   ),
   total_hits: z.number().optional(),
 });
 /** Modrinth's loaders for shader packs (they show up among a hit's categories). */
 const SHADER_LOADER_TAGS = new Set(["iris", "optifine", "canvas", "vanilla"]);
+/** Mod loaders a mod pack can be made for (among a hit's categories). */
+const MODPACK_LOADER_TAGS = new Set(["fabric", "quilt", "forge", "neoforge"]);
+const HIT_LOADER_TAGS: Partial<Record<string, ReadonlySet<string>>> = {
+  shader: SHADER_LOADER_TAGS,
+  modpack: MODPACK_LOADER_TAGS,
+};
 const dependenciesSchema = z.looseObject({
   projects: z.array(projectSchema),
 });
@@ -232,6 +240,7 @@ export function createModrinthSource({
         ...(file.hashes.sha512 && { sha512: file.hashes.sha512 }),
       },
       dependencies,
+      ...(v.date_published && { published: v.date_published }),
     };
   }
 
@@ -328,6 +337,7 @@ export function createModrinthSource({
         searchSchema,
         signal ? { signal } : {},
       );
+      const loaderTags = HIT_LOADER_TAGS[projectType];
       const hits = (result?.hits ?? []).map((hit): RemoteProject => ({
         sourceId: SOURCE_ID,
         projectId: hit.project_id,
@@ -339,11 +349,11 @@ export function createModrinthSource({
         ...(hit.downloads !== undefined && { downloads: hit.downloads }),
         projectType: hit.project_type ?? projectType,
         pageUrl: pageUrl(hit.slug, hit.project_type ?? projectType),
-        ...(projectType === "shader" && {
-          loaders: (hit.categories ?? []).filter((c) =>
-            SHADER_LOADER_TAGS.has(c),
-          ),
+        ...(loaderTags && {
+          loaders: (hit.categories ?? []).filter((c) => loaderTags.has(c)),
         }),
+        ...(projectType === "modpack" &&
+          hit.versions && { gameVersions: hit.versions }),
       }));
       return { hits, total: result?.total_hits ?? hits.length };
     },
@@ -368,6 +378,20 @@ export function createModrinthSource({
       );
       const picked = pickVersion(list ?? []);
       return picked ? toVersion(picked) : null;
+    },
+
+    async listVersions(projectId, { loaders } = {}, signal) {
+      const list = await call(
+        `/project/${encodeURIComponent(projectId)}/version${loaders ? `?loaders=${q(loaders)}` : ""}`,
+        z.array(versionSchema),
+        signal ? { signal } : {},
+      );
+      return (list ?? [])
+        .sort((a, b) =>
+          (b.date_published ?? "").localeCompare(a.date_published ?? ""),
+        )
+        .map((v) => toVersion(v))
+        .filter((v): v is RemoteVersion => v !== null);
     },
 
     async getVersion(versionId, signal, fileSha1) {

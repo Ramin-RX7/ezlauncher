@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { joinArgs, splitArgs } from "@shared/args";
 import {
@@ -28,6 +28,7 @@ import { visibleTypes } from "../versions/versionTypes";
 import { IconPicker } from "./IconPicker";
 
 const VANILLA = "vanilla";
+const NEWEST = "newest";
 const MEMORY_MIN = 512;
 const MEMORY_MAX = 65536;
 
@@ -60,6 +61,10 @@ export function ProfileEditor({
   );
   const [loaderId, setLoaderId] = useState<string | null>(
     profile?.loader?.id ?? null,
+  );
+  /** A pinned loader build; null = the newest at install time. */
+  const [loaderBuild, setLoaderBuild] = useState<string | null>(
+    profile?.loader?.version ?? null,
   );
   // Each override: "use global" (the default), or the profile's own value that replaces it.
   const [globalMemory, setGlobalMemory] = useState(
@@ -129,7 +134,9 @@ export function ProfileEditor({
   const input = (): ProfileInput => ({
     name: trimmedName,
     gameVersion: gameVersion ?? "",
-    loader: loaderId ? { id: loaderId } : null,
+    loader: loaderId
+      ? { id: loaderId, ...(loaderBuild !== null && { version: loaderBuild }) }
+      : null,
     iconId: iconId ?? null,
     memoryMaxMb: globalMemory ? null : memoryNumber,
     extraJvmArgs: globalJvm || "error" in jvmSplit ? null : jvmSplit.args,
@@ -169,7 +176,8 @@ export function ProfileEditor({
   const changesInstall =
     profile !== undefined &&
     (gameVersion !== profile.gameVersion ||
-      loaderId !== (profile.loader?.id ?? null));
+      loaderId !== (profile.loader?.id ?? null) ||
+      loaderBuild !== (profile.loader?.version ?? null));
 
   const doSave = (data: ProfileInput) => {
     offerApply.current = changesInstall && data.loader !== null;
@@ -243,6 +251,7 @@ export function ProfileEditor({
                       // Keep the profile as it is.
                       setGameVersion(profile.gameVersion);
                       setLoaderId(profile.loader?.id ?? null);
+                      setLoaderBuild(profile.loader?.version ?? null);
                       setVersionOpen(false);
                     }}
                   >
@@ -260,35 +269,53 @@ export function ProfileEditor({
                 selectedId={gameVersion}
                 onSelect={(id) => {
                   setGameVersion(id);
+                  // A build is made for one Minecraft version.
+                  if (id !== gameVersion) setLoaderBuild(null);
                   setSaved(false);
                 }}
               />
             </div>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-muted">{t("profiles.editor.loader")}</span>
-              <Select
-                aria-label={t("profiles.editor.loader")}
-                value={loaderId ?? VANILLA}
-                className="w-56"
-                onChange={(v) => {
-                  setLoaderId(v === VANILLA ? null : v);
-                  setSaved(false);
-                }}
-                options={[
-                  { value: VANILLA, label: t("loaders.vanilla") },
-                  ...(loaders.data ?? []).map((l) => {
-                    const ok = supports(l.id);
-                    return {
-                      value: l.id,
-                      label: ok
-                        ? l.displayName
-                        : t("loaders.unsupported", { name: l.displayName }),
-                      disabled: !ok,
-                    };
-                  }),
-                ]}
-              />
-            </label>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-muted">
+                  {t("profiles.editor.loader")}
+                </span>
+                <Select
+                  aria-label={t("profiles.editor.loader")}
+                  value={loaderId ?? VANILLA}
+                  className="w-56"
+                  onChange={(v) => {
+                    setLoaderId(v === VANILLA ? null : v);
+                    setLoaderBuild(null);
+                    setSaved(false);
+                  }}
+                  options={[
+                    { value: VANILLA, label: t("loaders.vanilla") },
+                    ...(loaders.data ?? []).map((l) => {
+                      const ok = supports(l.id);
+                      return {
+                        value: l.id,
+                        label: ok
+                          ? l.displayName
+                          : t("loaders.unsupported", { name: l.displayName }),
+                        disabled: !ok,
+                      };
+                    }),
+                  ]}
+                />
+              </label>
+              {loaderId !== null && gameVersion !== undefined && (
+                <LoaderBuildSelect
+                  loaderId={loaderId}
+                  gameVersion={gameVersion}
+                  value={loaderBuild}
+                  onChange={(v) => {
+                    setLoaderBuild(v);
+                    setSaved(false);
+                  }}
+                />
+              )}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col gap-1 text-sm">
@@ -303,6 +330,7 @@ export function ProfileEditor({
                     ? (loaders.data?.find((l) => l.id === loaderId)
                         ?.displayName ?? loaderId)
                     : t("loaders.vanilla"),
+                  ...(loaderId && loaderBuild ? [loaderBuild] : []),
                 ].join(" · ")}
               </span>
               <Button
@@ -460,7 +488,13 @@ export function ProfileEditor({
             </Button>
           </>
         }
-      />
+      >
+        {profile?.modpack && (
+          <p className="text-sm text-warning">
+            {t("profiles.changeWarning.modpack")}
+          </p>
+        )}
+      </Dialog>
 
       <Dialog
         open={applyOpen}
@@ -539,6 +573,60 @@ export function ProfileEditor({
         )}
       </Dialog>
     </form>
+  );
+}
+
+/** "Newest" or one pinned loader build; the list comes from the loader's server. */
+function LoaderBuildSelect({
+  loaderId,
+  gameVersion,
+  value,
+  onChange,
+}: {
+  loaderId: string;
+  gameVersion: string;
+  value: string | null;
+  onChange: (build: string | null) => void;
+}) {
+  const { t } = useTranslation();
+  const builds = useQuery({
+    queryKey: ["loaderBuilds", loaderId, gameVersion],
+    queryFn: () => invoke("loaders:builds", { loaderId, gameVersion }),
+    staleTime: Infinity,
+    retry: false,
+  });
+  const list = builds.data ?? [];
+  // A pinned build stays choosable offline, or when the server dropped it.
+  const shown =
+    value !== null && !list.some((b) => b.version === value)
+      ? [{ version: value, stable: true }, ...list]
+      : list;
+  return (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="text-muted">{t("profiles.editor.loaderBuild")}</span>
+      <Select
+        aria-label={t("profiles.editor.loaderBuild")}
+        value={value ?? NEWEST}
+        className="w-56"
+        onChange={(v) => {
+          onChange(v === NEWEST ? null : v);
+        }}
+        options={[
+          { value: NEWEST, label: t("profiles.editor.loaderNewest") },
+          ...shown.map((b) => ({
+            value: b.version,
+            label: b.stable
+              ? b.version
+              : t("profiles.editor.loaderUnstable", { version: b.version }),
+          })),
+        ]}
+      />
+      {builds.isError && (
+        <span className="text-xs text-muted">
+          {t("profiles.editor.loaderBuildsOffline")}
+        </span>
+      )}
+    </label>
   );
 }
 

@@ -134,7 +134,7 @@ export function PlayBar({
   return (
     <section className="flex flex-col gap-3 rounded-ezl border border-border bg-surface p-4">
       <div className="flex flex-wrap items-end gap-4">
-        {profile && <ProfileIcon iconId={profile.iconId} />}
+        {profile && <ProfileIcon profile={profile} />}
         <div className="min-w-0 flex-1">
           <div className="text-xs text-muted">
             {profile

@@ -17,13 +17,32 @@ const idString = z.string().refine((s) => {
 const memorySchema = z.number().int().min(512).max(65536);
 const argsSchema = z.array(z.string().max(4096)).max(200);
 const iconSchema = z.string().max(64);
+/** A loader build such as `0.19.5` or `0.20.0-beta.9`. */
+const loaderVersionSchema = z
+  .string()
+  .max(64)
+  .regex(/^[\w.+-]+$/, "invalid loader version");
+const loaderSchema = z.object({
+  id: idString,
+  version: loaderVersionSchema.optional(),
+});
+const label = z.string().min(1).max(256);
+const modpackSchema = z.object({
+  name: label,
+  versionNumber: label,
+  sourceId: label.optional(),
+  projectId: label.optional(),
+  versionId: label.optional(),
+});
 
 const profileSchema = z.object({
   id: idString,
   name: z.string().min(1).max(PROFILE_NAME_MAX),
   gameVersion: idString,
-  loader: z.object({ id: idString }).nullable(),
+  loader: loaderSchema.nullable(),
   iconId: iconSchema.optional(),
+  customIcon: z.boolean().optional(),
+  modpack: modpackSchema.optional(),
   installedVersionId: idString.optional(),
   memoryMaxMb: memorySchema.optional(),
   extraJvmArgs: argsSchema.optional(),
@@ -42,7 +61,7 @@ const inputSchema = z
   .object({
     name: z.string().trim().min(1).max(PROFILE_NAME_MAX),
     gameVersion: idString,
-    loader: z.object({ id: idString }).strict().nullable(),
+    loader: loaderSchema.strict().nullable(),
     iconId: iconSchema.nullable().optional(),
     memoryMaxMb: memorySchema.nullable().optional(),
     extraJvmArgs: argsSchema.nullable().optional(),
@@ -80,8 +99,9 @@ function applyOptional(profile: Profile, input: Partial<Input>): Profile {
   return next;
 }
 
+/** Same loader and the same pinned build (or both unpinned). */
 export function sameLoader(a: Profile["loader"], b: Profile["loader"]) {
-  return (a?.id ?? null) === (b?.id ?? null);
+  return (a?.id ?? null) === (b?.id ?? null) && a?.version === b?.version;
 }
 
 /**
@@ -182,6 +202,38 @@ export function createProfileStore(
       return serial(async () => {
         const profiles = await read();
         await write(profiles.filter((p) => p.id !== id));
+      });
+    },
+
+    /**
+     * Fields only the launcher sets: the mod pack a profile came from and its own
+     * icon. A pack update also moves the version and loader (`null` removes a field).
+     */
+    setPack(
+      id: string,
+      patch: {
+        modpack?: Profile["modpack"] | null;
+        customIcon?: boolean;
+        gameVersion?: string;
+        loader?: Profile["loader"];
+      },
+    ): Promise<Profile> {
+      return change(id, (current) => {
+        const next: Profile = { ...current };
+        if (patch.modpack === null) delete next.modpack;
+        else if (patch.modpack) next.modpack = patch.modpack;
+        if (patch.customIcon === false) delete next.customIcon;
+        else if (patch.customIcon) next.customIcon = true;
+        if (patch.gameVersion !== undefined)
+          next.gameVersion = patch.gameVersion;
+        if (patch.loader !== undefined) next.loader = patch.loader;
+        if (
+          next.gameVersion !== current.gameVersion ||
+          !sameLoader(next.loader, current.loader)
+        ) {
+          delete next.installedVersionId;
+        }
+        return next;
       });
     },
 

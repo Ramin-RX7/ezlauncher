@@ -188,6 +188,32 @@ export function createPaths(dataDir: string) {
       join(dataDir, "dev-games", safeId(versionId)),
 
     launcherFile: (name: string) => join(launcher, name),
+    /** What a mod pack put into a profile (for updates): `launcher/modpacks/<id>.json`. */
+    modpackManifest: (profileId: string) =>
+      join(launcher, "modpacks", `${safeId(profileId)}.json`),
+    /** A profile's own picture (a mod pack's icon). */
+    profileIcon: (profileId: string) =>
+      join(launcher, "profile-icons", `${safeId(profileId)}.png`),
+    /** Mod pack files downloaded from a site, kept until imported. */
+    modpackDownload: (sha1: string) =>
+      join(launcher, "modpack-downloads", `${sha1Name(sha1)}.mrpack`),
+    modpackDownloadsDir: join(launcher, "modpack-downloads"),
+    /** A mod pack's new profile while it's imported; renamed to its game folder when done. */
+    modpackImportDir: (profileId: string) =>
+      join(profiles, `.import-${safeId(profileId)}`),
+    /** A pack update's new files, unpacked next to the profile until applied. */
+    modpackStagingDir: (profileId: string, token: string) =>
+      join(profiles, `.update-${safeId(profileId)}-${safeId(token)}`),
+    /** The files a pack update replaced or removed, zipped before it ran. */
+    modpackBackupsDir: (profileId: string) =>
+      join(dataDir, "modpack-backups", safeId(profileId)),
+    modpackBackupFile: (profileId: string, stamp: string) =>
+      join(
+        dataDir,
+        "modpack-backups",
+        safeId(profileId),
+        `${safeId(stamp)}.zip`,
+      ),
     /** A cached patch-notes entry (by its id in Mojang's feed). */
     patchNotesEntry: (entryId: string) =>
       join(launcher, "patch-notes", `${safeId(entryId)}.json`),

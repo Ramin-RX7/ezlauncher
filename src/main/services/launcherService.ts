@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { basename, isAbsolute, join } from "node:path";
 import { app, BrowserWindow, net, shell } from "electron";
 import type {
@@ -33,6 +33,7 @@ import type {
   LaunchResult,
   LibraryMod,
   LoaderInfo,
+  LoaderBuildInfo,
   OrphanWorld,
   Profile,
   ProfileInfo,
@@ -79,7 +80,7 @@ import {
   getVersionList,
   listInstalledVersions,
 } from "../minecraft/manifest";
-import { createPaths } from "../minecraft/paths";
+import { createPaths, safeId } from "../minecraft/paths";
 import { detectPlatform } from "../minecraft/platform";
 import {
   createRunningGamesFile,
@@ -125,6 +126,7 @@ import { createModLibrary, type ModSourceRef } from "../profiles/mods";
 import {
   createPackLibrary,
   dataPackKind,
+  imageType,
   shaderPackKind,
   type PackLibrary,
   type PackSourceRef,
@@ -158,6 +160,7 @@ import {
   syncWorlds,
   worldsOwnedBy,
 } from "../profiles/worlds";
+import { createModpackService } from "./modpacks";
 import { resolveLaunchSettings } from "../settings/launchSettings";
 import { createSettingsStore } from "../settings/settings";
 import { collectInput } from "../validation/collect";
@@ -194,6 +197,8 @@ export function createLauncherService(dataDir: string, logger: Logger) {
   });
   /** Launches between their checks and the game starting, as `profileId:accountId`. */
   const starting = new Set<string>();
+  /** Profiles whose mod pack is being updated: no game starts meanwhile. */
+  const packUpdating = new Set<string>();
   /** The data folder is being moved: no background work may touch it. */
   let moving = false;
   const profiles = createProfileStore(paths.launcherFile("profiles.json"));
@@ -765,6 +770,59 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     }
   }
 
+  // ---- Mod packs ----
+
+  /** The loader build a profile plays (pinned, installed, or the newest). */
+  async function loaderVersionOf(
+    profile: Profile,
+  ): Promise<string | undefined> {
+    const loader = profile.loader;
+    if (!loader) return undefined;
+    if (loader.version) return loader.version;
+    if (profile.installedVersionId) {
+      const marker = await readInstallMarker(paths, profile.installedVersionId);
+      if (marker?.loader?.id === loader.id) return marker.loader.loaderVersion;
+    }
+    const installed = (await listInstalledVersions(paths)).find(
+      (v) =>
+        v.loader?.id === loader.id &&
+        v.loader.gameVersion === profile.gameVersion,
+    );
+    if (installed?.loader) return installed.loader.loaderVersion;
+    return loaders
+      .get(loader.id)
+      .getLatestLoaderVersion(profile.gameVersion)
+      .catch(() => undefined);
+  }
+
+  const modpacks = createModpackService({
+    paths,
+    downloader,
+    profiles,
+    sources,
+    requireProfile,
+    assertNotRunning,
+    busy: packUpdating,
+    serialFs,
+    sync,
+    forgetProfile: (id) =>
+      serialFs(async () => {
+        await mods.forgetProfile(id);
+        await packs.forgetProfile(id);
+        await shaders.forgetProfile(id);
+      }),
+    loaderVersionOf,
+    fetchImage: async (url) => {
+      const res = await net.fetch(url);
+      return res.ok ? new Uint8Array(await res.arrayBuffer()) : undefined;
+    },
+    progress: (p) => {
+      broadcast("modpacks:progress", p);
+    },
+    changed,
+    logger: log,
+  });
+
   // Old per-version game folders become profiles, then every profile's worlds are synced.
   const ready: Promise<void> = (async () => {
     try {
@@ -778,6 +836,9 @@ export function createLauncherService(dataDir: string, logger: Logger) {
         );
       }
       saveRunning(); // forget the ones that ended meanwhile
+      await modpacks.cleanUp().catch((err: unknown) => {
+        log.warn("cleaning up after mod pack imports failed", err);
+      });
       const created = await serialFs(() =>
         migrateLegacyGames({ paths, profiles, logger: log }),
       );
@@ -801,13 +862,16 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     return profile;
   }
 
-  /** A game of this profile is running, or one is being started. */
+  /** A game of this profile is running, or one is being started (or its pack is updating). */
   const isBusy = (profileId: string): boolean =>
     isRunning(profileId) ||
+    packUpdating.has(profileId) ||
     [...starting].some((key) => key.startsWith(`${profileId}:`));
 
   /** Refuse changing a profile's files while a game of it runs or is starting. */
   function assertNotRunning(profileId: string): void {
+    if (packUpdating.has(profileId))
+      throw new AppError("BUSY", "Wait for the mod pack update to finish.");
     if (isBusy(profileId))
       throw new AppError("GAME_RUNNING", "Close the game first.");
   }
@@ -857,7 +921,8 @@ export function createLauncherService(dataDir: string, logger: Logger) {
   /**
    * The installed version a profile plays, installing it first if needed.
    * An install the profile already has stays on its build; a loader profile reuses
-   * an existing install of that loader for its Minecraft version.
+   * an existing install of that loader for its Minecraft version (of its pinned
+   * build, when it has one).
    */
   async function ensureProfileInstall(
     profile: Profile,
@@ -880,7 +945,11 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       };
     }
     const existing = (await listInstalledVersions(paths)).find(
-      (v) => v.loader?.id === loader.id && v.loader.gameVersion === gameVersion,
+      (v) =>
+        v.loader?.id === loader.id &&
+        v.loader.gameVersion === gameVersion &&
+        (loader.version === undefined ||
+          v.loader.loaderVersion === loader.version),
     );
     if (existing) {
       return {
@@ -888,7 +957,9 @@ export function createLauncherService(dataDir: string, logger: Logger) {
         installed: await ensureInstalled(existing.id, "quick"),
       };
     }
-    const request = await prepareLoader(loaderDeps, loader.id, gameVersion);
+    const request = await prepareLoader(loaderDeps, loader.id, gameVersion, {
+      ...(loader.version !== undefined && { loaderVersion: loader.version }),
+    });
     return {
       versionId: request.versionId,
       installed: await queueLoaderInstall(request, "install"),
@@ -1126,6 +1197,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
         ...(p.iconUrl && { iconUrl: p.iconUrl }),
         ...(p.downloads !== undefined && { downloads: p.downloads }),
         ...(p.loaders && { loaders: p.loaders }),
+        ...(p.gameVersions && { gameVersions: p.gameVersions }),
       })),
     };
   }
@@ -1147,6 +1219,8 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     }
     return users;
   }
+
+  const loaderBuildCache = new Map<string, Promise<LoaderBuildInfo[]>>();
 
   function validateLoader(loader: unknown): void {
     if (
@@ -1224,6 +1298,25 @@ export function createLauncherService(dataDir: string, logger: Logger) {
           }),
         })),
       );
+    },
+
+    /** A loader's builds for a Minecraft version (kept for the session). */
+    async loaderBuilds({
+      loaderId,
+      gameVersion,
+    }: {
+      loaderId: string;
+      gameVersion: string;
+    }): Promise<LoaderBuildInfo[]> {
+      const provider = loaders.get(loaderId);
+      const key = `${provider.id}:${safeId(gameVersion)}`;
+      let builds = loaderBuildCache.get(key);
+      if (!builds) {
+        builds = provider.listLoaderVersions(gameVersion);
+        loaderBuildCache.set(key, builds);
+        builds.catch(() => loaderBuildCache.delete(key));
+      }
+      return builds;
     },
 
     cancelInstall(versionId: string): boolean {
@@ -1311,6 +1404,12 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       const sha1s = (await mods.enabledMods(id)).map((m) => m.sha1);
       if (sha1s.length > 0)
         await serialFs(() => mods.enableAll(profile.id, sha1s));
+      // A mod pack's profile stays one: its pack record, icon and config files come too.
+      await serialFs(() => modpacks.copyTo(src, profile)).catch(
+        (err: unknown) => {
+          log.warn(`copying the mod pack files of ${id} failed`, err);
+        },
+      );
       // The same active resource packs, in the same order (only those lines of options.txt).
       await serialFs(() => profilePacks.copyActive(src, profile)).catch(
         (err: unknown) => {
@@ -1408,12 +1507,35 @@ export function createLauncherService(dataDir: string, logger: Logger) {
         await mods.forgetProfile(id);
         await packs.forgetProfile(id);
         await shaders.forgetProfile(id);
+        await modpacks.forgetProfile(id);
       });
       if (moveTo) await sync([moveTo]);
       const current = await settings.load();
       if (current.selectedProfileId === id)
         await settings.update({ selectedProfileId: null });
       changed();
+    },
+
+    /** A profile's own picture (a mod pack's icon) as a `data:` URL, or null. */
+    async profileIcon(id: string): Promise<string | null> {
+      const profile = await requireProfile(id);
+      if (!profile.customIcon) return null;
+      try {
+        const bytes = await readFile(paths.profileIcon(profile.id));
+        const type = imageType(bytes);
+        return type ? `data:${type};base64,${bytes.toString("base64")}` : null;
+      } catch {
+        return null;
+      }
+    },
+
+    // ---- Mod packs ----
+
+    modpacks,
+
+    /** Mod packs on the first mod site, 20 at a time (every loader; the UI marks unsupported ones). */
+    searchModpacks(query: unknown, offset: number): Promise<PackSearchResult> {
+      return searchSite("modpack", query, undefined, offset);
     },
 
     async openProfileFolder(

@@ -15,6 +15,7 @@ export function registerLauncherIpc(): void {
   );
 
   handle("loaders:list", (_e, options) => getService().listLoaders(options));
+  handle("loaders:builds", (_e, options) => getService().loaderBuilds(options));
 
   handle("account:list", () => getService().listAccounts());
   handle("account:add", (_e, username) => getService().addAccount(username));

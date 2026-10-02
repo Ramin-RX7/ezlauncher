@@ -6,7 +6,8 @@
 
 /** The kinds of projects the launcher gets from a site. */
 /** `datapack` finds projects with data pack versions, even ones the site calls mods. */
-export type ProjectType = "mod" | "resourcepack" | "shader" | "datapack";
+export type ProjectType =
+  "mod" | "resourcepack" | "shader" | "datapack" | "modpack";
 
 /** What a profile can run: its Minecraft version and the loaders it loads mods for. */
 export interface ModTarget {
@@ -35,6 +36,8 @@ export interface RemoteProject {
   description?: string;
   /** The loaders its versions are tagged with, when a search says (shaders: `iris`, …). */
   loaders?: string[];
+  /** The Minecraft versions it has versions for, when a search says (mod packs). */
+  gameVersions?: string[];
 }
 
 export interface RemoteFile {
@@ -61,6 +64,8 @@ export interface RemoteVersion {
   gameVersions: string[];
   file: RemoteFile;
   dependencies: RemoteDependency[];
+  /** ISO date, when the site says. */
+  published?: string;
 }
 
 export interface ModSource {
@@ -79,6 +84,12 @@ export interface ModSource {
     target: ModTarget,
     signal?: AbortSignal,
   ): Promise<RemoteVersion | null>;
+  /** Every version of a project (only for these loaders, if given), newest first. */
+  listVersions(
+    projectId: string,
+    options?: { loaders?: string[] },
+    signal?: AbortSignal,
+  ): Promise<RemoteVersion[]>;
   /** A version by id; its file is the one with `fileSha1` when given, else the main one. */
   getVersion(
     versionId: string,
