@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-02
+
 ### Added
 
 - Resource packs: a shared library where each pack is stored once, however many profiles use it.
@@ -50,5 +52,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Initial items mentioned in the SCOPES document
 
-[Unreleased]: https://github.com/Ramin-RX7/ezlauncher/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Ramin-RX7/ezlauncher/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Ramin-RX7/ezlauncher/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Ramin-RX7/ezlauncher/releases/tag/v0.1.0
