@@ -148,6 +148,16 @@
     "about": "About",
     "version": "Version",
     "platform": "Platform",
+    "updates": {
+      "check": "Check for updates",
+      "checking": "Checking for updates…",
+      "upToDate": "You have the newest version (checked {{time}}).",
+      "lastChecked": "Last checked {{time}}.",
+      "available": "Version {{version}} is available.",
+      "view": "View update",
+      "failed": "Couldn't check for updates: {{error}}",
+      "auto": "Check for updates automatically (once a day)"
+    },
     "args": {
       "jvm": "Extra JVM arguments",
       "jvmHint": "Added after the version's own, e.g. -XX:+UseG1GC. Quote values with spaces.",
@@ -294,7 +304,13 @@
     "SHORTCUT_FAILED": "The shortcut couldn't be made.",
     "SERVERS_UNREADABLE": "The game's server list can't be read. Open the Multiplayer screen in game once to repair it.",
     "STORAGE_BUSY": "Wait for installs and backups to finish, then try again.",
-    "CLEANUP_FAILED": "Something couldn't be deleted. Try again, or close programs using those files."
+    "CLEANUP_FAILED": "Something couldn't be deleted. Try again, or close programs using those files.",
+    "UPDATE_CHECK_FAILED": "The update information couldn't be read. Try again later.",
+    "UPDATE_FAILED": "The update couldn't be installed. Try again, or download it from the release page.",
+    "UPDATE_DAMAGED": "The downloaded update is damaged. Try again.",
+    "UPDATE_BUSY": "Wait for the launcher's downloads, installs and backups to finish, then try again.",
+    "UPDATE_NOT_WRITABLE": "The launcher can't write to its own folder. Download the new version from the release page.",
+    "UPDATE_INCOMPLETE": "The last update couldn't be finished."
   },
   "error": {
     "title": "Something went wrong",
@@ -1124,5 +1140,38 @@
     "cancel": "Cancel",
     "freed": "Freed {{size}}.",
     "failed": "{{name}} wasn't cleaned:"
+  },
+  "updates": {
+    "banner": {
+      "available": "EZLauncher {{version}} is available.",
+      "downloading": "Downloading EZLauncher {{version}}… {{percent}}%",
+      "ready": "EZLauncher {{version}} is ready to install.",
+      "installing": "Installing EZLauncher {{version}}…",
+      "failed": "The update to {{version}} failed: {{error}}",
+      "incomplete": "The last update couldn't be finished, so the launcher went back to the version you had."
+    },
+    "title": "EZLauncher {{version}}",
+    "released": "Released {{date}}",
+    "whatsNew": "What's new",
+    "update": "Update",
+    "updateSize": "Update ({{size}})",
+    "later": "Later",
+    "restartNow": "Restart now",
+    "installOnClose": "Install when I close",
+    "cancel": "Cancel",
+    "tryAgain": "Try again",
+    "close": "Close",
+    "dismiss": "Dismiss",
+    "openPage": "Open the download page",
+    "downloading": "Downloading… {{received}} of {{total}}",
+    "downloadLabel": "Update download",
+    "installing": "Installing. The launcher restarts in a moment.",
+    "readyHint": "Restart now, or the update installs when you close the launcher. Games that are running keep running.",
+    "blocked": {
+      "dev": "Updates install only in the released app.",
+      "unsupported": "This copy of the launcher can't update itself. Download the new version from the release page.",
+      "notWritable": "The launcher can't write to its own folder, so it can't replace itself. Download the new version from the release page, or move the launcher to a folder you can change.",
+      "noFile": "This release has no file for your copy of the launcher. Download it from the release page."
+    }
   }
 }

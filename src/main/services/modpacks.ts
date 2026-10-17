@@ -342,6 +342,9 @@ export function createModpackService(deps: ModpackServiceDeps) {
   }
 
   return {
+    /** A mod pack download, import or update is running. */
+    isBusy: (): boolean => jobs.size > 0,
+
     /** Remove what an interrupted import or update left (at startup). */
     async cleanUp(): Promise<void> {
       let names: string[] = [];

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useIpcEvent } from "../lib/useIpcEvent";
 import { AccountPicker } from "./accounts/AccountPicker";
 import { BackupIndicator } from "./backups/BackupIndicator";
+import { UpdateBanner } from "./updates/UpdateBanner";
 import {
   HardDrive,
   House,
@@ -67,6 +68,7 @@ export function AppShell() {
           <AccountPicker />
         </div>
       </header>
+      <UpdateBanner />
       {/* relative: hidden inputs of Radix controls (position: absolute) stay inside the scroll area. */}
       <main className="relative min-h-0 flex-1 overflow-auto p-8">
         <Outlet />

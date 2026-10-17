@@ -3267,6 +3267,29 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     },
 
     /**
+     * Launcher work an app update must not cut off: installs, downloads, imports,
+     * backups, a mod pack update or a data move. Running games don't count: they
+     * run on their own and are found again after a restart.
+     */
+    isAnyBusy(): boolean {
+      return (
+        moving ||
+        starting.size > 0 ||
+        packUpdating.size > 0 ||
+        queue.isAnyBusy() ||
+        [...plans.values()].some((p) => p.controller) ||
+        bulk !== undefined ||
+        javaInstall !== undefined ||
+        backupJob !== undefined ||
+        backupsWaiting > 0 ||
+        packDownloads.size > 0 ||
+        shaderDownloads.size > 0 ||
+        dataPackDownloads.size > 0 ||
+        modpacks.isBusy()
+      );
+    },
+
+    /**
      * Stop background work so the folder can be moved. Refuses while games run or
      * installs and mod downloads are busy.
      */

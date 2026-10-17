@@ -9,6 +9,7 @@ import { ArgsField } from "../components/settings/ArgsField";
 import { BackupSettings } from "../components/settings/BackupSettings";
 import { DataDirChange } from "../components/settings/DataDirChange";
 import { JavaSettings } from "../components/settings/JavaSettings";
+import { UpdateSettings } from "../components/settings/UpdateSettings";
 import { Checkbox } from "../components/ui/Checkbox";
 import { Input } from "../components/ui/Input";
 import { RadioGroup } from "../components/ui/RadioGroup";
@@ -298,6 +299,7 @@ export function SettingsPage() {
           <dt className="text-muted">{t("settings.platform")}</dt>
           <dd>{info.data && `${info.data.platform}-${info.data.arch}`}</dd>
         </dl>
+        <UpdateSettings />
       </Section>
     </div>
   );

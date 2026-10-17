@@ -10,6 +10,7 @@ import { registerResourcePacksIpc } from "./resourcePacks";
 import { registerSetupIpc } from "./setup";
 import { registerShadersIpc } from "./shaders";
 import { registerStorageIpc } from "./storage";
+import { registerUpdatesIpc } from "./updates";
 
 /** Register every IPC handler. Each feature adds its own `register…Ipc()` here. */
 export function registerIpc(): void {
@@ -25,4 +26,5 @@ export function registerIpc(): void {
   registerJavaIpc();
   registerBackupsIpc();
   registerStorageIpc();
+  registerUpdatesIpc();
 }

@@ -1,0 +1,82 @@
+# Adds a published release to releases.json, the update feed the app reads.
+# See RELEASING.md.
+#
+# - Publishing a release (the draft made by release.yml): adds that version
+#   with its files, sizes and SHA-256 checksums, and pushes the change to
+#   master as a bot commit. Pull afterwards.
+# - Run manually (Actions → Update feed → Run workflow) with a version, to
+#   add or fix the entry of a release that is already published.
+name: Update feed
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to add, e.g. 0.3.0 (its release must be published)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: feed
+  cancel-in-progress: false
+
+jobs:
+  feed:
+    name: Add the release to releases.json
+    runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+
+      - name: Read the release
+        id: release
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          tag="${TAG_NAME:-v${INPUT_VERSION#v}}"
+          version="${tag#v}"
+          gh release view "$tag" --json assets,publishedAt,isDraft > release-info.json
+          if [[ "$(jq -r .isDraft release-info.json)" == "true" ]]; then
+            echo "::error::$tag is still a draft. Publish it first."
+            exit 1
+          fi
+          gh release download "$tag" --pattern SHA256SUMS.txt --output SHA256SUMS.txt
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "date=$(jq -r '.publishedAt[0:10]' release-info.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Update releases.json
+        run: >-
+          npm run --silent feed -- add "${{ steps.release.outputs.version }}"
+          --assets release-info.json --sums SHA256SUMS.txt
+          --date "${{ steps.release.outputs.date }}"
+
+      - name: Commit and push
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          if git diff --quiet -- releases.json; then
+            echo "releases.json already has this release."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add releases.json
+          git commit -m "[release] feed v$VERSION [skip ci]"
+          git push origin HEAD:master

@@ -70,6 +70,7 @@ import type {
   ValidationReport,
   VersionListResult,
 } from "./launcher";
+import type { UpdatePrefs, UpdateState } from "./updates";
 
 export interface AppInfo {
   /** The user-facing application name, from `APP_DISPLAY_NAME`. */
@@ -90,6 +91,18 @@ export interface AppInfo {
 /* eslint-disable @typescript-eslint/no-invalid-void-type */
 export interface IpcInvokeContract {
   "app:getInfo": { args: []; result: AppInfo };
+
+  /** Launcher updates (app-level, also before a data folder is chosen). */
+  "updates:state": { args: []; result: UpdateState };
+  /** Check the feed now. Resolves to the new state (an error state when it failed). */
+  "updates:check": { args: []; result: UpdateState };
+  /** Download the available update; progress comes as `updates:state`. */
+  "updates:download": { args: []; result: void };
+  "updates:cancel": { args: []; result: void };
+  /** Install the downloaded update and quit; with `restart` the new version starts. */
+  "updates:install": { args: [options: { restart: boolean }]; result: void };
+  "updates:getPrefs": { args: []; result: UpdatePrefs };
+  "updates:setPrefs": { args: [prefs: UpdatePrefs]; result: UpdatePrefs };
 
   "setup:getState": { args: []; result: SetupState };
   /** Opens a folder picker. Resolves to the chosen folder, or null if cancelled. */
@@ -571,6 +584,7 @@ export interface IpcEventContract {
   "app:openProfile": { profileId: string };
   /** Files counted so far by a storage scan. */
   "storage:progress": { files: number };
+  "updates:state": UpdateState;
 }
 
 export type InvokeChannel = keyof IpcInvokeContract;
@@ -584,6 +598,13 @@ export type EventPayload<C extends EventChannel> = IpcEventContract[C];
 /** Runtime list of channels; the preload only forwards these. Must match the contract. */
 export const INVOKE_CHANNELS = [
   "app:getInfo",
+  "updates:state",
+  "updates:check",
+  "updates:download",
+  "updates:cancel",
+  "updates:install",
+  "updates:getPrefs",
+  "updates:setPrefs",
   "setup:getState",
   "setup:chooseFolder",
   "setup:setDataDir",
@@ -726,6 +747,7 @@ export const EVENT_CHANNELS = [
   "setup:moveProgress",
   "app:openProfile",
   "storage:progress",
+  "updates:state",
 ] as const satisfies readonly EventChannel[];
 
 /** Errors cross the IPC boundary in this shape. */

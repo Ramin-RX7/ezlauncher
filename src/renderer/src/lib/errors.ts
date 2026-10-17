@@ -84,6 +84,12 @@ const KNOWN = [
   "SERVERS_UNREADABLE",
   "STORAGE_BUSY",
   "CLEANUP_FAILED",
+  "UPDATE_CHECK_FAILED",
+  "UPDATE_FAILED",
+  "UPDATE_DAMAGED",
+  "UPDATE_BUSY",
+  "UPDATE_NOT_WRITABLE",
+  "UPDATE_INCOMPLETE",
 ] as const;
 
 /** A user-facing message for an error code from the main process. */

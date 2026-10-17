@@ -23,6 +23,7 @@
     "test:watch": "vitest",
     "mc": "tsx --tsconfig tsconfig.node.json scripts/mc.mts",
     "changelog": "tsx --tsconfig tsconfig.node.json scripts/changelog.mts",
+    "feed": "tsx --tsconfig tsconfig.node.json scripts/feed.mts",
     "preversion": "npm run changelog -- check && npm run typecheck && npm run lint && npm run format:check && npm test",
     "version": "npm run changelog -- release && prettier --write CHANGELOG.md && git add CHANGELOG.md",
     "package": "npm run build && electron-builder --publish never",

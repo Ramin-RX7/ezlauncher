@@ -5,3 +5,5 @@ node_modules
 package-lock.json
 scopes.md
 CLAUDE.md
+# Written by the feed workflow (scripts/feed.mts)
+releases.json

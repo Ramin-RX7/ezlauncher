@@ -4,14 +4,16 @@ How a new EZLauncher version gets from `master` to a GitHub release.
 
 ## How it fits together
 
-| Piece                                                          | Role                                                                                                    |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [CHANGELOG.md](CHANGELOG.md)                                   | Every user-facing change goes under `## [Unreleased]` as it lands.                                      |
-| `npm version`                                                  | Checks, bumps `package.json`, turns `[Unreleased]` into the new version, commits and tags `v<version>`. |
-| [.github/workflows/ci.yml](.github/workflows/ci.yml)           | Type check, lint, format check and tests on every push to `master` and every pull request.              |
-| [.github/workflows/release.yml](.github/workflows/release.yml) | On a `v*` tag: checks, builds on Windows and Linux, and creates a **draft** release with the files.     |
-| [electron-builder.yml](electron-builder.yml)                   | What gets built: Windows installer + portable exe (x64), Linux AppImage (x64).                          |
-| [.github/release-footer.md](.github/release-footer.md)         | Download table and notes appended below the changelog section in every release description.             |
+| Piece                                                          | Role                                                                                                             |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| [CHANGELOG.md](CHANGELOG.md)                                   | Every user-facing change goes under `## [Unreleased]` as it lands.                                               |
+| `npm version`                                                  | Checks, bumps `package.json`, turns `[Unreleased]` into the new version, commits and tags `v<version>`.          |
+| [.github/workflows/ci.yml](.github/workflows/ci.yml)           | Type check, lint, format check and tests on every push to `master` and every pull request.                       |
+| [.github/workflows/release.yml](.github/workflows/release.yml) | On a `v*` tag: checks, builds on Windows and Linux, and creates a **draft** release with the files.              |
+| [electron-builder.yml](electron-builder.yml)                   | What gets built: Windows installer, portable exe and portable zip (x64), Linux AppImage (x64).                   |
+| [.github/workflows/feed.yml](.github/workflows/feed.yml)       | When a release is **published**: adds it to `releases.json` (the app's update feed) and pushes that to `master`. |
+| [releases.json](releases.json)                                 | The update feed: every published version with its notes, file names, sizes and SHA-256. Bot-written.             |
+| [.github/release-footer.md](.github/release-footer.md)         | Download table and notes appended below the changelog section in every release description.                      |
 
 The app reads its version from `package.json` (About screen, logs, User-Agent), so there's nothing else to update.
 
@@ -42,6 +44,7 @@ Add a line to `CHANGELOG.md` under `## [Unreleased]` with each feature or fix, g
 
 5. Watch **Actions → Release** on GitHub (about 10 minutes). When it finishes, a draft appears under **Releases**.
 6. Open the draft, download the installer and give it a quick try. Edit the description if you like, then click **Publish release**. GitHub adds the source code archives by itself.
+7. Publishing runs **Actions → Update feed**: it adds the version to `releases.json` and pushes a commit `[release] feed vx.y.z [skip ci]` to `master`. From then on, launchers that check for updates offer it (within a day, or at once with Settings → Check for updates). Run `git pull` before your next change.
 
 While the version is `0.x`, minor versions may still break things; go to `1.0.0` when you consider it stable.
 
@@ -69,7 +72,15 @@ Each one needs entries under `[Unreleased]`, so every beta gets its own changelo
 ## Testing a build without releasing
 
 - **On GitHub:** Actions → Release → **Run workflow**. It builds on Windows and Linux but creates no release; download the files from the run's **Artifacts** (kept 7 days).
-- **Locally:** `npm run package:win` puts the installer and portable exe in `release/`. The Linux AppImage can only be built on Linux (or WSL).
+- **Locally:** `npm run package:win` puts the installer, portable exe and portable zip in `release/`. The Linux AppImage can only be built on Linux (or WSL).
+
+## Updates in the app
+
+- The launcher reads `releases.json` from `master` (`raw.githubusercontent.com`) and downloads the files from the release, so **the repository and its releases must be public**.
+- Only stable versions are offered; a pre-release (`-beta.1`) is in the feed but skipped.
+- Each build downloads its own file: installer → `-setup.exe`, portable exe → `-portable.exe`, portable zip → `-portable.zip`, AppImage → `.AppImage`. Keep those names (electron-builder.yml) or the feed script won't find the files.
+- **Never edit `releases.json` by hand**, except to remove a broken release (that stops it being offered). To add or redo a published release's entry, run **Actions → Update feed → Run workflow** with its version.
+- Testing an update locally: build two versions (`npx electron-builder --win zip portable --publish never -c.extraMetadata.version=0.2.1 -c.directories.output=<dir>`), serve a `releases.json` for the newer one, and start the older with `EZL_UPDATE_FEED=<url>` (any download URL allowed then), `EZL_USER_DATA=<scratch folder>` (so it never opens your real data folder) and optionally `EZL_UPDATE_TEST=install` (checks, downloads and installs by itself).
 
 ## When something goes wrong
 
@@ -87,6 +98,7 @@ Each one needs entries under `[Unreleased]`, so every beta gets its own changelo
 
 ## What users see
 
-- The portable exe keeps its settings in the user's AppData, like the installed app, so both use the same data folder. It starts a bit slower because it unpacks itself on each start.
+- The portable exe and the portable zip keep their settings in the user's AppData, like the installed app, so all of them use the same data folder. The exe starts a bit slower because it unpacks itself on each start; the zip is the same app already unpacked.
+- Every build checks for updates once a day (Settings → About turns it off, or checks now) and offers new versions in a banner; the user chooses when to download and restart.
 - Uninstalling never deletes settings or the data folder (worlds, backups, mods).
 - macOS isn't built: without a paid Apple developer account the app can't be notarised, and macOS won't open it.

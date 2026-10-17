@@ -12,10 +12,17 @@ files:
 asar: true
 
 win:
+  # Used by the zip (nsis and portable set their own). The update feed tells
+  # the builds apart by these names: see scripts/lib/feed.mts.
+  artifactName: ${productName}-${version}-${arch}-portable.${ext}
   target:
     - target: nsis
       arch: [x64]
     - target: portable
+      arch: [x64]
+    # The same app unpacked in a folder: no unpacking on every start, so it
+    # starts much faster than the single portable exe.
+    - target: zip
       arch: [x64]
 nsis:
   artifactName: ${productName}-${version}-${arch}-setup.${ext}

@@ -1,9 +1,10 @@
 # Builds the app and drafts a GitHub release. See RELEASING.md.
 #
 # - Pushing a tag `v<version>` (made by `npm version`): runs the checks, builds
-#   the Windows installer + portable exe and the Linux AppImage, and creates a
-#   draft release with those files, SHA256SUMS.txt and that version's
-#   CHANGELOG.md section as the description. Publish the draft by hand.
+#   the Windows installer, portable exe and portable zip and the Linux
+#   AppImage, and creates a draft release with those files, SHA256SUMS.txt and
+#   that version's CHANGELOG.md section as the description. Publish the draft
+#   by hand; feed.yml then adds it to releases.json (the app's update feed).
 # - Run manually (Actions → Release → Run workflow): builds only. The files are
 #   attached to the workflow run, for testing a build without releasing.
 name: Release
@@ -99,6 +100,7 @@ jobs:
           name: build-${{ matrix.platform }}
           path: |
             release/*.exe
+            release/*.zip
             release/*.AppImage
           if-no-files-found: error
           retention-days: 7
