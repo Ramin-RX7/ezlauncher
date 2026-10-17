@@ -1,4 +1,37 @@
 {
   "schema": 1,
-  "releases": []
+  "releases": [
+    {
+      "version": "0.3.0",
+      "date": "2026-10-17",
+      "prerelease": false,
+      "notes": "### Added\n\n- Play a world straight from its profile: each world on the Worlds tab has a Play button that starts the game right into it (Minecraft 1.20 and newer)\n- Join a server straight from a profile: the new Servers tab lists the game's own server list and takes any address (works on old versions too)\n- Profile pages have their own Play bar\n- Play time per profile: the total in the profile list and on the profile page, with a history of every session (when, how long, which account, and the world or server)\n- Server list editor on the Servers tab: add, edit, remove and reorder the game's own servers, and choose each one's server resource packs setting (icons and everything else the game keeps stay as they are)\n- Storage page: how much space each part of the data folder takes (versions, game files, Java, mods, packs, worlds, backups, …), and clean-ups for what nothing uses: unused library items, versions and Java, leftover game files, old backups and caches, old logs and crash reports. Each one shows what it removes and asks first\n- Launcher updates: the launcher checks for a new version once a day (or when you click Check for updates in Settings → About), shows what's new, and updates itself when you choose: the installed app, the portable exe, the portable zip and the Linux AppImage. A failed update puts the previous version back\n- A portable zip download: the same portable launcher, already unpacked, so it starts faster than the single portable exe\n- Desktop shortcuts for profiles (Windows and the Linux AppImage): a shortcut with the profile's icon that opens the launcher on that profile, or switches an open launcher to it\n\n### Fixed\n\n- Deleting a mod pack profile now also deletes its mod pack update backups.",
+      "files": {
+        "winPortableExe": {
+          "name": "EZLauncher-0.3.0-x64-portable.exe",
+          "url": "https://github.com/Ramin-RX7/ezlauncher/releases/download/v0.3.0/EZLauncher-0.3.0-x64-portable.exe",
+          "size": 112189316,
+          "sha256": "6c7f3724c19df7e971b8305613819351b2cc49f28d63277daac68760cff6123a"
+        },
+        "winPortableZip": {
+          "name": "EZLauncher-0.3.0-x64-portable.zip",
+          "url": "https://github.com/Ramin-RX7/ezlauncher/releases/download/v0.3.0/EZLauncher-0.3.0-x64-portable.zip",
+          "size": 154492701,
+          "sha256": "c16f3aeddcab9fd355a20541fef8f9d7c2bd12d80a3eb1adb8bb90b0c191779d"
+        },
+        "winSetup": {
+          "name": "EZLauncher-0.3.0-x64-setup.exe",
+          "url": "https://github.com/Ramin-RX7/ezlauncher/releases/download/v0.3.0/EZLauncher-0.3.0-x64-setup.exe",
+          "size": 112407051,
+          "sha256": "4d661fbe071b29c2a86bd482274cc561c6d231d89882742a2acb49cbd8fc08e9"
+        },
+        "linuxAppImage": {
+          "name": "EZLauncher-0.3.0-x86_64.AppImage",
+          "url": "https://github.com/Ramin-RX7/ezlauncher/releases/download/v0.3.0/EZLauncher-0.3.0-x86_64.AppImage",
+          "size": 126568820,
+          "sha256": "6542fd08332e448ea70bb7a4e106063687272746fe29e2e41f1c863951b4b3a7"
+        }
+      }
+    }
+  ]
 }
