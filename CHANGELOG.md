@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-17
+
 ### Added
 
 - Play a world straight from its profile: each world on the Worlds tab has a Play button that starts the game right into it (Minecraft 1.20 and newer)
@@ -68,6 +70,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Initial items mentioned in the SCOPES document
 
-[Unreleased]: https://github.com/Ramin-RX7/ezlauncher/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Ramin-RX7/ezlauncher/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Ramin-RX7/ezlauncher/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Ramin-RX7/ezlauncher/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Ramin-RX7/ezlauncher/releases/tag/v0.1.0
