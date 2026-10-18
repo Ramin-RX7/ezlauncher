@@ -22,6 +22,8 @@ import type {
   BackupSummary,
   WorldBackup,
   ApplyModsResult,
+  ModUpdateCheck,
+  ModUpdateResult,
   BulkDownloadResult,
   DeleteWorldsChoice,
   DisablePlan,
@@ -138,6 +140,8 @@ import {
 import { acceptedLoaders, checkCompat } from "../profiles/compat";
 import { isLink, removeTree } from "../profiles/links";
 import { createModLibrary, type ModSourceRef } from "../profiles/mods";
+import { readManifest } from "../modpacks/manifest";
+import { applyModUpdates, findModUpdates } from "../modsources/modUpdates";
 import {
   createPackLibrary,
   dataPackKind,
@@ -152,7 +156,7 @@ import {
 } from "../profiles/packs/profileShaders";
 import type { ReconcileDiff } from "../profiles/linkedStore";
 import { createWorldDataPacks } from "../profiles/packs/worldDataPacks";
-import type { ProjectType } from "../modsources/types";
+import type { ProjectType, RemoteVersion } from "../modsources/types";
 import {
   predatesDataPacks,
   readGameFormat,
@@ -176,6 +180,14 @@ import {
   syncWorlds,
   worldsOwnedBy,
 } from "../profiles/worlds";
+import type { DiagnosticsInput } from "../diagnostics/diagnostics";
+import {
+  LOG_SECTION_BYTES,
+  newestFile,
+  readHead,
+  readTail,
+} from "../diagnostics/logTail";
+import { syncScreenshots } from "../profiles/screenshots";
 import { createModpackService } from "./modpacks";
 import { createProfileShortcut } from "../shortcuts";
 import { createStorageService } from "./storage";
@@ -283,8 +295,14 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     }
   >();
   const PLAN_TTL_MS = 15 * 60 * 1000;
+  const UPDATE_CHECK_TTL_MS = 10 * 60 * 1000;
   /** The bulk download in progress (library-wide or per-profile re-apply). */
   let bulk: AbortController | undefined;
+  /** The last mod update check per profile, so Update uses exactly what was shown. */
+  const updateChecks = new Map<
+    string,
+    { at: number; versions: Map<string, RemoteVersion> }
+  >();
   /** Resource pack downloads in progress, by project id. */
   const packDownloads = new Map<string, AbortController>();
   /** Shader downloads in progress, by project id. */
@@ -378,6 +396,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       const result = await syncWorlds({ paths, logger: log }, options);
       for (const u of result.unlinked)
         log.warn(`world ${u.worldId} of ${u.profileId} isn't linked`);
+      await syncScreenshots({ paths, logger: log }, options);
       if ((await mods.sync(options)) > 0) scheduleIdentify();
       await syncPackKind(options, packs, paths.resourcePacksDir, (p, diff) =>
         profilePacks.followSync(p, diff),
@@ -1567,6 +1586,11 @@ export function createLauncherService(dataDir: string, logger: Logger) {
       return profile;
     },
 
+    async setProfilePinned(id: string, pinned: boolean): Promise<void> {
+      await profiles.setPinned(id, pinned);
+      changed();
+    },
+
     async updateProfile(id: string, patch: unknown): Promise<Profile> {
       const before = await requireProfile(id);
       assertNotRunning(id);
@@ -1694,6 +1718,125 @@ export function createLauncherService(dataDir: string, logger: Logger) {
         shaderpacks: paths.shaderPacksDir,
       };
       await openFolder(dirs[folder](id));
+    },
+
+    /**
+     * The data-folder part of "Copy diagnostics": settings, Java, and one profile
+     * (the given one, else the selected one) with its mods, mod check and game
+     * logs. Never fails: what can't be read is left out.
+     */
+    async diagnostics(profileId?: string): Promise<
+      Pick<DiagnosticsInput, "settings" | "java" | "profile"> & {
+        secrets: { dataDir: string; playerNames: string[]; uuids: string[] };
+      }
+    > {
+      const config = await settings.load().catch(() => undefined);
+      const accountList = await accounts.list().catch(() => []);
+      const javaList = await api.listJava().catch(() => undefined);
+      const id = profileId ?? config?.selectedProfileId ?? undefined;
+      const profile = id
+        ? (await profiles.list().catch(() => [])).find((p) => p.id === id)
+        : undefined;
+
+      let profileInfo: DiagnosticsInput["profile"];
+      if (profile) {
+        const enabled = await mods.enabledMods(profile.id).catch(() => []);
+        const report = profile.loader
+          ? await api.validateMods(profile.id).catch(() => undefined)
+          : undefined;
+        const names = new Map(enabled.map((m) => [m.sha1, m.meta.name]));
+        const crash = await newestFile(
+          join(paths.gameDir(profile.id), "crash-reports"),
+        );
+        const played = await playTime.totals().catch(() => undefined);
+        profileInfo = {
+          name: profile.name,
+          gameVersion: profile.gameVersion,
+          ...(profile.loader && { loader: profile.loader.id }),
+          ...(profile.loader?.version && {
+            loaderBuild: profile.loader.version,
+          }),
+          ...(profile.installedVersionId && {
+            installedVersionId: profile.installedVersionId,
+          }),
+          ...(profile.modpack && {
+            modpack: `${profile.modpack.name} ${profile.modpack.versionNumber}`,
+          }),
+          ...(profile.memoryMaxMb !== undefined && {
+            memoryMaxMb: profile.memoryMaxMb,
+          }),
+          ...(profile.extraJvmArgs && {
+            extraJvmArgs: profile.extraJvmArgs.length,
+          }),
+          ...(profile.extraGameArgs && {
+            extraGameArgs: profile.extraGameArgs.length,
+          }),
+          running: isBusy(profile.id),
+          ...(played?.get(profile.id) && {
+            playTimeMs: played.get(profile.id),
+          }),
+          mods: enabled
+            .map((m) => ({
+              name: m.meta.name,
+              ...(m.meta.version && { version: m.meta.version }),
+              ...(m.meta.modId && { modId: m.meta.modId }),
+              fromModrinth: m.meta.source !== undefined,
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name)),
+          issues: (report?.issues ?? []).map(
+            (i) =>
+              `${i.severity} ${i.code} (${names.get(i.modSha1) ?? i.modSha1.slice(0, 8)})`,
+          ),
+          ...(crash && {
+            crashReport: {
+              name: basename(crash.path),
+              modifiedAt: crash.modifiedAt.toISOString(),
+              head: (await readHead(crash.path, 60, LOG_SECTION_BYTES)) ?? "",
+            },
+          }),
+          ...(await readTail(
+            join(paths.gameDir(profile.id), "logs", "latest.log"),
+            150,
+            LOG_SECTION_BYTES,
+          ).then((latestLog) => (latestLog ? { latestLog } : {}))),
+        };
+      }
+
+      return {
+        ...(config && {
+          settings: {
+            memoryMaxMb: config.memoryMaxMb,
+            onGameStart: config.onGameStart,
+            extraJvmArgs: config.extraJvmArgs.length,
+            extraGameArgs: config.extraGameArgs.length,
+          },
+        }),
+        ...(javaList && {
+          java: [
+            ...javaList.runtimes
+              .filter((r) => r.installed)
+              .map(
+                (r) =>
+                  `Mojang ${r.component}${r.versionName ? ` ${r.versionName}` : ""}`,
+              ),
+            ...javaList.system.map(
+              (s) =>
+                `System Java ${s.version ?? "?"}${s.vendor ? ` (${s.vendor})` : ""}`,
+            ),
+          ],
+        }),
+        ...(profileInfo && { profile: profileInfo }),
+        secrets: {
+          dataDir: paths.dataDir,
+          playerNames: accountList.map((a) => a.username),
+          uuids: accountList.map((a) => a.uuid),
+        },
+      };
+    },
+
+    /** The one folder every profile's screenshots go to. */
+    async openScreenshotsFolder(): Promise<void> {
+      await openFolder(paths.screenshotsDir);
     },
 
     // ---- Worlds ----
@@ -2811,6 +2954,86 @@ export function createLauncherService(dataDir: string, logger: Logger) {
         }
         reports.clear();
         return { downloaded, disabled, unresolved };
+      } finally {
+        bulk = undefined;
+        changed();
+      }
+    },
+
+    /**
+     * Newer versions of a profile's enabled mods, from the sites they came from.
+     * Kept for a few minutes, so Update uses exactly what was shown.
+     */
+    async checkModUpdates(profileId: string): Promise<ModUpdateCheck> {
+      const profile = await requireProfile(profileId);
+      if (!profile.loader)
+        throw new AppError(
+          "MOD_INCOMPATIBLE",
+          "Vanilla profiles can't load mods.",
+        );
+      const manifest = profile.modpack
+        ? await readManifest(paths, profileId)
+        : undefined;
+      const { check, versions } = await findModUpdates({
+        sources,
+        enabled: await mods.enabledMods(profileId),
+        target: {
+          gameVersion: profile.gameVersion,
+          loaders: acceptedLoaders(profile.loader.id),
+        },
+        packFiles: new Set(Object.values(manifest?.files ?? {})),
+      });
+      updateChecks.set(profileId, { at: Date.now(), versions });
+      return check;
+    },
+
+    /** Update these enabled mods to the versions the last check found (checked again if old). */
+    async applyModUpdates(
+      profileId: string,
+      sha1s: string[],
+    ): Promise<ModUpdateResult> {
+      const profile = await requireProfile(profileId);
+      assertNotRunning(profileId);
+      if (!profile.loader)
+        throw new AppError(
+          "MOD_INCOMPATIBLE",
+          "Vanilla profiles can't load mods.",
+        );
+      if (bulk) throw new AppError("MOD_BULK_BUSY", "A download is running.");
+      let cached = updateChecks.get(profileId);
+      if (!cached || Date.now() - cached.at > UPDATE_CHECK_TTL_MS) {
+        await api.checkModUpdates(profileId);
+        cached = updateChecks.get(profileId);
+      }
+      const enabled = await mods.enabledMods(profileId);
+      const picks = enabled.flatMap((old) => {
+        const version = sha1s.includes(old.sha1)
+          ? cached?.versions.get(old.sha1)
+          : undefined;
+        return version ? [{ old, version }] : [];
+      });
+      const controller = new AbortController();
+      bulk = controller;
+      try {
+        const result = await applyModUpdates(
+          { downloader, paths, library: mods, sources },
+          {
+            profile,
+            target: {
+              gameVersion: profile.gameVersion,
+              loaders: acceptedLoaders(profile.loader.id),
+            },
+            picks,
+            serial: serialFs,
+            signal: controller.signal,
+            onProgress: (p) => {
+              broadcast("mods:bulkProgress", p);
+            },
+          },
+        );
+        updateChecks.delete(profileId);
+        reports.clear();
+        return result;
       } finally {
         bulk = undefined;
         changed();

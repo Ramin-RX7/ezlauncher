@@ -416,7 +416,20 @@
     "choose": "Pick a profile",
     "playProfile": "Play {{name}}",
     "search": "Search profiles",
-    "noMatch": "No profiles match."
+    "noMatch": "No profiles match.",
+    "sortLabel": "Sort profiles",
+    "sort": {
+      "lastPlayed": "Last played",
+      "playTime": "Most played",
+      "name": "Name",
+      "created": "Newest"
+    },
+    "pin": "Pin to top",
+    "unpin": "Unpin",
+    "pinned": "Pinned",
+    "others": "Other profiles",
+    "screenshots": "Screenshots",
+    "openScreenshots": "Open the screenshots folder"
   },
   "worlds": {
     "empty": "No worlds yet. Worlds you create in game appear here.",
@@ -610,6 +623,33 @@
       "working": "Downloading mods…",
       "done": "Downloaded {{count}} mod(s).",
       "skipped": "{{count}} mod(s) have no version for this release: {{names}}."
+    },
+    "updates": {
+      "check": "Check for updates",
+      "title": "Mod updates for {{name}}",
+      "checking": "Checking for newer versions…",
+      "none": "All mods that can be checked are up to date.",
+      "versions": "{{from}} → {{to}}",
+      "fromTo": "{{name}}: {{from}} → {{to}}",
+      "channel": {
+        "beta": "Beta",
+        "alpha": "Alpha"
+      },
+      "page": "Page",
+      "changelog": "What's new",
+      "fromPack": "Part of the mod pack: the pack's own update changes it. Updating it here may make the next pack update add the old file back.",
+      "unknown_one": "{{names}} isn't from a mod site, so it can't be checked.",
+      "unknown_other": "{{count}} mods aren't from a mod site, so they can't be checked: {{names}}",
+      "update_one": "Update {{count}} mod",
+      "update_other": "Update {{count}} mods",
+      "working": "Downloading the updates…",
+      "cancel": "Cancel",
+      "close": "Close",
+      "done_one": "Updated {{count}} mod.",
+      "done_other": "Updated {{count}} mods.",
+      "failed": "{{name}} wasn't updated: {{error}}",
+      "goBack": "The old versions stay in the library: pick one in the mod's version list to go back.",
+      "availableVersion": "Update: {{version}}"
     }
   },
   "remote": {
@@ -1090,8 +1130,9 @@
       "shaders": "Shaders",
       "dataPacks": "Data packs",
       "worlds": "Worlds",
+      "screenshots": "Screenshots",
       "backups": "Backups",
-      "profiles": "Profiles' other files (configs, screenshots, logs)",
+      "profiles": "Profiles' other files (configs, logs)",
       "launcher": "Launcher data",
       "other": "Other"
     },
@@ -1173,5 +1214,13 @@
       "notWritable": "The launcher can't write to its own folder, so it can't replace itself. Download the new version from the release page, or move the launcher to a folder you can change.",
       "noFile": "This release has no file for your copy of the launcher. Download it from the release page."
     }
+  },
+  "diagnostics": {
+    "copy": "Copy diagnostics",
+    "copying": "Collecting…",
+    "copied": "Copied. Paste it into your bug report. Your user name, folders and player names are hidden.",
+    "failed": "Couldn't copy the diagnostics: {{error}}",
+    "hint": "Details for a bug report: launcher version, system, Java, the selected profile's mods and the end of the logs.",
+    "show": "Show what was copied"
   }
 }

@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Lock,
   Plus,
+  RefreshCw,
   Search,
   ShieldCheck,
   TriangleAlert,
@@ -26,6 +27,7 @@ import { AddMods } from "./AddMods";
 import { reasonText } from "./compatText";
 import { IssueList } from "./IssueList";
 import { ModIcon } from "./ModIcon";
+import { ModUpdatesDialog } from "./ModUpdatesDialog";
 import { groupMods, type ModGroup } from "./modGroups";
 import { SourceBadge } from "./SourceBadge";
 import { VersionPicker } from "./VersionPicker";
@@ -97,6 +99,7 @@ export function ModsTab({ profile }: { profile: ProfileInfo }) {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState<{ query?: string } | null>(null);
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [alsoDisabled, setAlsoDisabled] = useState<string[]>([]);
   /** Picked versions of mods that aren't enabled, by group. */
   const [picked, setPicked] = useState<Record<string, string>>({});
@@ -109,6 +112,19 @@ export function ModsTab({ profile }: { profile: ProfileInfo }) {
     queryFn: () => invoke("mods:validate", { profileId: profile.id }),
     enabled: profile.loader !== null,
   });
+  // The last update check (made by ModUpdatesDialog), only read here: no network.
+  const updateCheck = useQuery({
+    queryKey: ["mods", "updates", profile.id],
+    queryFn: () => invoke("mods:checkUpdates", profile.id),
+    enabled: false,
+  });
+  const updates = useMemo(
+    () =>
+      new Map(
+        (updateCheck.data?.updates ?? []).map((u) => [u.sha1, u.toVersion]),
+      ),
+    [updateCheck.data],
+  );
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["mods"] });
   };
@@ -187,6 +203,7 @@ export function ModsTab({ profile }: { profile: ProfileInfo }) {
 
   const rowProps = {
     issuesOf,
+    updates,
     busy,
     fixBusy: running || redownload.isPending,
     onDownload: (q: string) => {
@@ -212,6 +229,14 @@ export function ModsTab({ profile }: { profile: ProfileInfo }) {
             {t("mods.addMod")}
           </Button>
           <Button
+            onClick={() => {
+              setCheckingUpdates(true);
+            }}
+          >
+            <RefreshCw size={16} aria-hidden />
+            {t("mods.updates.check")}
+          </Button>
+          <Button
             variant="ghost"
             onClick={() => {
               openFolder.mutate();
@@ -223,6 +248,14 @@ export function ModsTab({ profile }: { profile: ProfileInfo }) {
         </>
       }
     >
+      {checkingUpdates && (
+        <ModUpdatesDialog
+          profile={profile}
+          onClose={() => {
+            setCheckingUpdates(false);
+          }}
+        />
+      )}
       {adding && (
         <AddModDialog
           profile={profile}
@@ -385,6 +418,8 @@ function Summary({
 
 interface RowProps {
   issuesOf: Map<string, ValidationIssue[]>;
+  /** Enabled mod → the newer version the last update check found. */
+  updates: ReadonlyMap<string, string>;
   busy: boolean;
   fixBusy: boolean;
   onDownload: (query: string) => void;
@@ -406,6 +441,7 @@ function EnabledRow({
       <ModLine
         mod={mod}
         {...(group && { group })}
+        updateTo={props.updates.get(mod.sha1)}
         disabled={props.busy}
         onToggle={(enabled) => {
           onToggle(mod.sha1, enabled);
@@ -504,12 +540,15 @@ function Issues({
 function ModLine({
   mod,
   group,
+  updateTo,
   disabled,
   onToggle,
   onPick,
 }: {
   mod: LibraryMod;
   group?: ModGroup;
+  /** A newer version found by the last update check. */
+  updateTo?: string | undefined;
   disabled: boolean;
   onToggle: (enabled: boolean) => void;
   onPick: (sha1: string) => void;
@@ -544,6 +583,11 @@ function ModLine({
               pageUrl={mod.source.pageUrl}
               modName={mod.name}
             />
+          )}
+          {updateTo && (
+            <span className="shrink-0 rounded-ezl border border-accent px-1.5 text-xs text-accent">
+              {t("mods.updates.availableVersion", { version: updateTo })}
+            </span>
           )}
         </span>
         {versions.length < 2 && (

@@ -502,6 +502,34 @@ describe("identifyFiles", () => {
   });
 });
 
+describe("latestVersions", () => {
+  it("asks for the newest version of each file for the target, with its changelog", async () => {
+    const hash = "a".repeat(40);
+    const { source, seen } = fakeModrinth({
+      "/version_files/update": () => ({
+        json: {
+          [hash]: version("2.0", "release", "2", { changelog: "- New" }),
+        },
+      }),
+    });
+    const found = await source.latestVersions([hash.toUpperCase()], target);
+    const body = seen.find((s) => s.method === "POST")?.body as {
+      hashes: string[];
+      algorithm: string;
+      loaders: string[];
+      game_versions: string[];
+    };
+    expect(body).toEqual({
+      hashes: [hash],
+      algorithm: "sha1",
+      loaders: target.loaders,
+      game_versions: [target.gameVersion],
+    });
+    expect(found.get(hash)?.versionNumber).toBe("2.0");
+    expect(found.get(hash)?.changelog).toBe("- New");
+  });
+});
+
 describe("rate limit", () => {
   it("waits for the reset when nothing is left, and retries after a 429", async () => {
     const { source, sleeps, seen } = fakeModrinth({

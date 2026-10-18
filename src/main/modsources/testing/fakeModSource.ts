@@ -18,6 +18,8 @@ export interface FakeVersionInput {
   url?: string;
   fileName?: string;
   dependencies?: RemoteDependency[];
+  published?: string;
+  changelog?: string;
 }
 
 /** Test helper: an in-memory mod site. Versions are listed newest first. */
@@ -60,6 +62,8 @@ export function createFakeModSource(
       sha1: v.sha1,
     },
     dependencies: v.dependencies ?? [],
+    ...(v.published && { published: v.published }),
+    ...(v.changelog && { changelog: v.changelog }),
   });
   const fits = (v: FakeVersionInput, t: ModTarget) =>
     (v.loaders ?? ["fabric"]).some((l) => t.loaders.includes(l)) &&
@@ -146,6 +150,19 @@ export function createFakeModSource(
       return Promise.resolve(
         projects.filter((p) => ids.includes(p.projectId)).map(project),
       );
+    },
+    latestVersions(sha1s, target) {
+      calls.push(`latestVersions ${sha1s.length}`);
+      const found = new Map<string, RemoteVersion>();
+      for (const sha1 of sha1s) {
+        const known = versions.find((v) => v.sha1 === sha1);
+        if (!known) continue;
+        const newest = versions.find(
+          (v) => v.projectId === known.projectId && fits(v, target),
+        );
+        if (newest) found.set(sha1, version(newest));
+      }
+      return Promise.resolve(found);
     },
     identifyFiles(sha1s) {
       calls.push(`identifyFiles ${sha1s.length}`);

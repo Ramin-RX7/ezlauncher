@@ -12,6 +12,10 @@ export function registerProfilesIpc(): void {
   handle("profiles:update", (_e, id, patch) =>
     getService().updateProfile(id, patch),
   );
+  handle("screenshots:openFolder", () => getService().openScreenshotsFolder());
+  handle("profiles:setPinned", (_e, { id, pinned }) =>
+    getService().setProfilePinned(id, pinned),
+  );
   handle("profiles:delete", (_e, { id, worlds }) =>
     getService().deleteProfile(id, worlds),
   );

@@ -79,6 +79,7 @@ export function settings(
     backupIntervalDays: 7,
     backupKeepCount: 10,
     backupKeepDays: 30,
+    profileSort: "lastPlayed",
     selectedProfileId: null,
     selectedAccountId: null,
     ...overrides,

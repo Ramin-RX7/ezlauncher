@@ -28,6 +28,7 @@ const GROUP: Record<StorageCategory, string> = {
   shaders: "bg-success",
   dataPacks: "bg-success",
   worlds: "bg-warning",
+  screenshots: "bg-warning",
   backups: "bg-danger",
   profiles: "bg-muted",
   launcher: "bg-muted",

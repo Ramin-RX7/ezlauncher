@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { LauncherSettings } from "@shared/launcher";
+import { PROFILE_SORTS, type LauncherSettings } from "@shared/launcher";
 import { AppError } from "../core/errors";
 import { readJson, writeJsonAtomic } from "../core/fsAtomic";
 
@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS: LauncherSettings = {
   backupIntervalDays: 7,
   backupKeepCount: 10,
   backupKeepDays: 30,
+  profileSort: "lastPlayed",
   selectedProfileId: null,
   selectedAccountId: null,
 };
@@ -24,6 +25,7 @@ export const DEFAULT_SETTINGS: LauncherSettings = {
 const memorySchema = z.number().int().min(512).max(65536);
 const onGameStartSchema = z.enum(["keep", "minimize", "close"]);
 const selectionSchema = z.string().max(64).nullable();
+const profileSortSchema = z.enum(PROFILE_SORTS);
 export const argsSchema = z.array(z.string().max(4096)).max(200);
 const backupAutoSchema = z.enum(["off", "launch", "interval"]);
 const backupWhenSchema = z.enum(["beforeStart", "afterExit"]);
@@ -51,6 +53,7 @@ const fileSchema = z.object({
   backupKeepDays: keepDaysSchema
     .optional()
     .catch(DEFAULT_SETTINGS.backupKeepDays),
+  profileSort: profileSortSchema.optional().catch(DEFAULT_SETTINGS.profileSort),
   selectedProfileId: selectionSchema.optional().catch(null),
   selectedAccountId: selectionSchema.optional().catch(null),
 });
@@ -69,6 +72,7 @@ const patchSchema = z
     backupIntervalDays: intervalSchema,
     backupKeepCount: keepCountSchema,
     backupKeepDays: keepDaysSchema,
+    profileSort: profileSortSchema,
     selectedProfileId: selectionSchema,
     selectedAccountId: selectionSchema,
   })
@@ -102,6 +106,7 @@ export function createSettingsStore(file: string) {
           data.backupKeepDays === undefined
             ? DEFAULT_SETTINGS.backupKeepDays
             : data.backupKeepDays,
+        profileSort: data.profileSort ?? DEFAULT_SETTINGS.profileSort,
         selectedProfileId: data.selectedProfileId ?? null,
         selectedAccountId: data.selectedAccountId ?? null,
       };

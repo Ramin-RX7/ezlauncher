@@ -70,6 +70,7 @@ const versionSchema = z.looseObject({
   loaders: z.array(z.string()),
   game_versions: z.array(z.string()),
   date_published: z.string().optional(),
+  changelog: z.string().nullable().optional(),
   files: z.array(
     z.looseObject({
       url: z.string(),
@@ -241,6 +242,7 @@ export function createModrinthSource({
       },
       dependencies,
       ...(v.date_published && { published: v.date_published }),
+      ...(v.changelog && { changelog: v.changelog.slice(0, 20_000) }),
     };
   }
 
@@ -419,6 +421,34 @@ export function createModrinthSource({
         },
       );
       return (list ?? []).map(toProject);
+    },
+
+    async latestVersions(sha1s, target: ModTarget, signal) {
+      const result = new Map<string, RemoteVersion>();
+      const hashes = [...new Set(sha1s.map((h) => h.toLowerCase()))];
+      for (let i = 0; i < hashes.length; i += HASH_BATCH) {
+        const batch = hashes.slice(i, i + HASH_BATCH);
+        const found = await call(
+          "/version_files/update",
+          z.record(z.string(), versionSchema),
+          {
+            body: {
+              hashes: batch,
+              algorithm: "sha1",
+              loaders: target.loaders,
+              ...(target.gameVersion && {
+                game_versions: [target.gameVersion],
+              }),
+            },
+            ...(signal && { signal }),
+          },
+        );
+        for (const [hash, v] of Object.entries(found ?? {})) {
+          const version = toVersion(v);
+          if (version) result.set(hash.toLowerCase(), version);
+        }
+      }
+      return result;
     },
 
     async identifyFiles(sha1s, signal) {

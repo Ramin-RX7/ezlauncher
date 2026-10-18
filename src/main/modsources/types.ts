@@ -66,6 +66,8 @@ export interface RemoteVersion {
   dependencies: RemoteDependency[];
   /** ISO date, when the site says. */
   published?: string;
+  /** What changed (Markdown, as the author wrote it), when the site says. */
+  changelog?: string;
 }
 
 export interface ModSource {
@@ -101,6 +103,15 @@ export interface ModSource {
   /** Which files (by SHA1) came from this site; unknown hashes are left out. */
   identifyFiles(
     sha1s: string[],
+    signal?: AbortSignal,
+  ): Promise<Map<string, RemoteVersion>>;
+  /**
+   * For files (by SHA1) this site knows: the newest version of the same project
+   * that fits the target. Unknown files are left out.
+   */
+  latestVersions(
+    sha1s: string[],
+    target: ModTarget,
     signal?: AbortSignal,
   ): Promise<Map<string, RemoteVersion>>;
   /** A page of projects matching `query` (best matches first), of one kind. */

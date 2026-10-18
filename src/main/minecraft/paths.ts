@@ -138,10 +138,15 @@ export function createPaths(dataDir: string) {
     /** The game's multiplayer server list (only ever read). */
     serversFile: (profileId: string) =>
       join(profiles, safeId(profileId), "servers.dat"),
+    /** A profile's `screenshots`: a directory link to `screenshotsDir`. */
+    screenshotsLink: (profileId: string) =>
+      join(profiles, safeId(profileId), "screenshots"),
     /** A world's link inside a profile's `saves/`. */
     saveLink: (profileId: string, worldId: string) =>
       join(profiles, safeId(profileId), "saves", safeFolderName(worldId)),
 
+    /** Every profile's screenshots (each profile's `screenshots` links here). */
+    screenshotsDir: join(dataDir, "screenshots"),
     /** Every world, whichever profile owns it. */
     worldsDir: worlds,
     /** World backups: `backups/<key>/<id>.zip` plus the folder's `index.json`. */

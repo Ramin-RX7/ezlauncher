@@ -45,6 +45,16 @@ describe("profile store", () => {
     });
   });
 
+  it("pins and unpins; a pin isn't something the editor can send", async () => {
+    const p = await store().create(base);
+    expect((await store().setPinned(p.id, true)).pinned).toBe(true);
+    expect((await store().list())[0]?.pinned).toBe(true);
+    expect("pinned" in (await store().setPinned(p.id, false))).toBe(false);
+    await expect(store().update(p.id, { pinned: true })).rejects.toMatchObject({
+      code: "INVALID_PROFILE",
+    });
+  });
+
   it("trims the name", async () => {
     expect((await store().create({ ...base, name: "  Hi  " })).name).toBe("Hi");
   });

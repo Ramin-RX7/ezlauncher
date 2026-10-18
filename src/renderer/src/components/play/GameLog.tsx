@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { errorMessage } from "../../lib/errors";
+import { useCopyDiagnostics } from "../../lib/useCopyDiagnostics";
 import { launcherStore, useLauncherState } from "../../state/launcherStore";
 import { useAccounts, useProfiles } from "../../state/queries";
 
@@ -22,6 +24,7 @@ export function GameLog({
   const [picked, setPicked] = useState<string>();
   const ref = useRef<HTMLPreElement>(null);
   const stick = useRef(true);
+  const diagnostics = useCopyDiagnostics();
 
   // The picked tab, or the newest game when it's gone (or none was picked).
   const shown =
@@ -56,6 +59,30 @@ export function GameLog({
           )}
           {t("log.title")}
         </button>
+        {shown?.exit?.crashed && (
+          <span className="ms-auto me-3 flex items-center gap-2 text-xs">
+            {diagnostics.isSuccess && (
+              <span role="status" className="text-success">
+                {t("diagnostics.copied")}
+              </span>
+            )}
+            {diagnostics.isError && (
+              <span role="alert" className="text-danger">
+                {errorMessage(t, diagnostics.error)}
+              </span>
+            )}
+            <button
+              type="button"
+              disabled={diagnostics.isPending}
+              onClick={() => {
+                diagnostics.mutate(shown.profileId);
+              }}
+              className="rounded-ezl border border-border px-2 py-1 hover:border-muted"
+            >
+              {t("diagnostics.copy")}
+            </button>
+          </span>
+        )}
         {open && games.some((g) => g.exit) && (
           <button
             type="button"

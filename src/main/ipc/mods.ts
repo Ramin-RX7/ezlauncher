@@ -55,6 +55,17 @@ export function registerModsIpc(): void {
   handle("mods:downloadForVersion", (_e, target) =>
     getService().downloadLibraryMods(target),
   );
+  handle("mods:checkUpdates", (_e, profileId) =>
+    getService().checkModUpdates(profileId),
+  );
+  handle("mods:applyUpdates", (_e, { profileId, sha1s }) =>
+    getService().applyModUpdates(
+      profileId,
+      Array.isArray(sha1s)
+        ? sha1s.filter((s): s is string => typeof s === "string")
+        : [],
+    ),
+  );
   handle("mods:applyForProfile", (_e, profileId) =>
     getService().applyProfileMods(profileId),
   );

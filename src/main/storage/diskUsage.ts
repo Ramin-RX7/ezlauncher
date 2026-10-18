@@ -76,6 +76,7 @@ function categoryRoots(paths: Paths): [StorageCategory, string[]][] {
     ["assets", [paths.assetsDir]],
     ["java", [paths.runtimesDir]],
     ["worlds", [paths.worldsDir]],
+    ["screenshots", [paths.screenshotsDir]],
     ["backups", [paths.backupsDir, join(d, "modpack-backups")]],
     ["profiles", [paths.profilesDir]],
     ["launcher", [join(d, "launcher")]],

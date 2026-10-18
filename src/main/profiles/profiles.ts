@@ -49,6 +49,7 @@ const profileSchema = z.object({
   extraGameArgs: argsSchema.optional(),
   createdAt: z.string(),
   lastPlayedAt: z.string().optional(),
+  pinned: z.boolean().optional(),
 });
 
 const fileSchema = z.object({
@@ -239,6 +240,16 @@ export function createProfileStore(
 
     setInstalled(id: string, versionId: string): Promise<Profile> {
       return change(id, (p) => ({ ...p, installedVersionId: versionId }));
+    },
+
+    /** Kept at the top of the list; allowed while the profile plays. */
+    setPinned(id: string, pinned: boolean): Promise<Profile> {
+      return change(id, (p) => {
+        const next: Profile = { ...p };
+        if (pinned) next.pinned = true;
+        else delete next.pinned;
+        return next;
+      });
     },
 
     touchLastPlayed(id: string): Promise<Profile> {

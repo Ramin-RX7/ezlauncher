@@ -27,6 +27,8 @@ import type {
   ModpackUpdateResult,
   ModpackVersion,
   ApplyModsResult,
+  ModUpdateCheck,
+  ModUpdateResult,
   BackupProgress,
   BackupResult,
   BackupStateEvent,
@@ -91,6 +93,11 @@ export interface AppInfo {
 /* eslint-disable @typescript-eslint/no-invalid-void-type */
 export interface IpcInvokeContract {
   "app:getInfo": { args: []; result: AppInfo };
+  /** A bug report's details as text, with the user's names and paths hidden. */
+  "app:diagnostics": {
+    args: [options?: { profileId?: string }];
+    result: string;
+  };
 
   /** Launcher updates (app-level, also before a data folder is chosen). */
   "updates:state": { args: []; result: UpdateState };
@@ -150,6 +157,11 @@ export interface IpcInvokeContract {
   "profiles:update": {
     args: [id: string, patch: Partial<ProfileInput>];
     result: Profile;
+  };
+  /** Keep a profile at the top of the list (allowed while it plays). */
+  "profiles:setPinned": {
+    args: [options: { id: string; pinned: boolean }];
+    result: void;
   };
   "profiles:delete": {
     args: [options: { id: string; worlds: DeleteWorldsChoice }];
@@ -347,6 +359,13 @@ export interface IpcInvokeContract {
     args: [profileId: string];
     result: ApplyModsResult;
   };
+  /** Newer versions of a profile's enabled mods (asks the sites). */
+  "mods:checkUpdates": { args: [profileId: string]; result: ModUpdateCheck };
+  /** Update these enabled mods (by their current SHA1); progress on `mods:bulkProgress`. */
+  "mods:applyUpdates": {
+    args: [options: { profileId: string; sha1s: string[] }];
+    result: ModUpdateResult;
+  };
   /** Cancels an in-flight bulk download. */
   "mods:cancelBulk": { args: []; result: void };
 
@@ -533,6 +552,8 @@ export interface IpcInvokeContract {
   /** Deletes the backups of worlds that no longer exist; resolves to how many. */
   "backups:deleteOrphans": { args: []; result: number };
   "backups:openFolder": { args: []; result: void };
+  /** The one folder every profile's screenshots go to. */
+  "screenshots:openFolder": { args: []; result: void };
 
   "account:list": { args: []; result: AccountInfo[] };
   /** Fails with `ACCOUNT_NAME_TAKEN` when another account has the name (ignoring case). */
@@ -598,6 +619,7 @@ export type EventPayload<C extends EventChannel> = IpcEventContract[C];
 /** Runtime list of channels; the preload only forwards these. Must match the contract. */
 export const INVOKE_CHANNELS = [
   "app:getInfo",
+  "app:diagnostics",
   "updates:state",
   "updates:check",
   "updates:download",
@@ -623,6 +645,7 @@ export const INVOKE_CHANNELS = [
   "profiles:create",
   "profiles:duplicate",
   "profiles:update",
+  "profiles:setPinned",
   "profiles:delete",
   "profiles:openFolder",
   "profiles:icon",
@@ -666,6 +689,8 @@ export const INVOKE_CHANNELS = [
   "mods:redownload",
   "mods:downloadForVersion",
   "mods:applyForProfile",
+  "mods:checkUpdates",
+  "mods:applyUpdates",
   "mods:cancelBulk",
   "resourcePacks:library",
   "resourcePacks:icon",
@@ -716,6 +741,7 @@ export const INVOKE_CHANNELS = [
   "backups:summary",
   "backups:deleteOrphans",
   "backups:openFolder",
+  "screenshots:openFolder",
   "java:install",
   "java:cancel",
   "java:remove",

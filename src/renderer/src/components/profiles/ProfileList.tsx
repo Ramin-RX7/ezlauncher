@@ -1,13 +1,16 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { MoreHorizontal, Play } from "lucide-react";
+import { MoreHorizontal, Pin, Play } from "lucide-react";
 import type { ProfileInfo } from "@shared/launcher";
 import { ContextMenuArea, Menu, type MenuItem } from "../ui/Menu";
 import { formatDuration } from "../../lib/formatDuration";
 import { ProfileIcon } from "./ProfileIcon";
 
 export interface ProfileListProps {
+  /** In display order. */
   profiles: ProfileInfo[];
+  /** The list's accessible name (default: Profiles). */
+  label?: string;
   selectedId: string | null;
   /** Loader display names by id. */
   loaderNames: Record<string, string>;
@@ -19,14 +22,21 @@ export interface ProfileListProps {
   /** Why this profile can't be played right now (no account, busy…), if it can't. */
   playBlocked?: (profile: ProfileInfo) => string | undefined;
   onOpenFolder: (id: string, folder: "game" | "mods") => void;
+  /** Keep at the top of the list, or not. */
+  onPin: (id: string, pinned: boolean) => void;
+  /** Open the folder every profile's screenshots go to. */
+  onOpenScreenshots: () => void;
+  /** Copy a bug report's details about this profile. */
+  onCopyDiagnostics: (id: string) => void;
   /** Make a desktop shortcut to the profile (missing = not offered here). */
   onShortcut?: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
-/** Profiles, most recently played first. */
+/** Profiles, in the order given. */
 export function ProfileList({
   profiles,
+  label,
   selectedId,
   loaderNames,
   onSelect,
@@ -35,6 +45,9 @@ export function ProfileList({
   onPlay,
   playBlocked,
   onOpenFolder,
+  onPin,
+  onOpenScreenshots,
+  onCopyDiagnostics,
   onShortcut,
   onDelete,
 }: ProfileListProps) {
@@ -43,23 +56,14 @@ export function ProfileList({
     () => new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium" }),
     [i18n.language],
   );
-  const sorted = useMemo(
-    () =>
-      [...profiles].sort((a, b) =>
-        (b.lastPlayedAt ?? b.createdAt).localeCompare(
-          a.lastPlayedAt ?? a.createdAt,
-        ),
-      ),
-    [profiles],
-  );
 
   return (
     <ul
       role="listbox"
-      aria-label={t("profiles.title")}
+      aria-label={label ?? t("profiles.title")}
       className="overflow-hidden rounded-ezl border border-border bg-surface"
     >
-      {sorted.map((p) => {
+      {profiles.map((p) => {
         const selected = p.id === selectedId;
         const blocked = playBlocked?.(p);
         const items: MenuItem[] = [
@@ -67,6 +71,12 @@ export function ProfileList({
             label: t("profiles.edit"),
             onSelect: () => {
               onEdit(p.id);
+            },
+          },
+          {
+            label: p.pinned ? t("profiles.unpin") : t("profiles.pin"),
+            onSelect: () => {
+              onPin(p.id, !p.pinned);
             },
           },
           {
@@ -80,6 +90,10 @@ export function ProfileList({
             onSelect: () => {
               onOpenFolder(p.id, "game");
             },
+          },
+          {
+            label: t("profiles.openScreenshots"),
+            onSelect: onOpenScreenshots,
           },
           ...(p.loader
             ? [
@@ -101,6 +115,12 @@ export function ProfileList({
                 },
               ]
             : []),
+          {
+            label: t("diagnostics.copy"),
+            onSelect: () => {
+              onCopyDiagnostics(p.id);
+            },
+          },
           {
             label: t("profiles.delete"),
             danger: true,
@@ -132,7 +152,16 @@ export function ProfileList({
                   className={selected ? "ring-2 ring-accent" : ""}
                 />
                 <span className="flex min-w-0 flex-col">
-                  <span className="truncate font-medium">{p.name}</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate font-medium">{p.name}</span>
+                    {p.pinned && (
+                      <Pin
+                        size={12}
+                        aria-label={t("profiles.pinned")}
+                        className="shrink-0 text-muted"
+                      />
+                    )}
+                  </span>
                   <span className="truncate text-xs text-muted">
                     {[
                       p.modpack &&

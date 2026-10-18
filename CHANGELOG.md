@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Mod updates: Check for updates on a profile's Mods tab lists newer versions of its mods (with what's new), and updates the ones you tick. Mods a mod pack manages are left unticked, and the old versions stay in the library so you can go back
+- Pin profiles to the top of the list, and sort the rest by last played, most played, name or newest
+- Search profiles by their mod pack's name too
+- One screenshots folder for every profile, opened from the Screenshots button on the home page or a profile's menu
+- Copy diagnostics (Settings → About, a profile's menu, or the game log after a crash) puts the details a bug report needs on the clipboard: launcher and system info, the profile's mods and the end of the logs, with your user name, folders and player names hidden
+
+### Changed
+
+- Screenshots taken in each profile are moved into the shared screenshots folder in the data folder
+- The Storage page counts screenshots on their own
+
 ## [0.3.0] - 2026-10-17
 
 ### Added

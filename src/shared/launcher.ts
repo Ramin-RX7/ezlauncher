@@ -67,6 +67,7 @@ export const STORAGE_CATEGORIES = [
   "shaders",
   "dataPacks",
   "worlds",
+  "screenshots",
   "backups",
   "profiles",
   "launcher",
@@ -182,6 +183,8 @@ export interface Profile {
   extraGameArgs?: string[];
   createdAt: string;
   lastPlayedAt?: string;
+  /** Kept at the top of the profile list. */
+  pinned?: boolean;
 }
 
 export interface ProfileLoader {
@@ -349,6 +352,38 @@ export interface ApplyModsResult {
   disabled: { name: string }[];
   /** Enabled mods with no known source: left as they are (can't be re-fetched). */
   unresolved: { name: string }[];
+}
+
+/** A newer version of an enabled mod (Mods tab → Check for updates). */
+export interface ModUpdate {
+  /** The enabled jar it replaces. */
+  sha1: string;
+  name: string;
+  fromVersion?: string;
+  toVersion: string;
+  channel: "release" | "beta" | "alpha";
+  /** ISO date, when the site says. */
+  published?: string;
+  /** Bytes to download. */
+  size: number;
+  /** Markdown, as the author wrote it. */
+  changelog?: string;
+  pageUrl: string;
+  /** A mod pack file still as the pack wrote it: the pack's own update changes it. */
+  fromPack: boolean;
+}
+
+export interface ModUpdateCheck {
+  updates: ModUpdate[];
+  upToDate: number;
+  /** Enabled mods no site knows: they can't be checked. */
+  unknown: { name: string }[];
+}
+
+export interface ModUpdateResult {
+  updated: { name: string; from?: string; to: string }[];
+  /** Updates that couldn't be done (e.g. a required mod has no version for the profile). */
+  failed: { name: string; code: string }[];
 }
 
 /** What's wrong with an enabled mod (Scope 05). Turned into text by the renderer. */
@@ -771,6 +806,14 @@ export type BackupAuto = "off" | "launch" | "interval";
 /** When an automatic backup is made: before the game starts, or after it closes. */
 export type BackupWhen = "beforeStart" | "afterExit";
 
+export const PROFILE_SORTS = [
+  "lastPlayed",
+  "playTime",
+  "name",
+  "created",
+] as const;
+export type ProfileSort = (typeof PROFILE_SORTS)[number];
+
 export interface LauncherSettings {
   /** Default `-Xmx` in MB; a profile can replace it. */
   memoryMaxMb: number;
@@ -791,6 +834,8 @@ export interface LauncherSettings {
   backupKeepCount: number | null;
   /** Delete backups older than this many days; null = no limit. A world's newest is always kept. */
   backupKeepDays: number | null;
+  /** How the home screen orders profiles (pinned ones always come first). */
+  profileSort: ProfileSort;
   /** Last selected profile and account on the home screen. */
   selectedProfileId: string | null;
   selectedAccountId: string | null;
