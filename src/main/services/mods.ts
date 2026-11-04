@@ -19,7 +19,7 @@ import type { Downloader } from "../minecraft/downloader";
 import type { Paths } from "../minecraft/paths";
 import type { VersionManifest } from "../minecraft/schemas";
 import { readManifest } from "../modpacks/manifest";
-import { resolveBulk } from "../modsources/bulkFetch";
+import { resolveBulk, type BulkResult } from "../modsources/bulkFetch";
 import { downloadPlan, storeVersions } from "../modsources/downloadMods";
 import { applyModUpdates, findModUpdates } from "../modsources/modUpdates";
 import type { ModSourceRegistry } from "../modsources/registry";
@@ -27,7 +27,12 @@ import {
   resolveInstall,
   type InstallPlan,
 } from "../modsources/resolveDependencies";
-import type { RemoteVersion } from "../modsources/types";
+import {
+  describePlan,
+  projectCard,
+  projectsToName,
+} from "../modsources/remoteCard";
+import type { ModTarget, RemoteVersion } from "../modsources/types";
 import { acceptedLoaders, checkCompat } from "../profiles/compat";
 import type { ModLibrary, ModSourceRef } from "../profiles/mods";
 import { collectInput } from "../validation/collect";
@@ -140,6 +145,54 @@ export function createModService(deps: ModServiceDeps) {
       const key = `${v.sourceId}:${v.projectId}`;
       return dep.has(key) && !user.has(key) ? "dependency" : "user";
     };
+  }
+
+  /**
+   * The bulk download: each site's compatible version of its projects for a target,
+   * stored in the library (one at a time, under the `bulk` lock; cancel aborts it).
+   * `afterSite` runs once each site's files are stored. Resolves to how many were.
+   */
+  async function fetchForTarget(
+    target: ModTarget,
+    sites: { sourceId: string; projectIds: string[] }[],
+    afterSite: (sourceId: string, res: BulkResult) => Promise<void>,
+  ): Promise<number> {
+    const addedAs = await addedAsByProject();
+    const controller = new AbortController();
+    bulk = controller;
+    try {
+      let downloaded = 0;
+      for (const { sourceId, projectIds } of sites) {
+        const source = sources.get(sourceId);
+        const res = await resolveBulk(
+          source,
+          projectIds,
+          target,
+          controller.signal,
+        );
+        if (res.found.length > 0) {
+          await serialFs(() =>
+            storeVersions(
+              { downloader, paths, library: mods, source },
+              res.found.map((f) => f.version),
+              {
+                signal: controller.signal,
+                onProgress: (p) => {
+                  deps.bulkProgress(p);
+                },
+                addedAs,
+              },
+            ),
+          );
+          downloaded += res.found.length;
+        }
+        await afterSite(sourceId, res);
+      }
+      return downloaded;
+    } finally {
+      bulk = undefined;
+      changed();
+    }
   }
 
   /** Ask the mod sources about hand-added mods, resource packs and shaders. */
@@ -321,25 +374,7 @@ export function createModService(deps: ModServiceDeps) {
       const cards: RemoteMatchCard[] = [];
       for (const source of sources.sources) {
         for (const project of await source.findExact(text, target)) {
-          const card: RemoteMatchCard = {
-            sourceId: source.id,
-            project: {
-              projectId: project.projectId,
-              name: project.name,
-              author: project.author,
-              ...(project.iconUrl && { iconUrl: project.iconUrl }),
-              pageUrl: project.pageUrl,
-              ...(project.downloads !== undefined && {
-                downloads: project.downloads,
-              }),
-            },
-            version: null,
-            dependencies: [],
-            missing: [],
-            incompatible: [],
-            replaces: [],
-            totalSize: 0,
-          };
+          const card = projectCard(source.id, project);
           cards.push(card);
           const version = await source.getCompatibleVersion(
             project.projectId,
@@ -349,50 +384,15 @@ export function createModService(deps: ModServiceDeps) {
 
           const view = await mods.view(profile);
           const plan = await resolveInstall(source, version, target, view);
-          const ids = new Set<string>();
-          for (const item of plan.items)
-            if (item.action === "download" && !item.root)
-              ids.add(item.version.projectId);
-          for (const m of plan.missing) if (m.projectId) ids.add(m.projectId);
           const names = new Map(
-            (await source.getProjects([...ids]).catch(() => [])).map((p) => [
-              p.projectId,
-              p.name,
-            ]),
+            (
+              await source.getProjects(projectsToName(plan)).catch(() => [])
+            ).map((p) => [p.projectId, p.name]),
           );
-
-          card.version = {
-            versionNumber: version.versionNumber,
-            fileName: version.file.fileName,
-          };
-          card.dependencies = plan.items.flatMap(
-            (item): RemoteMatchCard["dependencies"] => {
-              if (item.action === "reuse")
-                return [{ name: item.name, action: "reuse" as const }];
-              if (item.root) return [];
-              return [
-                {
-                  name:
-                    names.get(item.version.projectId) ??
-                    item.version.file.fileName,
-                  versionNumber: item.version.versionNumber,
-                  action: "download" as const,
-                },
-              ];
-            },
-          );
-          card.missing = plan.missing.map(
-            (m) =>
-              (m.projectId && names.get(m.projectId)) ??
-              m.projectId ??
-              m.versionId ??
-              "?",
-          );
-          card.incompatible = plan.incompatible.flatMap((projectId) =>
+          const incompatible = plan.incompatible.flatMap((projectId) =>
             view.enabledFromProject(source.id, projectId).map((m) => m.name),
           );
-          card.replaces = plan.replaces.map((m) => m.name);
-          card.totalSize = plan.totalSize;
+          Object.assign(card, describePlan(version, plan, names, incompatible));
           if (plan.missing.length === 0) {
             const planId = randomUUID();
             plans.set(planId, { plan, profileId, createdAt: Date.now() });
@@ -460,7 +460,6 @@ export function createModService(deps: ModServiceDeps) {
       const loaderId = target.loaderId;
       if (typeof gameVersion !== "string" || typeof loaderId !== "string")
         throw new AppError("INVALID_TARGET", "Choose a version and a loader.");
-      const modTarget = { gameVersion, loaders: acceptedLoaders(loaderId) };
       // Sourced library mods, grouped by source: projectId → its display name.
       const bySource = new Map<string, Map<string, string>>();
       for (const m of await mods.list()) {
@@ -471,43 +470,21 @@ export function createModService(deps: ModServiceDeps) {
           byProject.set(m.source.projectId, m.name);
         bySource.set(m.source.sourceId, byProject);
       }
-      const addedAs = await addedAsByProject();
-      const controller = new AbortController();
-      bulk = controller;
-      try {
-        let downloaded = 0;
-        const skipped: { name: string }[] = [];
-        for (const [sourceId, byProject] of bySource) {
-          const source = sources.get(sourceId);
-          const res = await resolveBulk(
-            source,
-            [...byProject.keys()],
-            modTarget,
-            controller.signal,
-          );
+      const skipped: { name: string }[] = [];
+      const downloaded = await fetchForTarget(
+        { gameVersion, loaders: acceptedLoaders(loaderId) },
+        [...bySource].map(([sourceId, byProject]) => ({
+          sourceId,
+          projectIds: [...byProject.keys()],
+        })),
+        (sourceId, res) => {
+          const byProject = bySource.get(sourceId);
           for (const n of res.none)
-            skipped.push({ name: byProject.get(n.projectId) ?? n.projectId });
-          if (res.found.length === 0) continue;
-          await serialFs(() =>
-            storeVersions(
-              { downloader, paths, library: mods, source },
-              res.found.map((f) => f.version),
-              {
-                signal: controller.signal,
-                onProgress: (p) => {
-                  deps.bulkProgress(p);
-                },
-                addedAs,
-              },
-            ),
-          );
-          downloaded += res.found.length;
-        }
-        return { downloaded, skipped };
-      } finally {
-        bulk = undefined;
-        changed();
-      }
+            skipped.push({ name: byProject?.get(n.projectId) ?? n.projectId });
+          return Promise.resolve();
+        },
+      );
+      return { downloaded, skipped };
     },
 
     /**
@@ -525,10 +502,6 @@ export function createModService(deps: ModServiceDeps) {
           "Vanilla profiles can't load mods.",
         );
       if (bulk) throw new AppError("MOD_BULK_BUSY", "A download is running.");
-      const modTarget = {
-        gameVersion: profile.gameVersion,
-        loaders: acceptedLoaders(profile.loader.id),
-      };
       const enabled = await mods.enabledMods(profileId);
       const unresolved = enabled
         .filter((m) => !m.meta.source)
@@ -547,55 +520,35 @@ export function createModService(deps: ModServiceDeps) {
         });
         bySource.set(m.meta.source.sourceId, list);
       }
-      const addedAs = await addedAsByProject();
-      const controller = new AbortController();
-      bulk = controller;
-      try {
-        let downloaded = 0;
-        const disabled: { name: string }[] = [];
-        for (const [sourceId, list] of bySource) {
-          const source = sources.get(sourceId);
-          const res = await resolveBulk(
-            source,
-            list.map((l) => l.projectId),
-            modTarget,
-            controller.signal,
-          );
-          if (res.found.length > 0) {
-            await serialFs(() =>
-              storeVersions(
-                { downloader, paths, library: mods, source },
-                res.found.map((f) => f.version),
-                {
-                  signal: controller.signal,
-                  onProgress: (p) => {
-                    deps.bulkProgress(p);
-                  },
-                  addedAs,
-                },
-              ),
-            );
+      const disabled: { name: string }[] = [];
+      const downloaded = await fetchForTarget(
+        {
+          gameVersion: profile.gameVersion,
+          loaders: acceptedLoaders(profile.loader.id),
+        },
+        [...bySource].map(([sourceId, list]) => ({
+          sourceId,
+          projectIds: list.map((l) => l.projectId),
+        })),
+        async (sourceId, res) => {
+          // The new versions replace the old ones (one version per mod id).
+          if (res.found.length > 0)
             await serialFs(() =>
               mods.enableAll(
                 profileId,
                 res.found.map((f) => f.version.file.sha1),
               ),
             );
-            downloaded += res.found.length;
-          }
           const none = new Set(res.none.map((n) => n.projectId));
-          for (const l of list) {
+          for (const l of bySource.get(sourceId) ?? []) {
             if (!none.has(l.projectId)) continue;
             await serialFs(() => mods.disable(profileId, l.sha1));
             disabled.push({ name: l.name });
           }
-        }
-        reports.clear();
-        return { downloaded, disabled, unresolved };
-      } finally {
-        bulk = undefined;
-        changed();
-      }
+        },
+      );
+      reports.clear();
+      return { downloaded, disabled, unresolved };
     },
 
     /**

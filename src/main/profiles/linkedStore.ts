@@ -5,7 +5,6 @@ import {
   lstat,
   mkdir,
   readdir,
-  rename,
   rm,
   stat,
   unlink,
@@ -15,6 +14,7 @@ import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { z } from "zod";
 import { AppError } from "../core/errors";
+import { renameWithRetry } from "../core/fsAtomic";
 import type { Logger } from "../core/logger";
 import { sha1File } from "../minecraft/verify";
 import { createHardLink, sameFile } from "./links";
@@ -137,7 +137,7 @@ export function createLinkedStore(layout: StoreLayout) {
           "FILE_CHANGED",
           `${basename(source)} changed while copying.`,
         );
-      await rename(tmp, dest);
+      await renameWithRetry(tmp, dest);
     } finally {
       await rm(tmp, { force: true });
     }
@@ -208,7 +208,7 @@ export function createLinkedStore(layout: StoreLayout) {
       // Already stored: make the profile's file a link to the stored one.
       const tmp = tmpName(path);
       const mode = await createHardLink(store, tmp);
-      await rename(tmp, path);
+      await renameWithRetry(tmp, path);
       copied = mode === "copied";
     }
     await onAdopted(sha1, name);
@@ -303,7 +303,7 @@ export function createLinkedStore(layout: StoreLayout) {
         const path = join(profileDir(profileId), name);
         const tmp = tmpName(path);
         const mode = await createHardLink(store, tmp);
-        await rename(tmp, path);
+        await renameWithRetry(tmp, path);
         links[name] = { sha1, ...(mode === "copied" && { copied: true }) };
       }
     }

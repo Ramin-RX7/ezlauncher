@@ -1,9 +1,9 @@
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { z } from "zod";
 import type { LibraryMod, Profile } from "@shared/launcher";
 import { AppError } from "../core/errors";
-import { readJson, writeJsonAtomic } from "../core/fsAtomic";
+import { readJson, renameWithRetry, writeJsonAtomic } from "../core/fsAtomic";
 import type { Logger } from "../core/logger";
 import type { Paths } from "../minecraft/paths";
 import { sha1File } from "../minecraft/verify";
@@ -519,7 +519,7 @@ export function createModLibrary({
           throw new AppError("FILE_CHANGED", `${meta.fileName} didn't match.`);
         const stored = paths.modStoreFile(sha1);
         await mkdir(paths.modsStoreDir, { recursive: true });
-        await rename(tmpPath, stored);
+        await renameWithRetry(tmpPath, stored);
         await store.relinkAll(data.links, sha1);
         meta.size = (await stat(stored)).size;
         delete meta.verified;

@@ -1,10 +1,8 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { joinArgs, splitArgs } from "@shared/args";
 import {
   PROFILE_NAME_MAX,
-  type ApplyModsResult,
   type Profile,
   type ProfileInput,
 } from "@shared/launcher";
@@ -16,21 +14,20 @@ import {
   useSettings,
   useVersionList,
 } from "../../state/queries";
-import { ArgsField } from "../settings/ArgsField";
 import { Button } from "../ui/Button";
-import { Checkbox } from "../ui/Checkbox";
 import { Dialog } from "../ui/Dialog";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { VersionList } from "../versions/VersionList";
 import { VersionRefresh } from "../versions/VersionRefresh";
 import { visibleTypes } from "../versions/versionTypes";
+import { ApplyModsDialog } from "./ApplyModsDialog";
 import { IconPicker } from "./IconPicker";
+import { LaunchOverrides } from "./LaunchOverrides";
+import { useLaunchOverrides } from "./useLaunchOverrides";
 
 const VANILLA = "vanilla";
 const NEWEST = "newest";
-const MEMORY_MIN = 512;
-const MEMORY_MAX = 65536;
 
 export interface ProfileEditorProps {
   /** Missing = create a new profile. */
@@ -66,23 +63,7 @@ export function ProfileEditor({
   const [loaderBuild, setLoaderBuild] = useState<string | null>(
     profile?.loader?.version ?? null,
   );
-  // Each override: "use global" (the default), or the profile's own value that replaces it.
-  const [globalMemory, setGlobalMemory] = useState(
-    profile?.memoryMaxMb === undefined,
-  );
-  const [memory, setMemory] = useState(
-    profile?.memoryMaxMb !== undefined ? String(profile.memoryMaxMb) : "",
-  );
-  const [globalJvm, setGlobalJvm] = useState(
-    profile?.extraJvmArgs === undefined,
-  );
-  const [jvmArgs, setJvmArgs] = useState(joinArgs(profile?.extraJvmArgs ?? []));
-  const [globalGame, setGlobalGame] = useState(
-    profile?.extraGameArgs === undefined,
-  );
-  const [gameArgs, setGameArgs] = useState(
-    joinArgs(profile?.extraGameArgs ?? []),
-  );
+  const overrides = useLaunchOverrides(profile);
   const [confirming, setConfirming] = useState(false);
   // Changing an existing profile's version or loader is rare: it starts folded away.
   const [versionOpen, setVersionOpen] = useState(profile === undefined);
@@ -109,25 +90,12 @@ export function ProfileEditor({
         false));
 
   const trimmedName = name.trim();
-  const memoryNumber = Number(memory);
-  const memoryValid =
-    globalMemory ||
-    (memory.trim() !== "" &&
-      Number.isInteger(memoryNumber) &&
-      memoryNumber >= MEMORY_MIN &&
-      memoryNumber <= MEMORY_MAX);
-  const jvmSplit = splitArgs(jvmArgs);
-  const gameSplit = splitArgs(gameArgs);
-  const argsValid =
-    (globalJvm || !("error" in jvmSplit)) &&
-    (globalGame || !("error" in gameSplit));
   const loaderOk = loaderId === null || supports(loaderId);
   const valid =
     trimmedName.length > 0 &&
     trimmedName.length <= PROFILE_NAME_MAX &&
     gameVersion !== undefined &&
-    memoryValid &&
-    argsValid &&
+    overrides.valid &&
     loaderOk &&
     !running;
 
@@ -138,15 +106,12 @@ export function ProfileEditor({
       ? { id: loaderId, ...(loaderBuild !== null && { version: loaderBuild }) }
       : null,
     iconId: iconId ?? null,
-    memoryMaxMb: globalMemory ? null : memoryNumber,
-    extraJvmArgs: globalJvm || "error" in jvmSplit ? null : jvmSplit.args,
-    extraGameArgs: globalGame || "error" in gameSplit ? null : gameSplit.args,
+    ...overrides.values(),
   });
 
   // After a version/loader change, offer to re-fetch the profile's mods.
   const offerApply = useRef(false);
   const [applyOpen, setApplyOpen] = useState(false);
-  const [applyResult, setApplyResult] = useState<ApplyModsResult | null>(null);
 
   const save = useMutation({
     mutationFn: (data: ProfileInput) =>
@@ -157,19 +122,7 @@ export function ProfileEditor({
       void queryClient.invalidateQueries({ queryKey: keys.profiles });
       setSaved(true);
       onSaved(result);
-      if (offerApply.current) {
-        setApplyResult(null);
-        setApplyOpen(true);
-      }
-    },
-  });
-
-  const applyMods = useMutation({
-    mutationFn: (id: string) => invoke("mods:applyForProfile", id),
-    onSuccess: (result) => {
-      setApplyResult(result);
-      void queryClient.invalidateQueries({ queryKey: ["mods"] });
-      void queryClient.invalidateQueries({ queryKey: keys.profiles });
+      if (offerApply.current) setApplyOpen(true);
     },
   });
 
@@ -344,94 +297,12 @@ export function ProfileEditor({
           </div>
         )}
 
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("profiles.editor.memory")}</span>
-            <Checkbox
-              checked={globalMemory}
-              onChange={(checked) => {
-                setGlobalMemory(checked);
-                if (!checked && memory === "")
-                  setMemory(String(settings.data?.memoryMaxMb ?? 2048));
-                setSaved(false);
-              }}
-            >
-              {t("profiles.editor.useGlobal")}{" "}
-              <span className="text-muted">
-                (
-                {t("profiles.editor.globalMemory", {
-                  mb: settings.data?.memoryMaxMb ?? 2048,
-                })}
-                )
-              </span>
-            </Checkbox>
-            {!globalMemory && (
-              <>
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min={MEMORY_MIN}
-                  max={MEMORY_MAX}
-                  step={256}
-                  value={memory}
-                  aria-label={t("profiles.editor.memory")}
-                  aria-invalid={!memoryValid}
-                  aria-describedby="memory-hint"
-                  onChange={(e) => {
-                    setMemory(e.target.value);
-                  }}
-                  className="w-40"
-                />
-                <span id="memory-hint" className="text-xs text-muted">
-                  {t("profiles.editor.memoryHint")}
-                </span>
-              </>
-            )}
-          </div>
-          <Override
-            label={t("profiles.editor.jvmArgs")}
-            global={globalJvm}
-            globalArgs={settings.data?.extraJvmArgs ?? []}
-            onGlobal={(checked) => {
-              setGlobalJvm(checked);
-              if (!checked && jvmArgs === "")
-                setJvmArgs(joinArgs(settings.data?.extraJvmArgs ?? []));
-              setSaved(false);
-            }}
-          >
-            <ArgsField
-              label={t("profiles.editor.jvmArgs")}
-              hint={t("profiles.editor.jvmArgsHint")}
-              jvm
-              text={jvmArgs}
-              onText={(text) => {
-                setJvmArgs(text);
-                setSaved(false);
-              }}
-            />
-          </Override>
-          <Override
-            label={t("profiles.editor.gameArgs")}
-            global={globalGame}
-            globalArgs={settings.data?.extraGameArgs ?? []}
-            onGlobal={(checked) => {
-              setGlobalGame(checked);
-              if (!checked && gameArgs === "")
-                setGameArgs(joinArgs(settings.data?.extraGameArgs ?? []));
-              setSaved(false);
-            }}
-          >
-            <ArgsField
-              label={t("profiles.editor.gameArgs")}
-              hint={t("profiles.editor.gameArgsHint")}
-              text={gameArgs}
-              onText={(text) => {
-                setGameArgs(text);
-                setSaved(false);
-              }}
-            />
-          </Override>
-        </div>
+        <LaunchOverrides
+          overrides={overrides}
+          onChange={() => {
+            setSaved(false);
+          }}
+        />
       </fieldset>
 
       {save.isError && (
@@ -496,82 +367,14 @@ export function ProfileEditor({
         )}
       </Dialog>
 
-      <Dialog
-        open={applyOpen}
-        onOpenChange={(o) => {
-          if (!applyMods.isPending) setApplyOpen(o);
-        }}
-        title={t("profiles.applyMods.title")}
-        closeLabel={t("profiles.applyMods.close")}
-        footer={
-          applyResult ? (
-            <Button
-              variant="primary"
-              onClick={() => {
-                setApplyOpen(false);
-              }}
-            >
-              {t("profiles.applyMods.close")}
-            </Button>
-          ) : (
-            <>
-              <Button
-                disabled={applyMods.isPending}
-                onClick={() => {
-                  setApplyOpen(false);
-                }}
-              >
-                {t("profiles.applyMods.skip")}
-              </Button>
-              <Button
-                variant="primary"
-                disabled={applyMods.isPending}
-                onClick={() => {
-                  if (profile) applyMods.mutate(profile.id);
-                }}
-              >
-                {t("profiles.applyMods.update")}
-              </Button>
-            </>
-          )
-        }
-      >
-        {applyResult ? (
-          <div className="flex flex-col gap-2 text-sm">
-            <p>
-              {t("profiles.applyMods.downloaded", {
-                count: applyResult.downloaded,
-              })}
-            </p>
-            {applyResult.disabled.length > 0 && (
-              <p className="text-warning">
-                {t("profiles.applyMods.disabled", {
-                  count: applyResult.disabled.length,
-                  names: applyResult.disabled.map((d) => d.name).join(", "),
-                })}
-              </p>
-            )}
-            {applyResult.unresolved.length > 0 && (
-              <p className="text-muted">
-                {t("profiles.applyMods.unresolved", {
-                  count: applyResult.unresolved.length,
-                  names: applyResult.unresolved.map((d) => d.name).join(", "),
-                })}
-              </p>
-            )}
-          </div>
-        ) : applyMods.isError ? (
-          <p className="text-sm text-danger">
-            {errorMessage(t, applyMods.error)}
-          </p>
-        ) : (
-          <p className="text-sm text-muted">
-            {applyMods.isPending
-              ? t("profiles.applyMods.working")
-              : t("profiles.applyMods.body")}
-          </p>
-        )}
-      </Dialog>
+      {applyOpen && profile && (
+        <ApplyModsDialog
+          profileId={profile.id}
+          onClose={() => {
+            setApplyOpen(false);
+          }}
+        />
+      )}
     </form>
   );
 }
@@ -627,38 +430,5 @@ function LoaderBuildSelect({
         </span>
       )}
     </label>
-  );
-}
-
-/** "Use global setting" for a list of arguments; unticked shows the profile's own field. */
-function Override({
-  label,
-  global,
-  globalArgs,
-  onGlobal,
-  children,
-}: {
-  label: string;
-  global: boolean;
-  globalArgs: readonly string[];
-  onGlobal: (checked: boolean) => void;
-  children: ReactNode;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex flex-col gap-1 text-sm">
-      {global && <span className="font-medium">{label}</span>}
-      <Checkbox checked={global} onChange={onGlobal}>
-        {t("profiles.editor.useGlobal")}{" "}
-        <span className="text-muted">
-          (
-          {globalArgs.length > 0
-            ? t("profiles.editor.globalArgs", { args: joinArgs(globalArgs) })
-            : t("profiles.editor.globalNone")}
-          )
-        </span>
-      </Checkbox>
-      {!global && children}
-    </div>
   );
 }

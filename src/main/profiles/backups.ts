@@ -13,7 +13,7 @@ import type {
   WorldBackup,
 } from "@shared/launcher";
 import { AppError } from "../core/errors";
-import { readJson, writeJsonAtomic } from "../core/fsAtomic";
+import { readJson, renameWithRetry, writeJsonAtomic } from "../core/fsAtomic";
 import { unzipEntries } from "../core/unzip";
 import { safeJoin, type Paths } from "../minecraft/paths";
 import { uniqueWorldId, WORLD_FLAG, writeOwner } from "./worlds";
@@ -222,7 +222,7 @@ export async function createBackup({
     zip.end();
     if (zipError) throw zipError;
     await finished(out);
-    await rename(part, file);
+    await renameWithRetry(part, file);
   } catch (err) {
     zip.terminate();
     out.destroy();
