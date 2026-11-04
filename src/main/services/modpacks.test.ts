@@ -24,6 +24,7 @@ import {
 import { createFakeModSource } from "../modsources/testing/fakeModSource";
 import { createProfileStore } from "../profiles/profiles";
 import { createModpackService } from "./modpacks";
+import { createRuntime } from "./runtime";
 
 let dir: string;
 let paths: Paths;
@@ -79,7 +80,7 @@ async function setup() {
   const profiles = createProfileStore(paths.launcherFile("profiles.json"));
   const progress: ModpackProgress[] = [];
   const synced: string[][] = [];
-  const busy = new Set<string>();
+  const runtime = createRuntime();
   const service = createModpackService({
     paths,
     downloader: createDownloader({
@@ -97,9 +98,7 @@ async function setup() {
       if (!p) throw new Error("no profile");
       return p;
     },
-    assertNotRunning: () => undefined,
-    busy,
-    serialFs: (fn) => fn(),
+    runtime,
     sync: (only) => {
       synced.push(only);
       return Promise.resolve();

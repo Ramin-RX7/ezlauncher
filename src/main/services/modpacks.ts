@@ -49,6 +49,7 @@ import type { RemoteVersion } from "../modsources/types";
 import { removeTree } from "../profiles/links";
 import type { ProfileStore } from "../profiles/profiles";
 import { exists } from "../profiles/linkedStore";
+import type { Runtime } from "./runtime";
 
 /*
  * Mod packs (Modrinth `.mrpack`): import one as a new profile, update a profile to
@@ -98,11 +99,8 @@ export interface ModpackServiceDeps {
   profiles: ProfileStore;
   sources: ModSourceRegistry;
   requireProfile: (id: string) => Promise<Profile>;
-  assertNotRunning: (profileId: string) => void;
-  /** Profiles being changed by an update: they can't be played meanwhile. */
-  busy: Set<string>;
-  /** Folder work, one at a time. */
-  serialFs: <T>(fn: () => Promise<T>) => Promise<T>;
+  /** Busy state; `packUpdating` holds the profiles an update is changing (not playable meanwhile). */
+  runtime: Runtime;
   /** Adopt the profile's files into the libraries. */
   sync: (only: string[]) => Promise<void>;
   /** Forget a removed profile in every library. */
@@ -437,7 +435,7 @@ export function createModpackService(deps: ModpackServiceDeps) {
             bytes: 0,
             totalBytes: 0,
           });
-          await deps.serialFs(() => rename(staging, gameDir));
+          await deps.runtime.serialFs(() => rename(staging, gameDir));
           const remote = entry.remote;
           await writeManifest(paths, id, {
             schema: 1,
@@ -481,7 +479,7 @@ export function createModpackService(deps: ModpackServiceDeps) {
           deps.changed();
           return profile;
         } catch (err) {
-          await deps.serialFs(async () => {
+          await deps.runtime.serialFs(async () => {
             await removeTree(staging).catch(() => undefined);
             await removeTree(gameDir).catch(() => undefined);
             await removeManifest(paths, id);
@@ -533,7 +531,7 @@ export function createModpackService(deps: ModpackServiceDeps) {
       token?: string;
     }): Promise<ModpackUpdatePlan> {
       const profile = await deps.requireProfile(options.profileId);
-      deps.assertNotRunning(profile.id);
+      deps.runtime.assertNotRunning(profile.id);
       const manifest = await readManifest(paths, profile.id);
       if (!profile.modpack || !manifest)
         throw new AppError(
@@ -619,8 +617,8 @@ export function createModpackService(deps: ModpackServiceDeps) {
       const { index } = contents;
       assertSupported(index.requires);
       const profile = await deps.requireProfile(profileId);
-      deps.assertNotRunning(profileId);
-      if (deps.busy.has(profileId))
+      deps.runtime.assertNotRunning(profileId);
+      if (deps.runtime.packUpdating.has(profileId))
         throw new AppError("BUSY", "This profile is being updated.");
       const changedPaths = new Set(
         plan.items.filter((i) => i.action === "changed").map((i) => i.path),
@@ -630,11 +628,11 @@ export function createModpackService(deps: ModpackServiceDeps) {
           (p): p is string => typeof p === "string" && changedPaths.has(p),
         ),
       );
-      deps.busy.add(profileId);
+      deps.runtime.packUpdating.add(profileId);
       try {
         const stamp = new Date().toISOString().replace(/[:.]/g, "-");
         const result = await track(token, (signal) =>
-          deps.serialFs(() =>
+          deps.runtime.serialFs(() =>
             applyUpdate(
               { paths, downloader },
               {
@@ -684,7 +682,7 @@ export function createModpackService(deps: ModpackServiceDeps) {
         );
         return result;
       } finally {
-        deps.busy.delete(profileId);
+        deps.runtime.packUpdating.delete(profileId);
         await forgetUpdate(token);
         await deps.sync([profileId]).catch((err: unknown) => {
           log.warn(`sync after updating ${profileId} failed`, err);

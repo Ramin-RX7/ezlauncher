@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Screenshots taken in each profile are moved into the shared screenshots folder in the data folder
 - The Storage page counts screenshots on their own
+- Under the hood: the launcher's main process is split into smaller parts with their own tests, for fewer bugs and easier fixes. Nothing changes in how it works
 
 ## [0.3.0] - 2026-10-17
 
