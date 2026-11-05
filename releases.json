@@ -2,6 +2,38 @@
   "schema": 1,
   "releases": [
     {
+      "version": "0.4.0",
+      "date": "2026-11-05",
+      "prerelease": false,
+      "notes": "### Added\n\n- Mod updates: Check for updates on a profile's Mods tab lists newer versions of its mods (with what's new), and updates the ones you tick. Mods a mod pack manages are left unticked, and the old versions stay in the library so you can go back\n- Pin profiles to the top of the list, and sort the rest by last played, most played, name or newest\n- Search profiles by their mod pack's name too\n- One screenshots folder for every profile, opened from the Screenshots button on the home page or a profile's menu\n- Copy diagnostics (Settings → About, a profile's menu, or the game log after a crash) puts the details a bug report needs on the clipboard: launcher and system info, the profile's mods and the end of the logs, with your user name, folders and player names hidden\n- Search mods by name in Add mod: Modrinth's mods for the profile's version and loader, a page at a time. Open one to see what it downloads, then Download\n- Game window: start the game in a window of a chosen size or fullscreen, in Settings or for one profile\n- Server status on a profile's Servers tab: whether each server is online, its players, latency, version and message\n- LAN worlds: worlds opened to LAN on your network show up on the Servers tab, ready to join (Windows may ask once to let EZLauncher use the network)\n\n### Changed\n\n- Screenshots taken in each profile are moved into the shared screenshots folder in the data folder\n- The Storage page counts screenshots on their own\n- Under the hood: the launcher's main process is split into smaller parts with their own tests, for fewer bugs and easier fixes. Nothing changes in how it works\n\n### Fixed\n\n- On Windows, adding mods or packs to a profile, re-downloading a damaged mod or saving a world backup could fail with \"operation not permitted\" while an antivirus checked the new file; the launcher now waits a moment and tries again",
+      "files": {
+        "winPortableExe": {
+          "name": "EZLauncher-0.4.0-x64-portable.exe",
+          "url": "https://github.com/Ramin-RX7/ezlauncher/releases/download/v0.4.0/EZLauncher-0.4.0-x64-portable.exe",
+          "size": 112201901,
+          "sha256": "43507b65dca34d9e888b984a7ca7780236cdc289ba9603a9f911bd6dcfb56e38"
+        },
+        "winPortableZip": {
+          "name": "EZLauncher-0.4.0-x64-portable.zip",
+          "url": "https://github.com/Ramin-RX7/ezlauncher/releases/download/v0.4.0/EZLauncher-0.4.0-x64-portable.zip",
+          "size": 154509442,
+          "sha256": "338857fe79b29f048d5ea1463c35738cff477c1095be1609a3e5dda1906263c9"
+        },
+        "winSetup": {
+          "name": "EZLauncher-0.4.0-x64-setup.exe",
+          "url": "https://github.com/Ramin-RX7/ezlauncher/releases/download/v0.4.0/EZLauncher-0.4.0-x64-setup.exe",
+          "size": 112419624,
+          "sha256": "4179dfb4a3edc5ea21eb6ed06365dae5e96ea675486f2d1a7c4035561cdf8944"
+        },
+        "linuxAppImage": {
+          "name": "EZLauncher-0.4.0-x86_64.AppImage",
+          "url": "https://github.com/Ramin-RX7/ezlauncher/releases/download/v0.4.0/EZLauncher-0.4.0-x86_64.AppImage",
+          "size": 126585188,
+          "sha256": "6da44ccc34532b8bb35e959924fdf16c02ca4a33a4c7835a5d3c867a890fd7a9"
+        }
+      }
+    },
+    {
       "version": "0.3.0",
       "date": "2026-10-17",
       "prerelease": false,
