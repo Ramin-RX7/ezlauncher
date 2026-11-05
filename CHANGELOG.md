@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-05
+
 ### Added
 
 - Mod updates: Check for updates on a profile's Mods tab lists newer versions of its mods (with what's new), and updates the ones you tick. Mods a mod pack manages are left unticked, and the old versions stay in the library so you can go back
@@ -92,7 +94,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Initial items mentioned in the SCOPES document
 
-[Unreleased]: https://github.com/Ramin-RX7/ezlauncher/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Ramin-RX7/ezlauncher/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Ramin-RX7/ezlauncher/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Ramin-RX7/ezlauncher/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Ramin-RX7/ezlauncher/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Ramin-RX7/ezlauncher/releases/tag/v0.1.0
