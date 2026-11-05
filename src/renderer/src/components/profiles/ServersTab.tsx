@@ -7,6 +7,7 @@ import {
   LogIn,
   Pencil,
   Plus,
+  RefreshCw,
   Server,
   Trash2,
 } from "lucide-react";
@@ -14,18 +15,22 @@ import type { ProfileInfo, SavedServerList } from "@shared/launcher";
 import { parseServerAddress } from "@shared/serverAddress";
 import { invoke } from "../../lib/api";
 import { errorMessage } from "../../lib/errors";
+import { keys } from "../../state/queries";
 import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
 import { Input } from "../ui/Input";
 import { EditServerDialog, type ServerFields } from "./EditServerDialog";
+import { LanWorlds } from "./LanWorlds";
+import { ServerStatusLine } from "./ServerStatusLine";
 
 type Server = SavedServerList["servers"][number];
 type Edit = ServerFields & { key?: number };
 
 /**
- * Join a server straight from the launcher, and edit the game's own server list
- * (its Multiplayer screen): add, change, remove, reorder. Nothing changes while
- * the profile plays (the game rewrites the list).
+ * Join a server straight from the launcher, see whether it's up, and edit the
+ * game's own server list (its Multiplayer screen): add, change, remove, reorder.
+ * Nothing changes while the profile plays (the game rewrites the list). Worlds
+ * opened to LAN nearby are listed too.
  */
 export function ServersTab({
   profile,
@@ -123,15 +128,29 @@ export function ServersTab({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-sm font-medium">{t("servers.listTitle")}</h2>
-        <Button
-          disabled={locked}
-          onClick={() => {
-            setEditing({});
-          }}
-        >
-          <Plus size={16} aria-hidden />
-          {t("servers.add")}
-        </Button>
+        <span className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            disabled={servers.length === 0}
+            onClick={() => {
+              void queryClient.invalidateQueries({
+                queryKey: keys.serverStatus,
+              });
+            }}
+          >
+            <RefreshCw size={16} aria-hidden />
+            {t("servers.status.refresh")}
+          </Button>
+          <Button
+            disabled={locked}
+            onClick={() => {
+              setEditing({});
+            }}
+          >
+            <Plus size={16} aria-hidden />
+            {t("servers.add")}
+          </Button>
+        </span>
       </div>
       {locked && <p className="text-xs text-warning">{t("servers.locked")}</p>}
       {list.isError && (
@@ -172,6 +191,9 @@ export function ServersTab({
                   <span className="truncate text-xs text-muted">
                     {s.address}
                   </span>
+                  {parseServerAddress(s.address) && (
+                    <ServerStatusLine address={s.address} />
+                  )}
                 </span>
                 <span className="flex shrink-0 items-center gap-1">
                   <Button
@@ -237,6 +259,8 @@ export function ServersTab({
           </ul>
         ))}
       <p className="text-xs text-muted">{t("servers.hint")}</p>
+
+      <LanWorlds onJoin={onJoin} />
 
       {editing && (
         <EditServerDialog

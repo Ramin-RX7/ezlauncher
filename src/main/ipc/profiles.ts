@@ -38,6 +38,8 @@ export function registerProfilesIpc(): void {
   handle("servers:save", (_e, { profileId, servers }) =>
     getService().saveServerList(profileId, servers),
   );
+  handle("servers:status", (_e, address) => getService().serverStatus(address));
+  handle("servers:lan", () => getService().lanWorlds());
   handle("profiles:playHistory", (_e, profileId) =>
     getService().playHistory(profileId),
   );

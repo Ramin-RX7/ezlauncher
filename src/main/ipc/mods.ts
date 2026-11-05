@@ -34,8 +34,11 @@ export function registerModsIpc(): void {
   );
   handle("mods:removeUnused", () => getService().removeUnusedMods());
 
-  handle("mods:findRemote", (_e, { profileId, query }) =>
-    getService().findRemoteMods(profileId, query),
+  handle("mods:search", (_e, { profileId, query, offset }) =>
+    getService().searchRemoteMods(profileId, query, offset),
+  );
+  handle("mods:prepare", (_e, { profileId, sourceId, projectId }) =>
+    getService().prepareRemoteMod(profileId, sourceId, projectId),
   );
   handle("mods:installRemote", (_e, planId) =>
     getService().installRemoteMod(planId),

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { joinArgs, splitArgs } from "@shared/args";
-import type { Profile, ProfileInput } from "@shared/launcher";
+import type { GameWindow, Profile, ProfileInput } from "@shared/launcher";
+import { isValidGameWindow } from "../settings/gameWindow";
 
 export const MEMORY_MIN = 512;
 export const MEMORY_MAX = 65536;
@@ -13,9 +14,12 @@ interface OverridesState {
   jvmArgs: string;
   globalGame: boolean;
   gameArgs: string;
+  globalWindow: boolean;
+  /** Unset (`default`) until the profile has its own. */
+  gameWindow: GameWindow;
 }
 
-/** A profile's memory and argument overrides: the form state, its check, and the saved values. */
+/** A profile's memory, argument and window overrides: the form state, its check, and the saved values. */
 export function useLaunchOverrides(profile: Profile | undefined) {
   const [state, setState] = useState<OverridesState>(() => ({
     globalMemory: profile?.memoryMaxMb === undefined,
@@ -25,6 +29,8 @@ export function useLaunchOverrides(profile: Profile | undefined) {
     jvmArgs: joinArgs(profile?.extraJvmArgs ?? []),
     globalGame: profile?.extraGameArgs === undefined,
     gameArgs: joinArgs(profile?.extraGameArgs ?? []),
+    globalWindow: profile?.gameWindow === undefined,
+    gameWindow: profile?.gameWindow ?? { mode: "default" },
   }));
   const set = (patch: Partial<OverridesState>) => {
     setState((s) => ({ ...s, ...patch }));
@@ -42,22 +48,24 @@ export function useLaunchOverrides(profile: Profile | undefined) {
   const argsValid =
     (state.globalJvm || !("error" in jvmSplit)) &&
     (state.globalGame || !("error" in gameSplit));
+  const windowValid = state.globalWindow || isValidGameWindow(state.gameWindow);
 
   return {
     state,
     set,
     memoryValid,
-    valid: memoryValid && argsValid,
+    valid: memoryValid && argsValid && windowValid,
     /** The overrides as saved: `null` = use the global setting. */
     values: (): Pick<
       ProfileInput,
-      "memoryMaxMb" | "extraJvmArgs" | "extraGameArgs"
+      "memoryMaxMb" | "extraJvmArgs" | "extraGameArgs" | "gameWindow"
     > => ({
       memoryMaxMb: state.globalMemory ? null : memoryNumber,
       extraJvmArgs:
         state.globalJvm || "error" in jvmSplit ? null : jvmSplit.args,
       extraGameArgs:
         state.globalGame || "error" in gameSplit ? null : gameSplit.args,
+      gameWindow: state.globalWindow ? null : state.gameWindow,
     }),
   };
 }

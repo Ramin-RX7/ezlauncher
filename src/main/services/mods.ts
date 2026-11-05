@@ -9,6 +9,7 @@ import type {
   LibraryMod,
   ModUpdateCheck,
   ModUpdateResult,
+  PackSearchResult,
   Profile,
   RemoteMatchCard,
   ValidationReport,
@@ -44,6 +45,7 @@ import {
   validate,
 } from "../validation/validate";
 import type { EventPayload } from "@shared/ipc";
+import { searchSite } from "./packs";
 import type { Runtime } from "./runtime";
 
 type DownloadEvent = EventPayload<"mods:download">;
@@ -195,6 +197,19 @@ export function createModService(deps: ModServiceDeps) {
     }
   }
 
+  /** What a profile's mods must fit: its version and loader (vanilla profiles load none). */
+  function modTarget(profile: Profile): ModTarget {
+    if (!profile.loader)
+      throw new AppError(
+        "MOD_INCOMPATIBLE",
+        "Vanilla profiles can't load mods.",
+      );
+    return {
+      gameVersion: profile.gameVersion,
+      loaders: acceptedLoaders(profile.loader.id),
+    };
+  }
+
   /** Ask the mod sources about hand-added mods, resource packs and shaders. */
   async function identifyPending(): Promise<void> {
     const modsAsked = await identifyPendingMods();
@@ -342,65 +357,68 @@ export function createModService(deps: ModServiceDeps) {
       return result;
     },
 
-    /**
-     * Exact-name search on the mod sites for this profile's loader and version.
-     * Each match comes with what Download would do (dependencies, size, warnings).
-     */
-    async findRemoteMods(
+    /** Mods on the first mod site matching `query`, for the profile's version and loader. */
+    async searchRemoteMods(
       profileId: string,
-      query: string,
-    ): Promise<RemoteMatchCard[]> {
+      query: unknown,
+      offset: number,
+    ): Promise<PackSearchResult> {
       const profile = await requireProfile(profileId);
-      if (!profile.loader)
-        throw new AppError(
-          "MOD_INCOMPATIBLE",
-          "Vanilla profiles can't load mods.",
-        );
-      const text = typeof query === "string" ? query.trim() : "";
-      if (!text || text.length > 100) return [];
-      const target = {
-        gameVersion: profile.gameVersion,
-        loaders: acceptedLoaders(profile.loader.id),
-      };
+      const target = modTarget(profile);
+      return searchSite(sources, "mod", query, target.gameVersion, offset, {
+        loaders: target.loaders,
+      });
+    },
+
+    /**
+     * What Download would do for one mod from a site (its version for the profile,
+     * dependencies, size, warnings), with a plan id to download it by.
+     */
+    async prepareRemoteMod(
+      profileId: string,
+      sourceId: string,
+      projectId: unknown,
+    ): Promise<RemoteMatchCard> {
+      const profile = await requireProfile(profileId);
+      const target = modTarget(profile);
+      if (typeof projectId !== "string" || !/^[\w-]{1,64}$/.test(projectId))
+        throw new AppError("MOD_NOT_FOUND", "That mod isn't valid.");
+      const source = sources.get(sourceId);
+      // The project comes from the site, not from the renderer.
+      const [project] = await source.getProjects([projectId]);
+      if (!project)
+        throw new AppError("MOD_NOT_FOUND", "The site doesn't know that mod.");
       for (const [id, entry] of plans)
         if (Date.now() - entry.createdAt > PLAN_TTL_MS && !entry.controller)
           plans.delete(id);
-
       // Hand-added jars count once a site knows them (for "replaces" and reuse): ask now.
       await identifyPending().catch((err: unknown) => {
-        log.info("identifying mods before the search failed", err);
+        log.info("identifying mods before a download failed", err);
       });
 
-      const cards: RemoteMatchCard[] = [];
-      for (const source of sources.sources) {
-        for (const project of await source.findExact(text, target)) {
-          const card = projectCard(source.id, project);
-          cards.push(card);
-          const version = await source.getCompatibleVersion(
-            project.projectId,
-            target,
-          );
-          if (!version) continue;
-
-          const view = await mods.view(profile);
-          const plan = await resolveInstall(source, version, target, view);
-          const names = new Map(
-            (
-              await source.getProjects(projectsToName(plan)).catch(() => [])
-            ).map((p) => [p.projectId, p.name]),
-          );
-          const incompatible = plan.incompatible.flatMap((projectId) =>
-            view.enabledFromProject(source.id, projectId).map((m) => m.name),
-          );
-          Object.assign(card, describePlan(version, plan, names, incompatible));
-          if (plan.missing.length === 0) {
-            const planId = randomUUID();
-            plans.set(planId, { plan, profileId, createdAt: Date.now() });
-            card.planId = planId;
-          }
-        }
+      const card = projectCard(source.id, project);
+      const version = await source.getCompatibleVersion(
+        project.projectId,
+        target,
+      );
+      if (!version) return card;
+      const view = await mods.view(profile);
+      const plan = await resolveInstall(source, version, target, view);
+      const names = new Map(
+        (await source.getProjects(projectsToName(plan)).catch(() => [])).map(
+          (p) => [p.projectId, p.name],
+        ),
+      );
+      const incompatible = plan.incompatible.flatMap((id) =>
+        view.enabledFromProject(source.id, id).map((m) => m.name),
+      );
+      Object.assign(card, describePlan(version, plan, names, incompatible));
+      if (plan.missing.length === 0) {
+        const planId = randomUUID();
+        plans.set(planId, { plan, profileId, createdAt: Date.now() });
+        card.planId = planId;
       }
-      return cards;
+      return card;
     },
 
     /** Download a confirmed card: the mod and its dependencies, enabled in the profile. */

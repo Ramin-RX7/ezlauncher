@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import type { GameWindow } from "@shared/launcher";
 import { resolveLaunchSettings } from "./launchSettings";
 
 const global = {
   memoryMaxMb: 4096,
   extraJvmArgs: ["-XX:+UseG1GC"],
-  extraGameArgs: ["--width", "1280"],
+  extraGameArgs: ["--demo"],
+  gameWindow: { mode: "size", width: 1280, height: 720 } as GameWindow,
 };
 
 describe("resolveLaunchSettings", () => {
@@ -18,14 +20,16 @@ describe("resolveLaunchSettings", () => {
         {
           memoryMaxMb: 6144,
           extraJvmArgs: ["-XX:+UseZGC"],
-          extraGameArgs: ["--fullscreen"],
+          extraGameArgs: ["--quickPlayPath", "x"],
+          gameWindow: { mode: "fullscreen" },
         },
         global,
       ),
     ).toEqual({
       memoryMaxMb: 6144,
       extraJvmArgs: ["-XX:+UseZGC"],
-      extraGameArgs: ["--fullscreen"],
+      extraGameArgs: ["--quickPlayPath", "x"],
+      gameWindow: { mode: "fullscreen" },
     });
   });
 

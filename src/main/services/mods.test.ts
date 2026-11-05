@@ -46,8 +46,7 @@ async function picked(name: string, bytes: Uint8Array) {
   return path;
 }
 
-function setup() {
-  const source = createFakeModSource([], []);
+function setup(source = createFakeModSource([], [])) {
   const sources = {
     sources: [source],
     get: () => source,
@@ -165,12 +164,71 @@ describe("createModService", () => {
     expect(await mods.list()).toEqual([]);
   });
 
+  it("searches the site for the profile's version and loader, then prepares a download", async () => {
+    const source = createFakeModSource(
+      [
+        { projectId: "sodium", name: "Sodium" },
+        { projectId: "sodium-extra", name: "Sodium Extra" },
+        { projectId: "forge-sodium", name: "Sodium for Forge" },
+      ],
+      [
+        {
+          projectId: "sodium",
+          versionId: "s1",
+          loaders: ["fabric"],
+          gameVersions: ["1.20.1"],
+          sha1: "a".repeat(40),
+        },
+        {
+          projectId: "sodium-extra",
+          versionId: "e1",
+          loaders: ["fabric"],
+          gameVersions: ["1.20.1"],
+          sha1: "b".repeat(40),
+          dependencies: [{ projectId: "sodium", kind: "required" }],
+        },
+        {
+          projectId: "forge-sodium",
+          versionId: "f1",
+          loaders: ["forge"],
+          gameVersions: ["1.20.1"],
+          sha1: "c".repeat(40),
+        },
+      ],
+    );
+    const { service } = setup(source);
+    const page = await service.api.searchRemoteMods("p1", "sodium", 0);
+    expect(page.hits.map((h) => h.projectId)).toEqual([
+      "sodium",
+      "sodium-extra",
+    ]);
+
+    const card = await service.api.prepareRemoteMod(
+      "p1",
+      "fake",
+      "sodium-extra",
+    );
+    expect(card).toMatchObject({
+      project: { projectId: "sodium-extra", name: "Sodium Extra" },
+      version: { versionNumber: expect.any(String) as unknown },
+      dependencies: [{ name: "Sodium", action: "download" }],
+      planId: expect.any(String) as unknown,
+    });
+    expect(service.isBusy()).toBe(false);
+    await expect(
+      service.api.prepareRemoteMod("p1", "fake", "../evil"),
+    ).rejects.toMatchObject({ code: "MOD_NOT_FOUND" });
+    await expect(
+      service.api.prepareRemoteMod("p1", "fake", "unknown"),
+    ).rejects.toMatchObject({ code: "MOD_NOT_FOUND" });
+  });
+
   it("doesn't look up mods for vanilla profiles, nor offer them updates", async () => {
     const { service } = setup();
     PROFILES.vanilla = { ...profile("vanilla"), loader: null };
     try {
       await expect(
-        service.api.findRemoteMods("vanilla", "sodium"),
+        service.api.searchRemoteMods("vanilla", "sodium", 0),
       ).rejects.toMatchObject({ code: "MOD_INCOMPATIBLE" });
       await expect(
         service.api.checkModUpdates("vanilla"),

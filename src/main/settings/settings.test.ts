@@ -55,4 +55,25 @@ describe("settings store", () => {
       backupKeepCount: DEFAULT_SETTINGS.backupKeepCount,
     });
   });
+
+  it("keeps the game window, refusing sizes out of range", async () => {
+    const store = createSettingsStore(file);
+    expect((await store.load()).gameWindow).toEqual({ mode: "default" });
+    await store.update({
+      gameWindow: { mode: "size", width: 1920, height: 1080 },
+    });
+    expect((await createSettingsStore(file).load()).gameWindow).toEqual({
+      mode: "size",
+      width: 1920,
+      height: 1080,
+    });
+    for (const bad of [
+      { mode: "size", width: 100, height: 1080 },
+      { mode: "size", width: 1920 },
+      { mode: "maximized" },
+    ])
+      await expect(store.update({ gameWindow: bad })).rejects.toMatchObject({
+        code: "INVALID_SETTINGS",
+      });
+  });
 });

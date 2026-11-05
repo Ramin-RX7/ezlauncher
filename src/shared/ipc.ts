@@ -60,6 +60,8 @@ import type {
   PlayHistory,
   PlayTargets,
   SavedServerList,
+  ServerStatus,
+  LanWorld,
   StorageReport,
   CleanupId,
   CleanupResult,
@@ -267,6 +269,10 @@ export interface IpcInvokeContract {
     ];
     result: void;
   };
+  /** What a server says about itself (players, version, MOTD); cached for 30 s. */
+  "servers:status": { args: [address: string]; result: ServerStatus };
+  /** Worlds opened to LAN nearby; listening starts on the first call and stops when not asked. */
+  "servers:lan": { args: []; result: LanWorld[] };
   /** Makes a desktop shortcut that opens the launcher on this profile; resolves to its path. */
   "profiles:createShortcut": {
     args: [
@@ -328,10 +334,15 @@ export interface IpcInvokeContract {
   };
   /** Removes every mod no profile uses. Resolves to how many were removed. */
   "mods:removeUnused": { args: []; result: number };
-  /** Exact-name search on the mod sites, for a profile. One card per exact match. */
-  "mods:findRemote": {
-    args: [options: { profileId: string; query: string }];
-    result: RemoteMatchCard[];
+  /** A page of mods on the site for a profile's version and loader (20 at a time). */
+  "mods:search": {
+    args: [options: { profileId: string; query: string; offset: number }];
+    result: PackSearchResult;
+  };
+  /** What Download would do for one mod from a search, with the plan id to download it. */
+  "mods:prepare": {
+    args: [options: { profileId: string; sourceId: string; projectId: string }];
+    result: RemoteMatchCard;
   };
   /** Downloads a card's mod and dependencies into the library and enables them. */
   /** Resolves to other enabled mods that were replaced (same mod id) and not on the card. */
@@ -670,6 +681,8 @@ export const INVOKE_CHANNELS = [
   "storage:scan",
   "storage:clean",
   "servers:save",
+  "servers:status",
+  "servers:lan",
   "profiles:createShortcut",
   "worlds:move",
   "worlds:orphans",
@@ -681,7 +694,8 @@ export const INVOKE_CHANNELS = [
   "mods:setEnabled",
   "mods:remove",
   "mods:removeUnused",
-  "mods:findRemote",
+  "mods:search",
+  "mods:prepare",
   "mods:installRemote",
   "mods:cancelRemote",
   "mods:validate",

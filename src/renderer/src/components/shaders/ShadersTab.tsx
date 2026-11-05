@@ -54,7 +54,6 @@ export function ShadersTab({ profile }: { profile: ProfileInfo }) {
       <AddModDialog
         profile={profile}
         initialQuery="iris"
-        autoSearch
         onClose={() => {
           setGettingIris(false);
           refresh();

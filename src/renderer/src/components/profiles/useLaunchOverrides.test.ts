@@ -20,6 +20,7 @@ describe("useLaunchOverrides", () => {
       memoryMaxMb: null,
       extraJvmArgs: null,
       extraGameArgs: null,
+      gameWindow: null,
     });
 
     const own = renderHook(() =>
@@ -31,6 +32,7 @@ describe("useLaunchOverrides", () => {
       memoryMaxMb: 4096,
       extraJvmArgs: ["-XX:+UseG1GC"],
       extraGameArgs: null,
+      gameWindow: null,
     });
   });
 
@@ -54,5 +56,35 @@ describe("useLaunchOverrides", () => {
     });
     expect(result.current.valid).toBe(true);
     expect(result.current.values().memoryMaxMb).toBe(3072);
+  });
+
+  it("keeps the profile's own window, and refuses a size out of range", () => {
+    const own = renderHook(() =>
+      useLaunchOverrides(profile({ gameWindow: { mode: "fullscreen" } })),
+    );
+    expect(own.result.current.values().gameWindow).toEqual({
+      mode: "fullscreen",
+    });
+
+    const { result } = renderHook(() => useLaunchOverrides(undefined));
+    expect(result.current.values().gameWindow).toBeNull();
+    act(() => {
+      result.current.set({
+        globalWindow: false,
+        gameWindow: { mode: "size", width: 200, height: 720 },
+      });
+    });
+    expect(result.current.valid).toBe(false);
+    act(() => {
+      result.current.set({
+        gameWindow: { mode: "size", width: 1600, height: 900 },
+      });
+    });
+    expect(result.current.valid).toBe(true);
+    expect(result.current.values().gameWindow).toEqual({
+      mode: "size",
+      width: 1600,
+      height: 900,
+    });
   });
 });

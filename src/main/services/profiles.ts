@@ -141,6 +141,7 @@ export function createProfileService(deps: ProfileServiceDeps) {
         ...(src.extraGameArgs !== undefined && {
           extraGameArgs: src.extraGameArgs,
         }),
+        ...(src.gameWindow !== undefined && { gameWindow: src.gameWindow }),
       });
       await mkdir(paths.gameDir(profile.id), { recursive: true });
       const sha1s = (await mods.enabledMods(id)).map((m) => m.sha1);

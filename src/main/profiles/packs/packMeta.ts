@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { strFromU8 } from "fflate";
 import { readZipEntries } from "../../core/zipEntries";
 import { compareFormats, type PackFormat } from "./packFormat";
+import { cleanText, plainText } from "../../core/textComponent";
 
 /*
  * A pack's `pack.mcmeta` (and `pack.png`), from a zip or a folder. The game reads
@@ -66,35 +67,6 @@ function parseLenient(text: string): unknown {
   }
   return JSON.parse(out.replace(/,(\s*[}\]])/g, "$1"));
 }
-
-/** Flatten a text component (string, object with text/extra, or array) to plain text. */
-function plainText(component: unknown, depth = 0): string {
-  if (depth > 16) return "";
-  if (typeof component === "string") return component;
-  if (typeof component === "number" || typeof component === "boolean")
-    return String(component);
-  if (Array.isArray(component))
-    return component.map((c) => plainText(c, depth + 1)).join("");
-  if (typeof component === "object" && component !== null) {
-    const c = component as Record<string, unknown>;
-    const own =
-      typeof c.text === "string"
-        ? c.text
-        : typeof c.translate === "string"
-          ? typeof c.fallback === "string"
-            ? c.fallback
-            : c.translate
-          : "";
-    return own + (c.extra === undefined ? "" : plainText(c.extra, depth + 1));
-  }
-  return "";
-}
-
-const cleanText = (text: string) =>
-  text
-    .replace(/§./g, "")
-    .replace(/[ \t]+/g, " ")
-    .trim();
 
 const int = (v: unknown): number | undefined =>
   typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : undefined;

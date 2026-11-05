@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { joinArgs } from "@shared/args";
+import type { GameWindow } from "@shared/launcher";
 import { useSettings } from "../../state/queries";
 import { ArgsField } from "../settings/ArgsField";
+import { GameWindowField } from "../settings/GameWindowField";
 import { Checkbox } from "../ui/Checkbox";
 import { Input } from "../ui/Input";
 import {
@@ -11,7 +13,7 @@ import {
   type LaunchOverrides as Overrides,
 } from "./useLaunchOverrides";
 
-/** The memory, JVM arguments and game arguments fields, each with "Use global setting". */
+/** The memory, window, JVM arguments and game arguments fields, each with "Use global setting". */
 export function LaunchOverrides({
   overrides,
   onChange,
@@ -23,6 +25,13 @@ export function LaunchOverrides({
   const { t } = useTranslation();
   const settings = useSettings();
   const { state, set, memoryValid } = overrides;
+  const globalWindow: GameWindow = settings.data?.gameWindow ?? {
+    mode: "default",
+  };
+  const windowText = (w: GameWindow) =>
+    w.mode === "size"
+      ? `${w.width} × ${w.height}`
+      : t(`settings.window.${w.mode}`);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1 text-sm">
@@ -70,6 +79,41 @@ export function LaunchOverrides({
               {t("profiles.editor.memoryHint")}
             </span>
           </>
+        )}
+      </div>
+      <div className="flex flex-col gap-1 text-sm">
+        <span className="font-medium">{t("profiles.editor.window")}</span>
+        <Checkbox
+          checked={state.globalWindow}
+          onChange={(checked) => {
+            set({
+              globalWindow: checked,
+              // A profile without its own starts from the global choice.
+              ...(!checked &&
+                state.gameWindow.mode === "default" && {
+                  gameWindow: globalWindow,
+                }),
+            });
+            onChange();
+          }}
+        >
+          {t("profiles.editor.useGlobal")}{" "}
+          <span className="text-muted">
+            (
+            {t("profiles.editor.globalWindow", {
+              value: windowText(globalWindow),
+            })}
+            )
+          </span>
+        </Checkbox>
+        {!state.globalWindow && (
+          <GameWindowField
+            value={state.gameWindow}
+            onChange={(next) => {
+              set({ gameWindow: next });
+              onChange();
+            }}
+          />
         )}
       </div>
       <Override

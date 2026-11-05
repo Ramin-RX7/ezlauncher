@@ -282,7 +282,7 @@ describe("PlayBar", () => {
       "settings:get": () => settings({ selectedAccountId: "a1" }),
       "loaders:list": () => loaders,
       "mods:library": () => library,
-      "mods:findRemote": () => [],
+      "mods:search": () => ({ hits: [], total: 0 }),
       "game:launch": () => ({ status: "blocked", report: missing }),
     });
     renderBar(profile());
@@ -290,9 +290,10 @@ describe("PlayBar", () => {
     expect(await screen.findByText("Needs Fabric API")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Download" }));
     await waitFor(() => {
-      expect(api.invoke).toHaveBeenCalledWith("mods:findRemote", {
+      expect(api.invoke).toHaveBeenCalledWith("mods:search", {
         profileId: "p1",
         query: "fabric-api",
+        offset: 0,
       });
     });
   });

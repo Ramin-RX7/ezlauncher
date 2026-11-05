@@ -1,5 +1,6 @@
 import { basename, join } from "node:path";
 import type {
+  GameWindow,
   JavaListResult,
   LauncherSettings,
   ValidationReport,
@@ -16,6 +17,10 @@ import type { Paths } from "../minecraft/paths";
 import type { ModLibrary } from "../profiles/mods";
 import type { PlayTime } from "../profiles/playTime";
 import type { ProfileStore } from "../profiles/profiles";
+
+/** `default`, `fullscreen` or `1280x720`. */
+const windowText = (w: GameWindow): string =>
+  w.mode === "size" ? `${w.width}x${w.height}` : w.mode;
 
 export interface DiagnosticsDeps {
   paths: Paths;
@@ -86,6 +91,9 @@ export function createDiagnostics(deps: DiagnosticsDeps) {
           ...(profile.extraGameArgs && {
             extraGameArgs: profile.extraGameArgs.length,
           }),
+          ...(profile.gameWindow && {
+            gameWindow: windowText(profile.gameWindow),
+          }),
           running: isBusy(profile.id),
           ...(played?.get(profile.id) && {
             playTimeMs: played.get(profile.id),
@@ -124,6 +132,7 @@ export function createDiagnostics(deps: DiagnosticsDeps) {
             onGameStart: config.onGameStart,
             extraJvmArgs: config.extraJvmArgs.length,
             extraGameArgs: config.extraGameArgs.length,
+            gameWindow: windowText(config.gameWindow),
           },
         }),
         ...(javaList && {

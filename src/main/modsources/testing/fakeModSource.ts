@@ -75,21 +75,7 @@ export function createFakeModSource(
     displayName: "Fake",
     calls,
     pageUrl: (id, type = "mod") => `https://fake/${type}/${id}`,
-    findExact(query, target) {
-      calls.push(`findExact ${query}`);
-      const q = query.trim().toLowerCase();
-      return Promise.resolve(
-        projects
-          .filter(
-            (p) =>
-              typeOf(p) === (target.projectType ?? "mod") &&
-              (p.name.toLowerCase() === q ||
-                (p.slug ?? p.projectId).toLowerCase() === q),
-          )
-          .map(project),
-      );
-    },
-    search(query, { projectType, gameVersion, offset, limit }) {
+    search(query, { projectType, gameVersion, loaders, offset, limit }) {
       calls.push(`search ${query} ${projectType} ${offset}`);
       const q = query.trim().toLowerCase();
       const all = projects.filter(
@@ -101,6 +87,12 @@ export function createFakeModSource(
               (v) =>
                 v.projectId === p.projectId &&
                 (v.gameVersions ?? ["1.18.2"]).includes(gameVersion),
+            )) &&
+          (!loaders?.length ||
+            versions.some(
+              (v) =>
+                v.projectId === p.projectId &&
+                (v.loaders ?? ["fabric"]).some((l) => loaders.includes(l)),
             )),
       );
       return Promise.resolve({

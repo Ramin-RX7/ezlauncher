@@ -81,6 +81,38 @@ describe("SettingsPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("saves the game window, but not a size out of range", async () => {
+    const api = renderPage();
+    const mode = await screen.findByLabelText("Game window");
+    fireEvent.change(mode, { target: { value: "size" } });
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("settings:update", {
+        gameWindow: { mode: "size", width: 1280, height: 720 },
+      });
+    });
+
+    fireEvent.change(screen.getByLabelText("Window width"), {
+      target: { value: "100" },
+    });
+    expect(
+      screen.getByText(
+        "Use a width of 320 to 16384 and a height of 240 to 16384 pixels.",
+      ),
+    ).toBeInTheDocument();
+    expect(api.invoke).not.toHaveBeenCalledWith("settings:update", {
+      gameWindow: { mode: "size", width: 100, height: 720 },
+    });
+
+    fireEvent.change(screen.getByLabelText("Game window"), {
+      target: { value: "fullscreen" },
+    });
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("settings:update", {
+        gameWindow: { mode: "fullscreen" },
+      });
+    });
+  });
+
   it("turns version types on and off", async () => {
     const api = renderPage();
     fireEvent.click(

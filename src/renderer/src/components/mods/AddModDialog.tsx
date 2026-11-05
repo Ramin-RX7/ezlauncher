@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Search } from "lucide-react";
@@ -11,26 +11,23 @@ import { Input } from "../ui/Input";
 import { reasonText } from "./compatText";
 import { ModIcon } from "./ModIcon";
 import { groupMods } from "./modGroups";
-import { RemoteModCard } from "./RemoteModCard";
+import { ModSearchResults } from "./ModSearchResults";
 import { VersionPicker } from "./VersionPicker";
 
 /**
- * Add a mod to a profile: first from the library (search filters it, one row per
- * mod with its versions), and if it isn't there, an exact-name search on Modrinth
- * with a confirm card per match.
+ * Add a mod to a profile: from the library (typing filters it, one row per mod
+ * with its versions), or from Modrinth's mods for the profile's version and
+ * loader, each opened to see what Download would fetch.
  */
 export function AddModDialog({
   profile,
   onClose,
   initialQuery = "",
-  autoSearch = false,
 }: {
   profile: ProfileInfo;
   onClose: () => void;
-  /** Start with this text in the search box (e.g. a missing mod's id). */
+  /** Start with this text in the search box (e.g. a missing mod's id); a mod named exactly so opens by itself. */
   initialQuery?: string;
-  /** Search the mod sites for `initialQuery` right away. */
-  autoSearch?: boolean;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -68,23 +65,10 @@ export function AddModDialog({
       void queryClient.invalidateQueries({ queryKey: ["mods"] });
     },
   });
-  const remote = useMutation({
-    mutationFn: (text: string) =>
-      invoke("mods:findRemote", { profileId: profile.id, query: text }),
-  });
-  // Only show results for what's in the box now.
-  const results = remote.variables === query.trim() ? remote.data : undefined;
-
-  const searched = useRef(false);
-  useEffect(() => {
-    if (!autoSearch || searched.current || !initialQuery.trim()) return;
-    searched.current = true;
-    remote.mutate(initialQuery.trim());
-  }, [autoSearch, initialQuery, remote]);
-
   return (
     <Dialog
       open
+      wide
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
@@ -96,7 +80,6 @@ export function AddModDialog({
           className="relative"
           onSubmit={(e) => {
             e.preventDefault();
-            if (query.trim()) remote.mutate(query.trim());
           }}
         >
           <Search
@@ -186,37 +169,7 @@ export function AddModDialog({
             </p>
           )}
 
-          {q && (
-            <Button
-              variant={matches.length === 0 ? "primary" : "secondary"}
-              disabled={remote.isPending}
-              onClick={() => {
-                remote.mutate(query.trim());
-              }}
-            >
-              <Search size={16} aria-hidden />
-              {remote.isPending
-                ? t("remote.searching")
-                : t("remote.searchSource")}
-            </Button>
-          )}
-          {remote.isError && remote.variables === query.trim() && (
-            <p role="alert" className="text-sm text-danger">
-              {errorMessage(t, remote.error)}
-            </p>
-          )}
-          {results?.length === 0 && (
-            <p className="text-sm text-muted" aria-live="polite">
-              {t("remote.notFound")}
-            </p>
-          )}
-          {results?.map((card) => (
-            <RemoteModCard
-              key={`${card.sourceId}:${card.project.projectId}`}
-              card={card}
-              gameVersion={profile.gameVersion}
-            />
-          ))}
+          <ModSearchResults profile={profile} query={query} />
         </div>
       </div>
     </Dialog>

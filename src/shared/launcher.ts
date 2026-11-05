@@ -104,6 +104,27 @@ export interface CleanupResult {
   failed: { id: CleanupId; code: string }[];
 }
 
+/** What a server says about itself (Minecraft's server list ping). */
+export type ServerStatus =
+  | {
+      online: true;
+      /** The server's version name, e.g. `1.21.4` or `Paper 1.21.4`. */
+      version: string;
+      players: { online: number; max: number };
+      /** The message of the day, as plain text (formatting codes removed). */
+      motd: string;
+      latencyMs: number;
+    }
+  | { online: false };
+
+/** A world opened to LAN on the local network. */
+export interface LanWorld {
+  /** The world's name as announced (empty when it had none). */
+  name: string;
+  /** `host:port`, ready to join. */
+  address: string;
+}
+
 /** A profile's server list (the game's Multiplayer list), for editing. */
 export interface SavedServerList {
   servers: {
@@ -181,6 +202,8 @@ export interface Profile {
   extraJvmArgs?: string[];
   /** Added after the version's game arguments. Missing = use the global setting. */
   extraGameArgs?: string[];
+  /** Missing = use the global setting. */
+  gameWindow?: GameWindow;
   createdAt: string;
   lastPlayedAt?: string;
   /** Kept at the top of the profile list. */
@@ -212,6 +235,7 @@ export interface ProfileInput {
   memoryMaxMb?: number | null;
   extraJvmArgs?: string[] | null;
   extraGameArgs?: string[] | null;
+  gameWindow?: GameWindow | null;
 }
 
 export interface ProfileInfo extends Profile {
@@ -814,6 +838,22 @@ export const PROFILE_SORTS = [
 ] as const;
 export type ProfileSort = (typeof PROFILE_SORTS)[number];
 
+/**
+ * How the game's window opens: as the game remembers it (`default`, its own
+ * options), at a size, or fullscreen.
+ */
+export type GameWindow =
+  | { mode: "default" }
+  | { mode: "size"; width: number; height: number }
+  | { mode: "fullscreen" };
+
+/** The window sizes the launcher accepts (the game's own limits are wider). */
+export const GAME_WINDOW_LIMITS = {
+  minWidth: 320,
+  minHeight: 240,
+  max: 16384,
+} as const;
+
 export interface LauncherSettings {
   /** Default `-Xmx` in MB; a profile can replace it. */
   memoryMaxMb: number;
@@ -821,6 +861,8 @@ export interface LauncherSettings {
   extraJvmArgs: string[];
   /** Added after the version's game arguments; a profile's own list replaces these. */
   extraGameArgs: string[];
+  /** How the game's window opens; a profile can replace it. */
+  gameWindow: GameWindow;
   onGameStart: OnGameStart;
   /** Which version types the version list shows; releases always are. */
   showSnapshots: boolean;

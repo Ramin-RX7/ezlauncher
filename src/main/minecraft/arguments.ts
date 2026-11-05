@@ -1,3 +1,4 @@
+import type { GameWindow } from "@shared/launcher";
 import { formatServerAddress, type ServerAddress } from "@shared/serverAddress";
 import type { LaunchIdentity } from "../auth/types";
 import { AppError } from "../core/errors";
@@ -25,6 +26,8 @@ export interface LaunchContext {
   logger?: Logger;
   /** Start straight into a world (its folder in `saves/`) or onto a server. */
   quickPlay?: QuickPlayTarget;
+  /** The window: as the game remembers it (missing or `default`), a size, or fullscreen. */
+  gameWindow?: GameWindow;
 }
 
 export type QuickPlayTarget =
@@ -129,10 +132,12 @@ export function buildLaunchCommand(ctx: LaunchContext): LaunchCommand {
     );
   const quickServer =
     quickPlay?.kind === "server" && support?.servers === "quickPlay";
+  const size = ctx.gameWindow?.mode === "size" ? ctx.gameWindow : undefined;
   const env: RuleEnv = {
     platform,
     features: {
       ...FEATURES,
+      has_custom_resolution: size !== undefined,
       is_quick_play_singleplayer: quickPlay?.kind === "world",
       is_quick_play_multiplayer: quickServer,
     },
@@ -179,6 +184,10 @@ export function buildLaunchCommand(ctx: LaunchContext): LaunchCommand {
     ...(quickPlay?.kind === "server" && {
       quickPlayMultiplayer: formatServerAddress(quickPlay.address),
     }),
+    ...(size && {
+      resolution_width: String(size.width),
+      resolution_height: String(size.height),
+    }),
   };
   const unknown = new Set<string>();
   const fill = (a: string) => substitute(a, values, (n) => unknown.add(n));
@@ -206,6 +215,10 @@ export function buildLaunchCommand(ctx: LaunchContext): LaunchCommand {
     ...flattenArguments(version.arguments?.game ?? [], env),
   ].map(fill);
   game.push(...legacyServer);
+  // Versions without a resolution rule (all before 1.13) take the size as plain arguments.
+  if (size && !game.includes("--width"))
+    game.push("--width", String(size.width), "--height", String(size.height));
+  if (ctx.gameWindow?.mode === "fullscreen") game.push("--fullscreen");
 
   if (unknown.size > 0) {
     ctx.logger?.warn(`unknown launch placeholders: ${[...unknown].join(", ")}`);

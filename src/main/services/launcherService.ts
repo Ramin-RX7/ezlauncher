@@ -55,6 +55,7 @@ import { createModService } from "./mods";
 import { searchSite } from "./packs";
 import { createProfileService } from "./profiles";
 import { createResourcePackService } from "./resourcePacks";
+import { createServerService } from "./servers";
 import { createRuntime } from "./runtime";
 import { createShaderService } from "./shaders";
 import { createStorageService } from "./storage";
@@ -397,6 +398,8 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     logger: log,
   });
 
+  const servers = createServerService({ logger: log });
+
   const diagnostics = createDiagnostics({
     paths,
     settings,
@@ -520,6 +523,11 @@ export function createLauncherService(dataDir: string, logger: Logger) {
 
     ...games.api,
 
+    // ---- Server status and LAN worlds ----
+
+    serverStatus: (address: unknown) => servers.status(address),
+    lanWorlds: () => servers.lanWorlds(),
+
     // ---- Java runtimes (Settings) ----
 
     ...java.api,
@@ -573,6 +581,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
         );
       runtime.moving = true;
       modService.stopIdentify();
+      servers.dispose();
     },
 
     /** The move failed or was cancelled: back to normal on the old folder. */

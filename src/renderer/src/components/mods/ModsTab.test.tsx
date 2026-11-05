@@ -252,16 +252,17 @@ describe("ModsTab", () => {
         ],
         errorCount: 1,
       }),
-      "mods:findRemote": () => [],
+      "mods:search": () => ({ hits: [], total: 0 }),
     });
     renderTab();
     expect(await screen.findByText("1 error")).toBeInTheDocument();
     expect(screen.getByText("Needs Fabric API")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Download" }));
     await waitFor(() => {
-      expect(api.invoke).toHaveBeenCalledWith("mods:findRemote", {
+      expect(api.invoke).toHaveBeenCalledWith("mods:search", {
         profileId: "p1",
         query: "fabric-api",
+        offset: 0,
       });
     });
     expect(screen.getByRole("searchbox", { name: "Mod name" })).toHaveValue(

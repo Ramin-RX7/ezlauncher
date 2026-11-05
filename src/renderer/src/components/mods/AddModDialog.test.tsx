@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
-import type { LibraryMod, RemoteMatchCard } from "@shared/launcher";
+import type { LibraryMod, RemoteMatchCard, RemotePack } from "@shared/launcher";
 import { createQueryClient } from "../../lib/queryClient";
 import { profile } from "../../test/fixtures";
 import { mockApi } from "../../test/mockApi";
@@ -54,6 +54,26 @@ const sodiumCard: RemoteMatchCard = {
   totalSize: 3 * 1024 * 1024,
 };
 
+const sodiumHit: RemotePack = {
+  sourceId: "modrinth",
+  projectId: "AANobbMI",
+  slug: "sodium",
+  name: "Sodium",
+  author: "jellysquid3",
+  pageUrl: "https://modrinth.com/mod/sodium",
+  downloads: 51_234_567,
+  description: "Rendering engine",
+};
+const extraHit: RemotePack = {
+  ...sodiumHit,
+  projectId: "extra",
+  slug: "sodium-extra",
+  name: "Sodium Extra",
+  author: "FlashyReese",
+  downloads: 9_000_000,
+  pageUrl: "https://modrinth.com/mod/sodium-extra",
+};
+
 /** The same card, but a required mod has no version: nothing to download. */
 const missingCard: RemoteMatchCard = { ...sodiumCard, missing: ["Fabric API"] };
 delete missingCard.planId;
@@ -99,47 +119,49 @@ describe("AddModDialog", () => {
     });
   });
 
-  it("searches Modrinth when the mod isn't in the library, and says Not found", async () => {
+  it("searches Modrinth for the profile, and says when nothing fits", async () => {
     const api = mockApi({
       "mods:library": () => library,
-      "mods:findRemote": () => [],
+      "mods:search": () => ({ hits: [], total: 0 }),
     });
     renderDialog();
     type("Nonexistent Mod");
     expect(
       await screen.findByText("No mod with that name in your library."),
     ).toBeInTheDocument();
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Not in your library. Search Modrinth",
-      }),
-    );
-    expect(await screen.findByText(/^Not found\./)).toBeInTheDocument();
-    expect(api.invoke).toHaveBeenCalledWith("mods:findRemote", {
-      profileId: "p1",
-      query: "Nonexistent Mod",
+    expect(
+      await screen.findByText(
+        "No mod found for this profile's version and loader.",
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(api.invoke).toHaveBeenCalledWith("mods:search", {
+        profileId: "p1",
+        query: "Nonexistent Mod",
+        offset: 0,
+      });
     });
   });
 
-  it("shows the confirm card with dependencies and downloads it", async () => {
+  it("opens the mod named exactly like the search, and downloads it", async () => {
     const api = mockApi({
       "mods:library": () => [],
-      "mods:findRemote": () => [sodiumCard],
+      "mods:search": () => ({ hits: [sodiumHit, extraHit], total: 2 }),
+      "mods:prepare": () => sodiumCard,
       "mods:installRemote": () => ({ replaced: [] }),
     });
     renderDialog();
     type("Sodium");
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Not in your library. Search Modrinth",
-      }),
-    );
-    expect(await screen.findByText("Sodium")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Downloads version mc1.18.2-0.4.1"),
+    ).toBeInTheDocument();
+    expect(api.invoke).toHaveBeenCalledWith("mods:prepare", {
+      profileId: "p1",
+      sourceId: "modrinth",
+      projectId: "AANobbMI",
+    });
     expect(
       screen.getByText("by jellysquid3 · 51.2M downloads"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Downloads version mc1.18.2-0.4.1"),
     ).toBeInTheDocument();
     expect(
       screen.getByText("Fabric API 0.76.0 (download)"),
@@ -154,6 +176,12 @@ describe("AddModDialog", () => {
     expect(
       screen.getByRole("link", { name: "Open Sodium on Modrinth" }),
     ).toHaveAttribute("href", "https://modrinth.com/mod/sodium");
+    // Other results stay closed until asked.
+    expect(screen.getByText("Sodium Extra")).toBeInTheDocument();
+    expect(api.invoke).not.toHaveBeenCalledWith(
+      "mods:prepare",
+      expect.objectContaining({ projectId: "extra" }),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Download" }));
     await waitFor(() => {
@@ -164,21 +192,27 @@ describe("AddModDialog", () => {
     ).toBeInTheDocument();
   });
 
-  it("offers no Download when a required mod is missing", async () => {
-    mockApi({
+  it("opens another result on Get, and offers no Download when a required mod is missing", async () => {
+    const api = mockApi({
       "mods:library": () => [],
-      "mods:findRemote": () => [missingCard],
+      "mods:search": () => ({ hits: [sodiumHit, extraHit], total: 2 }),
+      "mods:prepare": () => missingCard,
     });
     renderDialog();
-    type("Sodium");
+    type("sod");
     fireEvent.click(
-      screen.getByRole("button", {
-        name: "Not in your library. Search Modrinth",
+      await screen.findByRole("button", {
+        name: "See what downloading Sodium Extra needs",
       }),
     );
     expect(
       await screen.findByText(/Needs Fabric API, which has no version/),
     ).toBeInTheDocument();
+    expect(api.invoke).toHaveBeenCalledWith("mods:prepare", {
+      profileId: "p1",
+      sourceId: "modrinth",
+      projectId: "extra",
+    });
     expect(
       screen.queryByRole("button", { name: "Download" }),
     ).not.toBeInTheDocument();

@@ -4,6 +4,7 @@ import { PROFILE_NAME_MAX, type Profile } from "@shared/launcher";
 import { AppError } from "../core/errors";
 import { readJson, writeJsonAtomic } from "../core/fsAtomic";
 import { safeId } from "../minecraft/paths";
+import { gameWindowSchema } from "../settings/settings";
 
 const idString = z.string().refine((s) => {
   try {
@@ -47,6 +48,7 @@ const profileSchema = z.object({
   memoryMaxMb: memorySchema.optional(),
   extraJvmArgs: argsSchema.optional(),
   extraGameArgs: argsSchema.optional(),
+  gameWindow: gameWindowSchema.optional(),
   createdAt: z.string(),
   lastPlayedAt: z.string().optional(),
   pinned: z.boolean().optional(),
@@ -67,6 +69,7 @@ const inputSchema = z
     memoryMaxMb: memorySchema.nullable().optional(),
     extraJvmArgs: argsSchema.nullable().optional(),
     extraGameArgs: argsSchema.nullable().optional(),
+    gameWindow: gameWindowSchema.nullable().optional(),
   })
   .strict();
 
@@ -97,6 +100,8 @@ function applyOptional(profile: Profile, input: Partial<Input>): Profile {
   if (input.extraGameArgs === null) delete next.extraGameArgs;
   else if (input.extraGameArgs !== undefined)
     next.extraGameArgs = input.extraGameArgs;
+  if (input.gameWindow === null) delete next.gameWindow;
+  else if (input.gameWindow !== undefined) next.gameWindow = input.gameWindow;
   return next;
 }
 

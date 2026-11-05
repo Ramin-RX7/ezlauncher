@@ -259,10 +259,7 @@ export function ModsTab({ profile }: { profile: ProfileInfo }) {
       {adding && (
         <AddModDialog
           profile={profile}
-          {...(adding.query && {
-            initialQuery: adding.query,
-            autoSearch: true,
-          })}
+          {...(adding.query && { initialQuery: adding.query })}
           onClose={() => {
             setAdding(null);
           }}

@@ -56,12 +56,6 @@ const HIT_LOADER_TAGS: Partial<Record<string, ReadonlySet<string>>> = {
 const dependenciesSchema = z.looseObject({
   projects: z.array(projectSchema),
 });
-const membersSchema = z.array(
-  z.looseObject({
-    role: z.string().optional(),
-    user: z.looseObject({ username: z.string() }),
-  }),
-);
 const versionSchema = z.looseObject({
   id: z.string(),
   project_id: z.string(),
@@ -248,90 +242,20 @@ export function createModrinthSource({
 
   const q = (value: unknown) => encodeURIComponent(JSON.stringify(value));
 
-  async function author(projectId: string, signal?: AbortSignal) {
-    const members = await call(
-      `/project/${encodeURIComponent(projectId)}/members`,
-      membersSchema,
-      signal ? { signal } : {},
-    ).catch(() => undefined);
-    const owner = members?.find((m) => m.role === "Owner") ?? members?.[0];
-    return owner?.user.username ?? "";
-  }
-
   return {
     id: SOURCE_ID,
     displayName: "Modrinth",
     pageUrl,
 
-    async findExact(query, target, signal) {
-      const wanted = query.trim().toLowerCase();
-      if (!wanted) return [];
-      const opts = signal ? { signal } : {};
-      const same = (s: string) => s.trim().toLowerCase() === wanted;
-
-      // 1. The query as a slug or id.
-      const direct = /^[\w!@$()`.+,"\-']{1,64}$/.test(query.trim())
-        ? await call(
-            `/project/${encodeURIComponent(query.trim())}`,
-            projectSchema,
-            opts,
-          )
-        : undefined;
-      // 2. A search, keeping only exact name or slug matches.
-      const type = target.projectType ?? "mod";
-      const facets = [
-        [`project_type:${type}`],
-        ...(type === "mod"
-          ? [target.loaders.map((l) => `categories:${l}`)]
-          : []),
-        [`versions:${target.gameVersion}`],
-      ];
-      const search = await call(
-        `/search?query=${encodeURIComponent(query.trim())}&facets=${q(facets)}&limit=20`,
-        searchSchema,
-        opts,
-      );
-
-      const found = new Map<string, RemoteProject>();
-      for (const hit of search?.hits ?? []) {
-        if (!same(hit.title) && !same(hit.slug)) continue;
-        found.set(hit.project_id, {
-          sourceId: SOURCE_ID,
-          projectId: hit.project_id,
-          slug: hit.slug,
-          name: hit.title,
-          author: hit.author ?? "",
-          ...(hit.icon_url && { iconUrl: hit.icon_url }),
-          ...(hit.downloads !== undefined && { downloads: hit.downloads }),
-          projectType: type,
-          pageUrl: pageUrl(hit.slug, type),
-        });
-      }
-      if (
-        direct &&
-        (direct.project_type ?? "mod") === type &&
-        !found.has(direct.id)
-      ) {
-        found.set(direct.id, {
-          sourceId: SOURCE_ID,
-          projectId: direct.id,
-          slug: direct.slug,
-          name: direct.title,
-          author: await author(direct.id, signal),
-          ...(direct.icon_url && { iconUrl: direct.icon_url }),
-          ...(direct.downloads !== undefined && {
-            downloads: direct.downloads,
-          }),
-          projectType: type,
-          pageUrl: pageUrl(direct.slug, type),
-        });
-      }
-      return [...found.values()];
-    },
-
-    async search(query, { projectType, gameVersion, offset, limit }, signal) {
+    async search(
+      query,
+      { projectType, gameVersion, loaders, offset, limit },
+      signal,
+    ) {
+      // Values in one inner list are OR'ed: a mod for any of the loaders.
       const facets = [
         [`project_type:${projectType}`],
+        ...(loaders?.length ? [loaders.map((l) => `categories:${l}`)] : []),
         ...(gameVersion ? [[`versions:${gameVersion}`]] : []),
       ];
       const result = await call(

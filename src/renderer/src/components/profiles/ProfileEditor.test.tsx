@@ -51,6 +51,7 @@ describe("ProfileEditor", () => {
         memoryMaxMb: null,
         extraJvmArgs: null,
         extraGameArgs: null,
+        gameWindow: null,
       });
     });
     expect(onSaved).toHaveBeenCalled();
@@ -100,12 +101,16 @@ describe("ProfileEditor", () => {
       }),
     });
     renderEditor({ profile: profile() });
-    const [memory, jvm, game] = await screen.findAllByRole("checkbox", {
+    const [memory, window, jvm, game] = await screen.findAllByRole("checkbox", {
       name: /Use global setting/,
     });
     fireEvent.click(memory!);
     fireEvent.change(screen.getByLabelText("Maximum memory (MB)"), {
       target: { value: "6144" },
+    });
+    fireEvent.click(window!);
+    fireEvent.change(screen.getByLabelText("Game window"), {
+      target: { value: "fullscreen" },
     });
     fireEvent.click(jvm!);
     fireEvent.change(screen.getByLabelText("Extra JVM arguments"), {
@@ -125,6 +130,7 @@ describe("ProfileEditor", () => {
           memoryMaxMb: 6144,
           extraJvmArgs: ["-XX:+UseZGC", "-Dname=a b"],
           extraGameArgs: [],
+          gameWindow: { mode: "fullscreen" },
         }),
       );
     });
@@ -133,7 +139,7 @@ describe("ProfileEditor", () => {
   it("can't save an unclosed quote, and warns about -Xmx in JVM arguments", async () => {
     setup();
     renderEditor({ profile: profile() });
-    const [, jvm] = await screen.findAllByRole("checkbox", {
+    const [, , jvm] = await screen.findAllByRole("checkbox", {
       name: /Use global setting/,
     });
     fireEvent.click(jvm!);

@@ -96,12 +96,15 @@ export async function searchSite(
   query: unknown,
   gameVersion: string | undefined,
   offset: number,
+  /** Mods: only those for one of these loaders. */
+  { loaders }: { loaders?: readonly string[] } = {},
 ): Promise<PackSearchResult> {
   const source = sources.sources[0];
   if (!source) return { hits: [], total: 0 };
   const page = await source.search(typeof query === "string" ? query : "", {
     projectType,
     ...(gameVersion !== undefined && { gameVersion }),
+    ...(loaders && { loaders }),
     offset: Number.isFinite(offset) ? offset : 0,
     limit: 20,
   });

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { GameWindow } from "@shared/launcher";
 import type { LaunchIdentity } from "../auth/types";
 import { buildLaunchCommand, quickPlaySupport, substitute } from "./arguments";
 import type { InstalledVersion } from "./installer";
@@ -211,6 +212,102 @@ describe("buildLaunchCommand", () => {
       "--width",
       "1280",
     ]);
+  });
+
+  describe("game window", () => {
+    const modern = {
+      id: "1.21.4",
+      chain: ["1.21.4"],
+      mainClass: "Main",
+      arguments: {
+        jvm: ["-cp", "${classpath}"],
+        game: [
+          "--username",
+          "${auth_player_name}",
+          {
+            rules: [
+              {
+                action: "allow" as const,
+                features: { has_custom_resolution: true },
+              },
+            ],
+            value: [
+              "--width",
+              "${resolution_width}",
+              "--height",
+              "${resolution_height}",
+            ],
+          },
+        ],
+      },
+    };
+    const legacy = {
+      id: "1.8.9",
+      chain: ["1.8.9"],
+      mainClass: "Main",
+      minecraftArguments: "--username ${auth_player_name}",
+    };
+    const gameArgs = (
+      version: InstalledVersion["version"],
+      gameWindow?: GameWindow,
+    ) => {
+      const args = buildLaunchCommand({
+        installed: installed(version),
+        identity,
+        paths,
+        platform: linux,
+        gameDir: "/data/profiles/p",
+        memoryMaxMb: 1024,
+        launcherName: "ezlauncher",
+        launcherVersion: "1.0",
+        ...(gameWindow && { gameWindow }),
+      }).args;
+      return args.slice(args.indexOf("Main") + 1);
+    };
+    const size: GameWindow = { mode: "size", width: 1280, height: 720 };
+
+    it("fills the version's own resolution arguments with the size", () => {
+      expect(gameArgs(modern, size)).toEqual([
+        "--username",
+        "Steve",
+        "--width",
+        "1280",
+        "--height",
+        "720",
+      ]);
+    });
+
+    it("adds the size as plain arguments on versions without the rule", () => {
+      expect(gameArgs(legacy, size)).toEqual([
+        "--username",
+        "Steve",
+        "--width",
+        "1280",
+        "--height",
+        "720",
+      ]);
+    });
+
+    it("starts fullscreen with the game's own flag, on old and new versions", () => {
+      expect(gameArgs(modern, { mode: "fullscreen" })).toEqual([
+        "--username",
+        "Steve",
+        "--fullscreen",
+      ]);
+      expect(gameArgs(legacy, { mode: "fullscreen" })).toEqual([
+        "--username",
+        "Steve",
+        "--fullscreen",
+      ]);
+    });
+
+    it("leaves the window to the game by default", () => {
+      expect(gameArgs(modern, { mode: "default" })).toEqual([
+        "--username",
+        "Steve",
+      ]);
+      expect(gameArgs(modern)).toEqual(["--username", "Steve"]);
+    });
   });
 
   it("uses the Windows classpath separator and adds macOS first-thread flag for legacy versions", () => {

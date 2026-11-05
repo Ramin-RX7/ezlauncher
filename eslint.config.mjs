@@ -65,6 +65,7 @@ export default tseslint.config(
       "src/main/core/**/*.ts",
       "src/main/minecraft/**/*.ts",
       "src/main/auth/**/*.ts",
+      "src/main/servers/**/*.ts",
     ],
     rules: {
       "no-restricted-imports": [
@@ -73,7 +74,8 @@ export default tseslint.config(
           paths: [
             {
               name: "electron",
-              message: "core/, minecraft/ and auth/ must not import Electron.",
+              message:
+                "core/, minecraft/, auth/ and servers/ must not import Electron.",
             },
           ],
         },

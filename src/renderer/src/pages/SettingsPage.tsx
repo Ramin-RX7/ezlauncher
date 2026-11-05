@@ -4,10 +4,16 @@ import { useTranslation } from "react-i18next";
 import { ToggleGroup } from "radix-ui";
 import { TriangleAlert } from "lucide-react";
 import { joinArgs, splitArgs } from "@shared/args";
-import type { LauncherSettings, OnGameStart } from "@shared/launcher";
+import type {
+  GameWindow,
+  LauncherSettings,
+  OnGameStart,
+} from "@shared/launcher";
 import { ArgsField } from "../components/settings/ArgsField";
 import { BackupSettings } from "../components/settings/BackupSettings";
 import { DataDirChange } from "../components/settings/DataDirChange";
+import { GameWindowField } from "../components/settings/GameWindowField";
+import { isValidGameWindow } from "../components/settings/gameWindow";
 import { JavaSettings } from "../components/settings/JavaSettings";
 import { UpdateSettings } from "../components/settings/UpdateSettings";
 import { CopyDiagnostics } from "../components/settings/CopyDiagnostics";
@@ -91,6 +97,10 @@ export function SettingsPage() {
     memory !== undefined &&
     memory > totalMb * MEMORY_WARN_SHARE;
 
+  // The window is saved as soon as it's valid; a size being typed stays a draft.
+  const [windowDraft, setWindowDraft] = useState<GameWindow>();
+  const gameWindow = windowDraft ?? settings.data?.gameWindow;
+
   // Argument fields are text; they're saved as arrays when the field is left.
   const [argsDraft, setArgsDraft] = useState<Partial<Record<ArgsKey, string>>>(
     {},
@@ -170,6 +180,17 @@ export function SettingsPage() {
             </p>
           )}
         </div>
+
+        {gameWindow && (
+          <GameWindowField
+            label={t("settings.window.label")}
+            value={gameWindow}
+            onChange={(next) => {
+              setWindowDraft(next);
+              if (isValidGameWindow(next)) update.mutate({ gameWindow: next });
+            }}
+          />
+        )}
 
         <ArgsField
           label={t("settings.args.jvm")}

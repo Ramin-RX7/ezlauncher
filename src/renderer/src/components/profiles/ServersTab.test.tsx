@@ -25,10 +25,16 @@ const LIST: SavedServerList = {
   ],
 };
 
-function renderTab(p: ProfileInfo = { ...profile(), running: 0 }) {
+function renderTab(
+  p: ProfileInfo = { ...profile(), running: 0 },
+  handlers: Parameters<typeof mockApi>[0] = {},
+) {
   const api = mockApi({
     "servers:list": () => LIST,
     "servers:save": () => undefined,
+    "servers:status": () => ({ online: false }),
+    "servers:lan": () => [],
+    ...handlers,
   });
   const onJoin = vi.fn();
   render(
@@ -44,6 +50,58 @@ const sent = (api: ReturnType<typeof mockApi>) =>
     { profileId: string; servers: { key?: number }[] } | undefined;
 
 describe("ServersTab", () => {
+  it("shows whether each saved server is up, with players, latency and its message", async () => {
+    const { api } = renderTab(undefined, {
+      "servers:status": (address) =>
+        address === "friends.example.com:25566"
+          ? {
+              online: true,
+              version: "1.21.4",
+              players: { online: 12, max: 100 },
+              motd: "Welcome to Friends",
+              latencyMs: 45,
+            }
+          : { online: false },
+    });
+    expect(
+      await screen.findByText("12/100 players · 45 ms · 1.21.4"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Welcome to Friends")).toBeInTheDocument();
+    // A broken address is never asked about.
+    expect(api.invoke).not.toHaveBeenCalledWith("servers:status", "--evil");
+  });
+
+  it("says when a server is offline", async () => {
+    renderTab();
+    expect(
+      await screen.findByText("Offline or not reachable"),
+    ).toBeInTheDocument();
+  });
+
+  it("lists LAN worlds and joins one", async () => {
+    const { onJoin } = renderTab(undefined, {
+      "servers:lan": () => [
+        { name: "Alex - Island", address: "192.168.1.5:61000" },
+        { name: "", address: "192.168.1.9:50000" },
+      ],
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Join Alex - Island" }),
+    );
+    expect(onJoin).toHaveBeenCalledWith("192.168.1.5:61000", "Alex - Island");
+    fireEvent.click(screen.getByRole("button", { name: "Join LAN world" }));
+    expect(onJoin).toHaveBeenCalledWith("192.168.1.9:50000", "LAN world");
+  });
+
+  it("says it's looking while no LAN world is found", async () => {
+    renderTab();
+    expect(
+      await screen.findByText(
+        "Looking for worlds opened to LAN on your network…",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("joins a server from the game's list", async () => {
     const { onJoin } = renderTab();
     fireEvent.click(

@@ -103,97 +103,54 @@ const version = (
   ...extra,
 });
 
-describe("findExact", () => {
-  it("keeps only exact name or slug matches, merges the slug lookup, and filters the search", async () => {
+const facetsOf = (url: string): unknown =>
+  JSON.parse(decodeURIComponent(new URL(url).searchParams.get("facets") ?? ""));
+
+describe("mods", () => {
+  it("searches mods for the profile's loaders and version, a page at a time", async () => {
     const { source, seen } = fakeModrinth({
-      "/project/Sodium": {
-        json: {
-          id: "AANobbMI",
-          slug: "sodium",
-          title: "Sodium",
-          project_type: "mod",
-        },
-      },
-      "/project/AANobbMI/members": {
-        json: [{ role: "Owner", user: { username: "jellysquid3" } }],
-      },
       "/search": {
         json: {
+          total_hits: 41,
           hits: [
             {
               project_id: "AANobbMI",
               slug: "sodium",
               title: "Sodium",
               author: "jellysquid3",
+              description: "Rendering engine",
               downloads: 51_000_000,
-            },
-            {
-              project_id: "x",
-              slug: "sodium-extra",
-              title: "Sodium Extra",
-              author: "a",
-            },
-            {
-              project_id: "y",
-              slug: "rubidium",
-              title: "SODIUM ",
-              author: "b",
             },
           ],
         },
       },
     });
-    const found = await source.findExact(" Sodium ", target);
-    expect(found.map((p) => p.projectId)).toEqual(["AANobbMI", "y"]);
-    expect(found[0]).toMatchObject({
+    const page = await source.search("sodium", {
+      projectType: "mod",
+      gameVersion: "1.18.2",
+      loaders: ["quilt", "fabric"],
+      offset: 20,
+      limit: 20,
+    });
+    expect(page.total).toBe(41);
+    expect(page.hits[0]).toMatchObject({
+      projectId: "AANobbMI",
       name: "Sodium",
       author: "jellysquid3",
+      description: "Rendering engine",
       pageUrl: "https://modrinth.com/mod/sodium",
-      downloads: 51_000_000,
     });
-
-    const search = seen.find((s) => s.url.includes("/search?"));
-    const facets: unknown = JSON.parse(
-      decodeURIComponent(
-        new URL(search?.url ?? "").searchParams.get("facets") ?? "",
-      ),
-    );
-    expect(facets).toEqual([
+    expect(facetsOf(seen[0]!.url)).toEqual([
       ["project_type:mod"],
       ["categories:quilt", "categories:fabric"],
       ["versions:1.18.2"],
     ]);
+    expect(new URL(seen[0]!.url).searchParams.get("offset")).toBe("20");
     expect(
       seen.every((s) => s.userAgent?.startsWith("ezlauncher/test (")),
     ).toBe(true);
   });
-
-  it("treats an unknown slug as no match and skips non-mods", async () => {
-    const { source } = fakeModrinth({
-      "/project/Iris Shaders": undefined as unknown as Reply,
-      "/search": { json: { hits: [] } },
-    });
-    expect(await source.findExact("Iris Shaders", target)).toEqual([]);
-
-    const pack = fakeModrinth({
-      "/project/fabulously-optimized": {
-        json: {
-          id: "1",
-          slug: "fabulously-optimized",
-          title: "FO",
-          project_type: "modpack",
-        },
-      },
-      "/search": { json: { hits: [] } },
-    });
-    expect(await pack.source.findExact("fabulously-optimized", target)).toEqual(
-      [],
-    );
-  });
 });
-
-const facetsOf = (url: string): unknown =>
-  JSON.parse(decodeURIComponent(new URL(url).searchParams.get("facets") ?? ""));
 
 describe("shader packs", () => {
   it("searches every shader and says which loaders each is tagged for", async () => {
@@ -344,34 +301,6 @@ describe("resource packs", () => {
     ]);
     expect(url.searchParams.get("offset")).toBe("20");
     expect(url.searchParams.get("limit")).toBe("20");
-  });
-
-  it("finds packs by exact name without a loader filter", async () => {
-    const { source, seen } = fakeModrinth({
-      "/project/faithful-32x": {
-        json: {
-          id: "F1",
-          slug: "faithful-32x",
-          title: "Faithful 32x",
-          project_type: "resourcepack",
-        },
-      },
-      "/project/F1/members": { json: [] },
-      "/search": { json: { hits: [] } },
-    });
-    const found = await source.findExact("faithful-32x", {
-      gameVersion: "1.20.1",
-      loaders: ["minecraft"],
-      projectType: "resourcepack",
-    });
-    expect(found.map((p) => p.pageUrl)).toEqual([
-      "https://modrinth.com/resourcepack/faithful-32x",
-    ]);
-    const search = seen.find((s) => s.url.includes("/search?"));
-    expect(facetsOf(search!.url)).toEqual([
-      ["project_type:resourcepack"],
-      ["versions:1.20.1"],
-    ]);
   });
 
   it("asks for any Minecraft version when none is given", async () => {

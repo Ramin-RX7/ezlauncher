@@ -19,6 +19,8 @@ export interface DiagnosticsProfile {
   memoryMaxMb?: number;
   extraJvmArgs?: number;
   extraGameArgs?: number;
+  /** The profile's own window (`1280x720`, `fullscreen`, `default`), if it has one. */
+  gameWindow?: string;
   running: boolean;
   playTimeMs?: number;
   mods: {
@@ -50,6 +52,7 @@ export interface DiagnosticsInput {
     onGameStart: string;
     extraJvmArgs: number;
     extraGameArgs: number;
+    gameWindow: string;
   };
   java?: string[];
   profile?: DiagnosticsProfile;
@@ -85,6 +88,7 @@ export function formatDiagnostics(input: DiagnosticsInput): string {
           `- Memory: ${settings.memoryMaxMb} MB`,
           `- When the game starts: ${settings.onGameStart}`,
           `- Extra JVM arguments: ${settings.extraJvmArgs}, extra game arguments: ${settings.extraGameArgs}`,
+          `- Game window: ${settings.gameWindow}`,
         ])
       : "",
     java?.length
@@ -99,7 +103,7 @@ export function formatDiagnostics(input: DiagnosticsInput): string {
           profile.installedVersionId &&
             `- Installed version: ${profile.installedVersionId}`,
           profile.modpack && `- Mod pack: ${profile.modpack}`,
-          `- Memory: ${profile.memoryMaxMb !== undefined ? `${profile.memoryMaxMb} MB (own)` : "global"}, JVM arguments: ${profile.extraJvmArgs ?? "global"}, game arguments: ${profile.extraGameArgs ?? "global"}`,
+          `- Memory: ${profile.memoryMaxMb !== undefined ? `${profile.memoryMaxMb} MB (own)` : "global"}, JVM arguments: ${profile.extraJvmArgs ?? "global"}, game arguments: ${profile.extraGameArgs ?? "global"}, window: ${profile.gameWindow ?? "global"}`,
           `- Running: ${profile.running ? "yes" : "no"}${profile.playTimeMs ? `, played ${minutes(profile.playTimeMs)}` : ""}`,
         ])
       : "",

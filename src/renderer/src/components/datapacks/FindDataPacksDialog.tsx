@@ -41,7 +41,6 @@ export function FindDataPacksDialog({
       <AddModDialog
         profile={profile}
         initialQuery={modQuery}
-        autoSearch
         onClose={() => {
           setModQuery(undefined);
         }}

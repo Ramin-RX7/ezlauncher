@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Search profiles by their mod pack's name too
 - One screenshots folder for every profile, opened from the Screenshots button on the home page or a profile's menu
 - Copy diagnostics (Settings → About, a profile's menu, or the game log after a crash) puts the details a bug report needs on the clipboard: launcher and system info, the profile's mods and the end of the logs, with your user name, folders and player names hidden
+- Search mods by name in Add mod: Modrinth's mods for the profile's version and loader, a page at a time. Open one to see what it downloads, then Download
+- Game window: start the game in a window of a chosen size or fullscreen, in Settings or for one profile
+- Server status on a profile's Servers tab: whether each server is online, its players, latency, version and message
+- LAN worlds: worlds opened to LAN on your network show up on the Servers tab, ready to join (Windows may ask once to let EZLauncher use the network)
 
 ### Changed
 

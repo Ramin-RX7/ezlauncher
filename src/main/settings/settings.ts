@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { PROFILE_SORTS, type LauncherSettings } from "@shared/launcher";
+import {
+  GAME_WINDOW_LIMITS,
+  PROFILE_SORTS,
+  type LauncherSettings,
+} from "@shared/launcher";
 import { AppError } from "../core/errors";
 import { readJson, writeJsonAtomic } from "../core/fsAtomic";
 
@@ -7,6 +11,7 @@ export const DEFAULT_SETTINGS: LauncherSettings = {
   memoryMaxMb: 2048,
   extraJvmArgs: [],
   extraGameArgs: [],
+  gameWindow: { mode: "default" },
   onGameStart: "keep",
   showSnapshots: false,
   showOldBeta: false,
@@ -32,12 +37,26 @@ const backupWhenSchema = z.enum(["beforeStart", "afterExit"]);
 const intervalSchema = z.number().int().min(1).max(365);
 const keepCountSchema = z.number().int().min(1).max(100).nullable();
 const keepDaysSchema = z.number().int().min(1).max(3650).nullable();
+const { minWidth, minHeight, max } = GAME_WINDOW_LIMITS;
+/** How the game's window opens; also a profile's override. */
+export const gameWindowSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("default") }).strict(),
+  z
+    .object({
+      mode: z.literal("size"),
+      width: z.number().int().min(minWidth).max(max),
+      height: z.number().int().min(minHeight).max(max),
+    })
+    .strict(),
+  z.object({ mode: z.literal("fullscreen") }).strict(),
+]);
 
 const fileSchema = z.object({
   schema: z.literal(1),
   memoryMaxMb: memorySchema.catch(DEFAULT_SETTINGS.memoryMaxMb),
   extraJvmArgs: argsSchema.optional().catch([]),
   extraGameArgs: argsSchema.optional().catch([]),
+  gameWindow: gameWindowSchema.optional().catch(DEFAULT_SETTINGS.gameWindow),
   onGameStart: onGameStartSchema.catch(DEFAULT_SETTINGS.onGameStart),
   showSnapshots: z.boolean().optional().catch(false),
   showOldBeta: z.boolean().optional().catch(false),
@@ -63,6 +82,7 @@ const patchSchema = z
     memoryMaxMb: memorySchema,
     extraJvmArgs: argsSchema,
     extraGameArgs: argsSchema,
+    gameWindow: gameWindowSchema,
     onGameStart: onGameStartSchema,
     showSnapshots: z.boolean(),
     showOldBeta: z.boolean(),
@@ -89,6 +109,7 @@ export function createSettingsStore(file: string) {
         memoryMaxMb: data.memoryMaxMb,
         extraJvmArgs: data.extraJvmArgs ?? [],
         extraGameArgs: data.extraGameArgs ?? [],
+        gameWindow: data.gameWindow ?? DEFAULT_SETTINGS.gameWindow,
         onGameStart: data.onGameStart,
         showSnapshots: data.showSnapshots ?? false,
         showOldBeta: data.showOldBeta ?? false,

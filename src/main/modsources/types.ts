@@ -74,12 +74,6 @@ export interface ModSource {
   /** Stored with each mod that came from here, e.g. `modrinth`. */
   id: string;
   displayName: string;
-  /** Projects whose name or slug is exactly `query` (ignoring case), for this target. */
-  findExact(
-    query: string,
-    target: ModTarget,
-    signal?: AbortSignal,
-  ): Promise<RemoteProject[]>;
   /** The newest version that fits the target: releases first, then betas, then alphas. */
   getCompatibleVersion(
     projectId: string,
@@ -121,6 +115,8 @@ export interface ModSource {
       projectType: ProjectType;
       /** Only projects with a version for this Minecraft version. */
       gameVersion?: string;
+      /** Only projects tagged for one of these loaders (any of them). */
+      loaders?: readonly string[];
       offset: number;
       limit: number;
     },

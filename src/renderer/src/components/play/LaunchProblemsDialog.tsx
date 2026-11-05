@@ -207,7 +207,6 @@ export function LaunchProblemsDialog({
         <AddModDialog
           profile={profile}
           initialQuery={searching}
-          autoSearch
           onClose={() => {
             setSearching(undefined);
             void queryClient.invalidateQueries({ queryKey: ["mods"] });

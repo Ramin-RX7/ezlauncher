@@ -12,6 +12,8 @@ export const keys = {
   loaders: ["loaders"] as const,
   accounts: ["accounts"] as const,
   settings: ["settings"] as const,
+  /** Each server's status is under this, with its address added. */
+  serverStatus: ["serverStatus"] as const,
 };
 
 export function useProfiles() {

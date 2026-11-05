@@ -136,6 +136,17 @@ describe("profile store", () => {
     expect(cleared.extraGameArgs).toBeUndefined();
   });
 
+  it("sets and clears its own game window", async () => {
+    const s = store();
+    const p = await s.create({ ...base, gameWindow: { mode: "fullscreen" } });
+    expect(p.gameWindow).toEqual({ mode: "fullscreen" });
+    await expect(
+      s.update(p.id, { gameWindow: { mode: "size", width: 1, height: 1 } }),
+    ).rejects.toMatchObject({ code: "INVALID_PROFILE" });
+    const cleared = await s.update(p.id, { gameWindow: null });
+    expect(cleared.gameWindow).toBeUndefined();
+  });
+
   it("stores and clears the icon", async () => {
     const s = store();
     const p = await s.create({ ...base, iconId: "creeper" });

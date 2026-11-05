@@ -158,11 +158,21 @@
       "failed": "Couldn't check for updates: {{error}}",
       "auto": "Check for updates automatically (once a day)"
     },
+    "window": {
+      "label": "Game window",
+      "default": "As the game last had it",
+      "size": "Window size",
+      "fullscreen": "Fullscreen",
+      "width": "Window width",
+      "height": "Window height",
+      "hint": "Applied each time the game starts.",
+      "invalid": "Use a width of 320 to 16384 and a height of 240 to 16384 pixels."
+    },
     "args": {
       "jvm": "Extra JVM arguments",
       "jvmHint": "Added after the version's own, e.g. -XX:+UseG1GC. Quote values with spaces.",
       "game": "Extra game arguments",
-      "gameHint": "Added after the version's own, e.g. --width 1280 --height 720.",
+      "gameHint": "Added after the version's own, e.g. --demo. Set the window size under Game window.",
       "unclosedQuote": "A quote isn't closed.",
       "memoryFlags": "-Xmx and -Xms are set by Memory; leave them out here."
     },
@@ -381,7 +391,9 @@
       "globalArgs": "Global: {{args}}",
       "globalNone": "Global: none",
       "gameArgs": "Extra game arguments",
-      "gameArgsHint": "Replaces the global game arguments, e.g. --width 1280",
+      "gameArgsHint": "Replaces the global game arguments, e.g. --demo",
+      "window": "Game window",
+      "globalWindow": "Global: {{value}}",
       "running": "Close the game first to change this profile."
     },
     "changeWarning": {
@@ -482,7 +494,19 @@
     "removeLabel": "Remove {{name}}",
     "removeTitle": "Remove {{name}}?",
     "removeBody": "It's taken off the game's server list.",
-    "remove": "Remove"
+    "remove": "Remove",
+    "status": {
+      "checking": "Checking…",
+      "offline": "Offline or not reachable",
+      "players": "{{online}}/{{max}} players",
+      "latency": "{{ms}} ms",
+      "refresh": "Refresh"
+    },
+    "lan": {
+      "title": "LAN worlds",
+      "looking": "Looking for worlds opened to LAN on your network…",
+      "unnamed": "LAN world"
+    }
   },
   "shortcut": {
     "create": "Desktop shortcut",
@@ -658,9 +682,13 @@
     "searchPlaceholder": "e.g. Sodium or fabric-api",
     "libraryHeading": "In your library",
     "noLibraryMatch": "No mod with that name in your library.",
-    "searchSource": "Not in your library. Search Modrinth",
+    "siteHeading": "On Modrinth, for this profile",
     "searching": "Searching Modrinth…",
-    "notFound": "Not found. Only exact names are searched: check the spelling, or try the name from the mod's page.",
+    "notFound": "No mod found for this profile's version and loader.",
+    "loadMore": "Load more",
+    "get": "Get",
+    "open": "See what downloading {{name}} needs",
+    "opening": "Checking…",
     "by": "by {{author}}",
     "willDownload": "Downloads version {{version}}",
     "noVersion": "No version for {{game}} with this profile's loader.",
