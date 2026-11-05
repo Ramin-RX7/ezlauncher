@@ -260,6 +260,38 @@ export interface WorldInfo {
   backupCount?: number;
 }
 
+/** A dimension a seed map can show. */
+export type MapDimension = "overworld" | "nether" | "end";
+
+/** A place in a world, in block coordinates. */
+export interface MapPoint {
+  dimension: MapDimension;
+  x: number;
+  z: number;
+}
+
+/**
+ * What a seed map needs from a world's saved files (`worlds:mapInfo`), as of the last save.
+ * Every field is optional: a world that lacks one just can't open the map there.
+ */
+export interface WorldMapInfo {
+  /** The world seed as a decimal string (a 64-bit number). */
+  seed?: string;
+  /** The version that last opened the world (`Data.Version.Name`), e.g. `1.21.4`. */
+  version?: string;
+  /** `custom`: superflat-like or modded world generation a vanilla map can't show. */
+  worldType: "normal" | "largeBiomes" | "amplified" | "flat" | "custom";
+  spawn?: MapPoint;
+  /** Whether any player data was found (the host in `level.dat`, or `playerdata/`). */
+  playerFound: boolean;
+  /** The player's last saved position; missing in a dimension a map can't show. */
+  player?: MapPoint;
+  /** The player's bed or respawn anchor, when they set one. */
+  respawn?: MapPoint;
+  /** Where the player last died (Minecraft 1.19 and newer). */
+  lastDeath?: MapPoint;
+}
+
 /** A world whose owner profile no longer exists. */
 export interface OrphanWorld {
   id: string;

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Seed map: open a world in Chunkbase's Seed Map from its Worlds tab, with the world's seed and version filled in, at your last position, your respawn point (bed or respawn anchor), the world spawn or where you last died. Large Biomes worlds open the Large Biomes map, and the seed can be copied
+
 ## [0.4.0] - 2026-11-05
 
 ### Added

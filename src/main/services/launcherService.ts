@@ -394,6 +394,7 @@ export function createLauncherService(dataDir: string, logger: Logger) {
     worldsWithBackups: (profileId) => backups.worldsWithBackups(profileId),
     forgetInLibraries,
     openFolder,
+    listAccounts: () => accounts.list(),
     createShortcut: createProfileShortcut,
     logger: log,
   });

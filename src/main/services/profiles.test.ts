@@ -1,5 +1,6 @@
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { gzipSync } from "fflate";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Profile } from "@shared/launcher";
@@ -7,6 +8,7 @@ import { AppError } from "../core/errors";
 import { createLogger } from "../core/logger";
 import { createPaths, type Paths } from "../minecraft/paths";
 import { exists } from "../profiles/linkedStore";
+import { TAG, writeNbt, type Compound, type Tag } from "../profiles/nbtTree";
 import { createModLibrary } from "../profiles/mods";
 import { createPackLibrary, shaderPackKind } from "../profiles/packs/library";
 import { createProfilePacks } from "../profiles/packs/profilePacks";
@@ -90,6 +92,11 @@ function setup() {
     worldsWithBackups: (profileId) => listWorlds(paths, profileId),
     forgetInLibraries,
     openFolder: () => Promise.resolve(),
+    listAccounts: () =>
+      Promise.resolve([
+        { id: "acc-a", uuid: "0000000000000000000000000000000a" },
+        { id: "acc-b", uuid: "0000000000000000000000000000000b" },
+      ]),
     createShortcut: () => Promise.resolve("shortcut"),
     logger,
   });
@@ -180,6 +187,138 @@ describe("createProfileService", () => {
     expect(modpacks.forgetProfile).toHaveBeenCalledWith(a.id);
     expect((await playTime.totals()).has(a.id)).toBe(false);
     expect((await settings.load()).selectedProfileId).toBeNull();
+  });
+
+  it("reads a world's map info, taking the selected account's player file", async () => {
+    const { service, settings } = setup();
+    const a = await create(service, "A");
+    await world(a.id, "Home");
+    const nbt = (entries: Record<string, Tag>): Uint8Array =>
+      gzipSync(
+        writeNbt("", { type: TAG.COMPOUND, value: Object.entries(entries) }),
+      );
+    const at = (x: number): Compound => ({
+      type: TAG.COMPOUND,
+      value: [
+        ["Dimension", { type: TAG.STRING, value: "minecraft:overworld" }],
+        [
+          "Pos",
+          {
+            type: TAG.LIST,
+            itemType: TAG.DOUBLE,
+            value: [x, 64, 0].map((value) => ({ type: TAG.DOUBLE, value })),
+          },
+        ],
+      ],
+    });
+    const dir = paths.worldDir("Home");
+    await writeFile(
+      join(dir, "level.dat"),
+      nbt({
+        Data: {
+          type: TAG.COMPOUND,
+          value: [["RandomSeed", { type: TAG.LONG, value: 7n }]],
+        },
+      }),
+    );
+    await mkdir(join(dir, "playerdata"));
+    const file = (uuid: string) => join(dir, "playerdata", `${uuid}.dat`);
+    await writeFile(
+      file("00000000-0000-0000-0000-00000000000a"),
+      nbt(Object.fromEntries(at(1).value)),
+    );
+    await writeFile(
+      file("00000000-0000-0000-0000-00000000000b"),
+      nbt(Object.fromEntries(at(2).value)),
+    );
+    await writeFile(
+      file("00000000-0000-0000-0000-0000000000ff"),
+      nbt(Object.fromEntries(at(3).value)),
+    );
+
+    await settings.update({ selectedAccountId: "acc-b" });
+    expect(await service.api.getWorldMap(a.id, "Home")).toMatchObject({
+      seed: "7",
+      playerFound: true,
+      player: { x: 2 },
+    });
+    await settings.update({ selectedAccountId: null });
+    // No selected account: the newest file of a launcher account, never a stranger's.
+    expect((await service.api.getWorldMap(a.id, "Home")).player?.x).not.toBe(3);
+
+    await expect(service.api.getWorldMap(a.id, "Nope")).rejects.toMatchObject({
+      code: "WORLD_NOT_FOUND",
+    });
+  });
+
+  it("reads a 26.x world's seed file and the host's player file", async () => {
+    const { service } = setup();
+    const a = await create(service, "A");
+    await world(a.id, "New");
+    const tag = (entries: [string, Tag][]): Compound => ({
+      type: TAG.COMPOUND,
+      value: entries,
+    });
+    const nbt = (root: Compound) => gzipSync(writeNbt("", root));
+    const player = (x: number) =>
+      nbt(
+        tag([
+          [
+            "Pos",
+            {
+              type: TAG.LIST,
+              itemType: TAG.DOUBLE,
+              value: [x, 64, 0].map((value) => ({ type: TAG.DOUBLE, value })),
+            },
+          ],
+        ]),
+      );
+    const dir = paths.worldDir("New");
+    await writeFile(
+      join(dir, "level.dat"),
+      nbt(
+        tag([
+          [
+            "Data",
+            tag([
+              [
+                "singleplayer_uuid",
+                { type: TAG.INT_ARRAY, value: Int32Array.from([0, 0, 0, 255]) },
+              ],
+            ]),
+          ],
+        ]),
+      ),
+    );
+    await mkdir(join(dir, "data", "minecraft"), { recursive: true });
+    await writeFile(
+      join(dir, "data", "minecraft", "world_gen_settings.dat"),
+      nbt(tag([["data", tag([["seed", { type: TAG.LONG, value: -5n }]])]])),
+    );
+    await mkdir(join(dir, "players", "data"), { recursive: true });
+    // The host (…00ff) wins over the launcher's own accounts.
+    await writeFile(
+      join(dir, "players", "data", "00000000-0000-0000-0000-0000000000ff.dat"),
+      player(4),
+    );
+    await writeFile(
+      join(dir, "players", "data", "00000000-0000-0000-0000-00000000000a.dat"),
+      player(5),
+    );
+    expect(await service.api.getWorldMap(a.id, "New")).toMatchObject({
+      seed: "-5",
+      playerFound: true,
+      player: { x: 4 },
+    });
+  });
+
+  it("refuses a world whose level.dat isn't NBT", async () => {
+    const { service } = setup();
+    const a = await create(service, "A");
+    await world(a.id, "Home");
+    await expect(service.api.getWorldMap(a.id, "Home")).rejects.toMatchObject({
+      code: "WORLD_UNREADABLE",
+    });
   });
 
   it("deletes a profile's own worlds when asked, never while it plays", async () => {

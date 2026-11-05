@@ -69,6 +69,7 @@ import type {
   ProfileInfo,
   ProfileInput,
   WorldInfo,
+  WorldMapInfo,
   RunningGame,
   SetupState,
   ValidationReport,
@@ -289,6 +290,11 @@ export interface IpcInvokeContract {
   "worlds:openFolder": {
     args: [options: { profileId: string; worldId: string }];
     result: void;
+  };
+  /** What a seed map needs from a world (seed, spawn, player position), read only. */
+  "worlds:mapInfo": {
+    args: [options: { profileId: string; worldId: string }];
+    result: WorldMapInfo;
   };
 
   /** Mod loaders and the Minecraft versions each supports (cached; `refresh` asks the servers). */
@@ -687,6 +693,7 @@ export const INVOKE_CHANNELS = [
   "worlds:move",
   "worlds:orphans",
   "worlds:openFolder",
+  "worlds:mapInfo",
   "mods:library",
   "mods:icon",
   "mods:addFromPicker",

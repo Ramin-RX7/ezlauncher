@@ -53,4 +53,7 @@ export function registerProfilesIpc(): void {
   handle("worlds:openFolder", (_e, { profileId, worldId }) =>
     getService().openWorldFolder(profileId, worldId),
   );
+  handle("worlds:mapInfo", (_e, { profileId, worldId }) =>
+    getService().getWorldMap(profileId, worldId),
+  );
 }

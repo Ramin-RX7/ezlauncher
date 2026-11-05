@@ -1,10 +1,12 @@
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
+import { join } from "node:path";
 import type {
   DeleteWorldsChoice,
   OrphanWorld,
   Profile,
   ProfileInfo,
   WorldInfo,
+  WorldMapInfo,
 } from "@shared/launcher";
 import { PROFILE_NAME_MAX } from "@shared/launcher";
 import { AppError } from "../core/errors";
@@ -27,6 +29,7 @@ import {
   rescueUnlinkedWorlds,
   worldsOwnedBy,
 } from "../profiles/worlds";
+import { readHostUuid, readWorldMap } from "../profiles/worldMap";
 import type { createSettingsStore } from "../settings/settings";
 import type { createProfileShortcut } from "../shortcuts";
 import type { ModpackService } from "./modpacks";
@@ -62,6 +65,8 @@ export interface ProfileServiceDeps {
   /** Take a profile out of the mod, resource pack and shader libraries (its links). */
   forgetInLibraries: (profileId: string) => Promise<void>;
   openFolder: (dir: string) => Promise<void>;
+  /** The launcher's accounts (their UUIDs pick a world's `playerdata` file). */
+  listAccounts: () => Promise<{ id: string; uuid: string }[]>;
   createShortcut: typeof createProfileShortcut;
   logger: Logger;
 }
@@ -86,6 +91,7 @@ export function createProfileService(deps: ProfileServiceDeps) {
     worldOptions,
     forgetInLibraries,
     openFolder,
+    listAccounts,
   } = deps;
   const { running, serialFs, assertNotRunning } = deps.runtime;
   const log = deps.logger;
@@ -356,9 +362,107 @@ export function createProfileService(deps: ProfileServiceDeps) {
           : paths.saveLink(profileId, worldId),
       );
     },
+
+    /** Seed, world type, spawn and the player's position from a world's files. Read only. */
+    async getWorldMap(
+      profileId: string,
+      worldId: string,
+    ): Promise<WorldMapInfo> {
+      await requireProfile(profileId);
+      const world = (await listWorlds(paths, profileId)).find(
+        (w) => w.id === worldId,
+      );
+      if (!world) throw new AppError("WORLD_NOT_FOUND", "World not found.");
+      const dir = world.linked
+        ? paths.worldDir(worldId)
+        : paths.saveLink(profileId, worldId);
+      let level: Uint8Array;
+      let host: string | undefined;
+      let hasHost: boolean;
+      try {
+        level = await readCapped(join(dir, "level.dat"));
+        hasHost = readWorldMap(level).playerFound;
+        host = readHostUuid(level);
+      } catch (err) {
+        log.warn(`Can't read level.dat of world ${worldId}`, err);
+        throw new AppError(
+          "WORLD_UNREADABLE",
+          "Can't read this world's level.dat.",
+        );
+      }
+      // 26.x keeps the seed and world type out of level.dat.
+      const worldGen = await readCapped(
+        join(dir, "data", "minecraft", "world_gen_settings.dat"),
+      ).catch(() => undefined);
+      // 26.x: players/data/; before: playerdata/.
+      const player = hasHost
+        ? undefined
+        : ((await pickPlayerFile(join(dir, "players", "data"), host)) ??
+          (await pickPlayerFile(join(dir, "playerdata"), host)));
+      return readWorldMap(level, {
+        ...(worldGen && { worldGen }),
+        ...(player && { player }),
+      });
+    },
   };
 
+  /**
+   * The player file to read when `level.dat` has no host player: the host's (26.x
+   * names it in `level.dat`), else the selected account's, else the newest of any
+   * launcher account, else the newest file.
+   */
+  async function pickPlayerFile(
+    dir: string,
+    host: string | undefined,
+  ): Promise<Uint8Array | undefined> {
+    let names: string[];
+    try {
+      names = (await readdir(dir)).filter((n) =>
+        /^[0-9a-f-]{32,36}\.dat$/i.test(n),
+      );
+    } catch {
+      return undefined;
+    }
+    if (names.length === 0) return undefined;
+    const uuidOf = (name: string) =>
+      name.slice(0, -4).replaceAll("-", "").toLowerCase();
+    const accounts = await listAccounts().catch(() => []);
+    const selectedId = (await settings.load().catch(() => undefined))
+      ?.selectedAccountId;
+    const selected = accounts
+      .find((a) => a.id === selectedId)
+      ?.uuid.toLowerCase();
+    const ours = new Set(accounts.map((a) => a.uuid.toLowerCase()));
+    const hostUuid = host?.replaceAll("-", "").toLowerCase();
+    const newest = async (list: string[]) => {
+      const dated = await Promise.all(
+        list.map(async (n) => ({
+          n,
+          at: await stat(join(dir, n)).then(
+            (s) => s.mtimeMs,
+            () => 0,
+          ),
+        })),
+      );
+      return dated.sort((a, b) => b.at - a.at)[0]?.n;
+    };
+    const name =
+      names.find((n) => hostUuid !== undefined && uuidOf(n) === hostUuid) ??
+      names.find((n) => uuidOf(n) === selected) ??
+      (await newest(names.filter((n) => ours.has(uuidOf(n))))) ??
+      (await newest(names));
+    if (!name) return undefined;
+    return readCapped(join(dir, name)).catch(() => undefined);
+  }
+
   return { api };
+}
+
+/** A small game file; refuses anything over 16 MB. */
+async function readCapped(file: string): Promise<Uint8Array> {
+  const bytes = await readFile(file);
+  if (bytes.length > 16 * 1024 * 1024) throw new Error(`${file} is too big`);
+  return bytes;
 }
 
 export type ProfileService = ReturnType<typeof createProfileService>;

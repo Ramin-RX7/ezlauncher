@@ -9,7 +9,7 @@ export function RadioGroup<T extends string>({
 }: {
   value: T;
   onChange: (value: T) => void;
-  options: readonly { value: T; label: ReactNode }[];
+  options: readonly { value: T; label: ReactNode; disabled?: boolean }[];
   labelledBy: string;
 }) {
   return (
@@ -24,11 +24,12 @@ export function RadioGroup<T extends string>({
       {options.map((o) => (
         <label
           key={o.value}
-          className="flex cursor-pointer items-center gap-2 text-sm"
+          className={`flex items-center gap-2 text-sm ${o.disabled ? "cursor-default text-muted" : "cursor-pointer"}`}
         >
           <RadixRadio.Item
             value={o.value}
-            className="flex size-4 items-center justify-center rounded-full border border-border bg-surface data-[state=checked]:border-accent"
+            disabled={o.disabled ?? false}
+            className="flex size-4 shrink-0 items-center justify-center rounded-full border border-border bg-surface data-[state=checked]:border-accent"
           >
             <RadixRadio.Indicator className="size-2 rounded-full bg-accent" />
           </RadixRadio.Item>

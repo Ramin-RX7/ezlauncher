@@ -252,6 +252,7 @@
     "VERSION_IN_USE": "Profiles or other installs use this version.",
     "WORLD_NOT_LINKED": "This world can't be moved because the data folder doesn't support links.",
     "WORLD_NOT_FOUND": "This world doesn't exist any more.",
+    "WORLD_UNREADABLE": "This world's level.dat can't be read. It may be damaged.",
     "LOADER_UNKNOWN": "This mod loader isn't supported.",
     "MOD_INCOMPATIBLE": "This mod doesn't fit the profile's loader or Minecraft version.",
     "MOD_IN_USE": "Profiles still use this mod.",
@@ -464,6 +465,47 @@
     "playLabel": "Play {{name}}",
     "playRunning": "Close the game first: the world may be open in it.",
     "playNeedsNewer": "Starting straight into a world needs Minecraft 1.20 or newer."
+  },
+  "seedMap": {
+    "button": "Seed map",
+    "title": "Seed map of {{name}}",
+    "description": "Opens Chunkbase's Seed Map in your browser with this world's seed and version.",
+    "reading": "Reading the world…",
+    "where": "Open the map at",
+    "place": {
+      "player": "My last position",
+      "respawn": "My respawn point",
+      "spawn": "World spawn",
+      "death": "Where I last died"
+    },
+    "at": "{{dimension}} · X {{x}}, Z {{z}}",
+    "dimension": {
+      "overworld": "Overworld",
+      "nether": "Nether",
+      "end": "The End"
+    },
+    "noSpawn": "This world has no saved spawn point.",
+    "noPlayer": "No player saved in this world yet.",
+    "playerElsewhere": "You're in a dimension the map can't show.",
+    "noDeath": "No death saved yet (needs Minecraft 1.19 or newer).",
+    "noRespawn": "No bed or respawn anchor set (or it's in a dimension the map can't show).",
+    "seed": "Seed",
+    "copySeed": "Copy seed",
+    "copied": "Copied",
+    "open": "Open in Chunkbase",
+    "cancel": "Cancel",
+    "blocked": {
+      "noSeed": "This world's seed couldn't be found.",
+      "worldType": "This world uses superflat or custom world generation, which the map can't show.",
+      "version": "Chunkbase doesn't have a map for Minecraft {{version}}."
+    },
+    "note": {
+      "version": "The map uses Minecraft {{version}}, the version that last opened this world.",
+      "lastSave": "Positions are from the world's last save.",
+      "approximate": "Chunkbase may not have this exact version yet, so the map can differ.",
+      "amplified": "This is an Amplified world: the map shows normal terrain.",
+      "modded": "Mods and data packs that change world generation aren't shown on the map."
+    }
   },
   "servers": {
     "address": "Server address",

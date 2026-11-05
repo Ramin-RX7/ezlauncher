@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   Archive,
   FolderOpen,
+  Map as MapIcon,
   Package,
   Play,
   TriangleAlert,
@@ -20,6 +21,7 @@ import { Dialog } from "../ui/Dialog";
 import { ContextMenuArea, type MenuItem } from "../ui/Menu";
 import { Select } from "../ui/Select";
 import { isRiskyMove } from "./moveRisk";
+import { SeedMapDialog } from "./SeedMapDialog";
 
 /** A profile's worlds, with Play, backups, Open folder and Move to another profile. */
 export function WorldsTab({
@@ -39,6 +41,7 @@ export function WorldsTab({
   const [moving, setMoving] = useState<WorldInfo>();
   const [browsing, setBrowsing] = useState<WorldInfo>();
   const [packsOf, setPacksOf] = useState<WorldInfo>();
+  const [mapOf, setMapOf] = useState<WorldInfo>();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const dateFormat = useMemo(
@@ -181,6 +184,12 @@ export function WorldsTab({
                 },
               },
               {
+                label: t("seedMap.button"),
+                onSelect: () => {
+                  setMapOf(w);
+                },
+              },
+              {
                 label: t("worlds.openFolder"),
                 onSelect: () => {
                   openFolder(w);
@@ -271,6 +280,15 @@ export function WorldsTab({
                   <Button
                     variant="ghost"
                     onClick={() => {
+                      setMapOf(w);
+                    }}
+                  >
+                    <MapIcon size={16} aria-hidden />
+                    {t("seedMap.button")}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
                       openFolder(w);
                     }}
                   >
@@ -307,6 +325,15 @@ export function WorldsTab({
           profile={profile}
           onClose={() => {
             setPacksOf(undefined);
+          }}
+        />
+      )}
+      {mapOf && (
+        <SeedMapDialog
+          profile={profile}
+          world={mapOf}
+          onClose={() => {
+            setMapOf(undefined);
           }}
         />
       )}
